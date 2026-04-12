@@ -14,6 +14,22 @@ const EXPECTED_ENTRY_TYPES = [
   "closing_credit_projection",
 ] as const;
 
+// Credit entry types that offset the buyer's obligation (subtracted from fee)
+const CREDIT_ENTRY_TYPES: readonly string[] = ["seller_credit", "buyer_credit", "closing_credit_projection"];
+
+/** Compute expected net total with correct sign semantics (fee minus credits). */
+function computeExpectedTotal(entries: Array<{ entryType: string; amount: number }>): number {
+  return entries
+    .filter((e) => (EXPECTED_ENTRY_TYPES as readonly string[]).includes(e.entryType))
+    .reduce((sum, e) => {
+      // Credits offset the fee — subtract them
+      if (CREDIT_ENTRY_TYPES.includes(e.entryType)) {
+        return sum - e.amount;
+      }
+      return sum + e.amount;
+    }, 0);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // QUERIES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -81,10 +97,8 @@ export const generatePostCloseReport = mutation({
       .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
       .collect();
 
-    // Expected total: sum of fee_set, seller_credit, buyer_credit, closing_credit_projection
-    const expectedTotal = ledgerEntries
-      .filter((e) => (EXPECTED_ENTRY_TYPES as readonly string[]).includes(e.entryType))
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Expected total: fee minus credits (same sign semantics as ledger summary)
+    const expectedTotal = computeExpectedTotal(ledgerEntries);
 
     // Actual total: from actual_closing entry (take most recent if multiple)
     const actualEntries = ledgerEntries
@@ -156,7 +170,7 @@ export const recordActualClosing = mutation({
     const now = new Date().toISOString();
 
     // Create the actual_closing ledger entry
-    await ctx.db.insert("feeLedgerEntries", {
+    const entryId = await ctx.db.insert("feeLedgerEntries", {
       dealRoomId: args.dealRoomId,
       entryType: "actual_closing",
       amount: args.actualAmount,
@@ -175,7 +189,7 @@ export const recordActualClosing = mutation({
       userId: user._id,
       action: "actual_closing_recorded",
       entityType: "feeLedgerEntries",
-      entityId: args.dealRoomId,
+      entityId: entryId,
       details: JSON.stringify({
         actualAmount: args.actualAmount,
         sourceDocument: args.sourceDocument,
@@ -189,9 +203,8 @@ export const recordActualClosing = mutation({
       .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
       .collect();
 
-    const expectedTotal = ledgerEntries
-      .filter((e) => (EXPECTED_ENTRY_TYPES as readonly string[]).includes(e.entryType))
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Expected total: fee minus credits (same sign semantics as ledger summary)
+    const expectedTotal = computeExpectedTotal(ledgerEntries);
 
     // Use the just-recorded actual amount
     const actualTotal = args.actualAmount;
@@ -263,9 +276,7 @@ export const generateMonthlyReport = mutation({
         .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", dealRoom._id))
         .collect();
 
-      const expectedTotal = ledgerEntries
-        .filter((e) => (EXPECTED_ENTRY_TYPES as readonly string[]).includes(e.entryType))
-        .reduce((sum, e) => sum + e.amount, 0);
+      const expectedTotal = computeExpectedTotal(ledgerEntries);
 
       const actualEntries = ledgerEntries
         .filter((e) => e.entryType === "actual_closing")

@@ -223,10 +223,15 @@ export const createEntry = mutation({
     const dealRoom = await ctx.db.get(args.dealRoomId);
     if (!dealRoom) throw new Error("Deal room not found");
 
-    // If financing type is provided, validate IPC limits
+    // Require financing type for credit entries — IPC validation is mandatory
+    const isCreditEntry = args.entryType === "seller_credit" || args.entryType === "buyer_credit";
+    if (isCreditEntry && !args.financingType) {
+      throw new Error("financingType is required for credit entries to enforce IPC limits");
+    }
+
+    // Validate IPC limits for credit entries
     let ipcLimitPercent: number | undefined;
-    if (args.financingType && (args.entryType === "seller_credit" || args.entryType === "buyer_credit")) {
-      // Get property to determine price
+    if (args.financingType && isCreditEntry) {
       const property = await ctx.db.get(dealRoom.propertyId);
       if (property && property.listPrice) {
         const ipcResult = validateIpcLimit(args.financingType, args.amount, property.listPrice);
