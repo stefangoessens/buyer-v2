@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Homepage", () => {
-  test("loads and shows platform title", async ({ page }) => {
+  test("loads and shows hero heading", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("h1")).toContainText("buyer-v2");
+    await expect(page.locator("h1")).toContainText("Florida home");
   });
 
   test("health endpoint returns ok", async ({ request }) => {
