@@ -213,3 +213,27 @@ export const eligibilityRequiredAction = v.union(
   v.literal("sign_agreement"),
   v.literal("upgrade_to_full_rep")
 );
+
+// ─── Lender Credit Validation (KIN-838) ────────────────────────────────────
+
+// Lender credit validation outcome — tri-state so review_required cases are
+// explicit and not conflated with either a pass or a hard failure.
+export const lenderValidationOutcome = v.union(
+  v.literal("valid"),
+  v.literal("invalid"),
+  v.literal("review_required")
+);
+
+// Machine-readable reason codes for invalid/review states.
+// Mirrored in `src/lib/dealroom/lender-credit-validate.ts` and
+// `convex/lib/lenderCreditValidate.ts` — keep in sync.
+export const lenderValidationReasonCode = v.union(
+  v.literal("exceeds_ipc_limit"),
+  v.literal("cash_purchase_no_constraint"),
+  v.literal("unknown_financing_type"),
+  v.literal("missing_ltv_data"),
+  v.literal("high_ltv_stricter_limit"),
+  v.literal("edge_case_near_limit"),
+  v.literal("va_cash_in_at_closing"),
+  v.literal("fha_seller_contribution_cap")
+);

@@ -12,6 +12,8 @@ import {
   feeLedgerEntryType,
   feeLedgerSource,
   financingType,
+  lenderValidationOutcome,
+  lenderValidationReasonCode,
   payoutStatus,
   reconciliationReportType,
   reconciliationReviewStatus,
@@ -713,4 +715,56 @@ export default defineSchema({
     .index("by_buyerId_and_dealRoomId", ["buyerId", "dealRoomId"])
     .index("by_buyerId", ["buyerId"])
     .index("by_isEligible", ["isEligible"]),
+
+  // ═══ LENDER CREDIT VALIDATION (KIN-838) ═══
+  //
+  // Typed persistence for lender-constraint validation against projected
+  // buyer credits. Extends the fee ledger (KIN-814) with a richer validation
+  // layer that captures IPC limits per financing type + LTV tier and makes
+  // "review_required" an explicit third outcome alongside valid/invalid.
+  //
+  // The canonical computation lives in `convex/lib/lenderCreditValidate.ts`
+  // (mirrored in `src/lib/dealroom/lender-credit-validate.ts`). This table
+  // is the audit-friendly persistence layer: every `computeAndPersist` call
+  // writes a new row and an `auditLog` entry so we can replay the history
+  // of validation decisions for any deal room or offer, and brokers have a
+  // queue of review_required rows to sign off on.
+  lenderCreditValidations: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    // Optional offerId — validation can be scoped to a specific offer or to
+    // the deal room as a whole (e.g. during offer prep before an offer row
+    // has been created).
+    offerId: v.optional(v.id("offers")),
+    financingType: financingType,
+    purchasePrice: v.number(),
+    ltvRatio: v.number(), // 0-1
+    projectedSellerCredit: v.number(),
+    projectedBuyerCredit: v.number(),
+    projectedClosingCredit: v.number(),
+    totalProjectedCredits: v.number(), // sum of projected credits
+    ipcLimitPercent: v.number(), // applicable IPC limit as ratio (e.g. 0.06)
+    ipcLimitDollars: v.number(), // dollar equivalent of the limit
+    validationOutcome: lenderValidationOutcome,
+    blockingReasonCode: v.optional(lenderValidationReasonCode),
+    blockingReasonMessage: v.optional(v.string()),
+    // For review_required cases — broker-facing notes from the compute
+    // helper plus any notes the reviewing broker adds when signing off.
+    reviewNotes: v.optional(v.string()),
+    reviewedBy: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.string()),
+    reviewDecision: v.optional(
+      v.union(v.literal("approved"), v.literal("rejected"))
+    ),
+    provenance: v.object({
+      actorId: v.optional(v.id("users")),
+      computedAt: v.string(),
+      sourceDocument: v.optional(v.string()),
+    }),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_offerId", ["offerId"])
+    .index("by_validationOutcome", ["validationOutcome"])
+    .index("by_dealRoomId_and_createdAt", ["dealRoomId", "createdAt"]),
 });
