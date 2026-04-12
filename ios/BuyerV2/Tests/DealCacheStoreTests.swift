@@ -146,17 +146,9 @@ struct DealCacheStoreTests {
     @Test("saveSnapshot then loadSnapshot returns the stored data as .fresh")
     func testFirstCacheRoundTrip() async throws {
         let storage = InMemoryCacheStorage()
-        let clock = TestClock()
-        let store = DealCacheStore(
-            storage: storage,
-            policy: .default,
-            clock: { [clock] in await clock.current() as Date }
-        )
-        // Actor clock bridging — use a wrapper that reads synchronously
-        // via a detached Task. Simpler: use an NSLock-backed box for tests.
-
-        // NOTE: Because `clock:` is a sync closure and our TestClock is
-        // an actor, we route through a small unchecked-Sendable box.
+        // `clock:` is a sync closure; `TestClock` is an actor, so we
+        // route through a small unchecked-Sendable box that reads a
+        // mutable Date synchronously.
         let box = MutableDateBox(initial: Date(timeIntervalSince1970: 1_776_000_000))
         let boxStore = DealCacheStore(
             storage: storage,
@@ -184,7 +176,6 @@ struct DealCacheStoreTests {
             Issue.record("Expected .fresh for just-written cache")
             return
         }
-        _ = store // silence unused
     }
 
     // MARK: - Stale cache
