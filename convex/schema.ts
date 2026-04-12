@@ -1910,4 +1910,63 @@ export default defineSchema({
   })
     .index("by_propertyId_and_portal", ["propertyId", "portal"])
     .index("by_propertyId_and_capturedAt", ["propertyId", "capturedAt"]),
+
+  // ═══ CLOSE TASKS (KIN-847) ═══
+  //
+  // Typed task state for the close phase — inspections, financing
+  // milestones, title work, walkthrough, etc. Tasks are scoped to a
+  // deal room and optionally linked to a contract. Visibility is
+  // explicit (buyer_visible vs internal_only) so internal ops notes
+  // can live next to buyer-facing work without leaking.
+  //
+  // Status machine: pending → in_progress → completed, with blocked
+  // and canceled as explicit escape hatches. Validation happens in
+  // the pure helper at convex/lib/closeTasks.ts.
+  closeTasks: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    contractId: v.optional(v.id("contracts")),
+    title: v.string(),
+    description: v.optional(v.string()),
+    category: v.union(
+      v.literal("inspection"),
+      v.literal("financing"),
+      v.literal("title"),
+      v.literal("insurance"),
+      v.literal("appraisal"),
+      v.literal("disclosure"),
+      v.literal("walkthrough"),
+      v.literal("other"),
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("blocked"),
+      v.literal("canceled"),
+    ),
+    visibility: v.union(
+      v.literal("buyer_visible"),
+      v.literal("internal_only"),
+    ),
+    ownerRole: v.union(
+      v.literal("buyer"),
+      v.literal("broker"),
+      v.literal("lender"),
+      v.literal("title_company"),
+      v.literal("inspector"),
+      v.literal("other"),
+    ),
+    ownerUserId: v.optional(v.id("users")),
+    ownerDisplayName: v.optional(v.string()),
+    dueDate: v.optional(v.string()),
+    blockedReason: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    completedAt: v.optional(v.string()),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
+    .index("by_ownerUserId", ["ownerUserId"])
+    .index("by_contractId", ["contractId"]),
 });
