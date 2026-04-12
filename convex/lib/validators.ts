@@ -214,6 +214,22 @@ export const eligibilityRequiredAction = v.union(
   v.literal("upgrade_to_full_rep")
 );
 
+// ─── Intake Rate Limits & Abuse Controls (KIN-820) ─────────────────────────
+
+/**
+ * Typed channel for the intake rate limiter. Each channel has its own
+ * config in `src/lib/security/rate-limiter.ts` / `convex/lib/rateLimiter.ts`
+ * — adding a new channel here means adding a matching entry to
+ * `CHANNEL_CONFIGS`.
+ */
+export const rateLimitChannel = v.union(
+  v.literal("homepage"), // paste-a-link on marketing site
+  v.literal("sms"), // text-a-link intake
+  v.literal("extension"), // chrome extension intake
+  v.literal("share_import"), // iOS share sheet
+  v.literal("manual_entry") // manual address entry
+);
+
 // ─── Lender Credit Validation (KIN-838) ────────────────────────────────────
 
 // Lender credit validation outcome — tri-state so review_required cases are
