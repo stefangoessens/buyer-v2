@@ -136,11 +136,19 @@ export const issueToken = mutation({
       }
     }
 
-    // Validate expiry is in the future
-    const now = new Date().toISOString();
-    if (args.expiresAt <= now) {
+    // Validate expiry is in the future. Parse to epoch ms instead of
+    // comparing ISO strings — string compare is only reliable for strictly
+    // canonical UTC timestamps, and callers may pass offset timestamps
+    // (e.g., `2026-04-12T20:30:00+01:00`) which would rank wrong.
+    const nowMs = Date.now();
+    const expiresMs = Date.parse(args.expiresAt);
+    if (Number.isNaN(expiresMs)) {
+      throw new Error("expiresAt must be a parseable ISO timestamp");
+    }
+    if (expiresMs <= nowMs) {
       throw new Error("expiresAt must be in the future");
     }
+    const now = new Date(nowMs).toISOString();
 
     // Reject duplicate hashed tokens (defense in depth — collisions are
     // effectively impossible with 256-bit entropy but we check anyway).

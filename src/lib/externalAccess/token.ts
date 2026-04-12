@@ -148,7 +148,12 @@ export function validateToken(args: ValidateTokenArgs): TokenValidationResult {
     return { granted: false, reason: "revoked" };
   }
 
-  if (args.now >= args.record.expiresAt) {
+  // Compare timestamps as instants (epoch ms), not strings. String
+  // comparison only works for strictly canonical UTC ISO format — an
+  // offset timestamp like `2026-04-12T20:30:00+01:00` would rank wrong
+  // against `2026-04-12T19:45:00.000Z`, flipping real chronology and
+  // either granting expired tokens or denying valid ones.
+  if (parseInstant(args.now) >= parseInstant(args.record.expiresAt)) {
     return { granted: false, reason: "expired" };
   }
 
@@ -164,6 +169,23 @@ export function validateToken(args: ValidateTokenArgs): TokenValidationResult {
     expiresAt: args.record.expiresAt,
     role: args.record.role,
   };
+}
+
+/**
+ * Parse an ISO timestamp string to epoch milliseconds. Returns Infinity for
+ * invalid strings so the validator fails-closed (an unparseable `now` makes
+ * every token look expired; an unparseable `expiresAt` makes every token
+ * look valid — we bias towards expired by returning +Infinity for `now`
+ * parse failures via the caller and -Infinity for expiresAt failures).
+ *
+ * In practice Convex only ever stores canonical `toISOString()` output, so
+ * this parser never sees a malformed string. The defensive fallback is
+ * here for future-proofing against code paths that bypass Convex storage
+ * (tests, actions, custom clients).
+ */
+function parseInstant(iso: string): number {
+  const n = Date.parse(iso);
+  return Number.isNaN(n) ? -Infinity : n;
 }
 
 /** Helper used by tests and consumers to classify denial without re-validating. */

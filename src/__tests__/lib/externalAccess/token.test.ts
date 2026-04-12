@@ -179,6 +179,33 @@ describe("validateToken — expired access", () => {
     expect(result.granted).toBe(false);
     if (!result.granted) expect(result.reason).toBe("expired");
   });
+
+  it("correctly compares offset timestamps against UTC (past instant)", () => {
+    // 2028-04-12T20:30:00+01:00 === 2028-04-12T19:30:00Z (earlier than 19:45Z)
+    // A naive string compare would rank the offset string after the Z string
+    // lexicographically, flipping real chronology. Parse-based compare fixes it.
+    const record = recordFixture({ expiresAt: "2028-04-12T20:30:00+01:00" });
+    const result = validateToken({
+      record,
+      presentedHash: record.hashedToken,
+      intendedAction: "view_offer",
+      now: "2028-04-12T19:45:00.000Z", // Already past true expiry (19:30Z)
+    });
+    expect(result.granted).toBe(false);
+    if (!result.granted) expect(result.reason).toBe("expired");
+  });
+
+  it("grants access when offset timestamp resolves to a future instant", () => {
+    // 2028-04-12T21:00:00+01:00 === 2028-04-12T20:00:00Z
+    const record = recordFixture({ expiresAt: "2028-04-12T21:00:00+01:00" });
+    const result = validateToken({
+      record,
+      presentedHash: record.hashedToken,
+      intendedAction: "view_offer",
+      now: "2028-04-12T19:45:00.000Z",
+    });
+    expect(result.granted).toBe(true);
+  });
 });
 
 describe("validateToken — denied access", () => {
