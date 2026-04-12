@@ -1,12 +1,15 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  assignmentStatus,
   compensationStatus,
   feeLedgerEntryType,
   feeLedgerSource,
   financingType,
+  payoutStatus,
   reconciliationReportType,
   reconciliationReviewStatus,
+  routingPath,
 } from "./lib/validators";
 
 // ─── buyer-v2 Convex Schema ─────────────────────────────────────────────────
@@ -486,4 +489,65 @@ export default defineSchema({
     .index("by_reportType", ["reportType"])
     .index("by_reviewStatus", ["reviewStatus"])
     .index("by_reportMonth", ["reportMonth"]),
+
+  // ═══ AGENT COVERAGE & PAYOUTS (KIN-804) ═══
+
+  agentCoverage: defineTable({
+    agentId: v.id("users"),
+    coverageAreas: v.array(
+      v.object({
+        zip: v.string(),
+        city: v.optional(v.string()),
+        county: v.optional(v.string()),
+      })
+    ),
+    isActive: v.boolean(),
+    maxToursPerDay: v.optional(v.number()),
+    fixedFeePerShowing: v.number(),
+    brokerage: v.string(),
+    brokerageId: v.optional(v.string()),
+    licenseNumber: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_agentId", ["agentId"])
+    .index("by_isActive", ["isActive"]),
+
+  tourAssignments: defineTable({
+    tourId: v.id("tours"),
+    agentId: v.id("users"),
+    routingPath: routingPath,
+    status: assignmentStatus,
+    showamiFallbackId: v.optional(v.string()),
+    assignedAt: v.string(),
+    completedAt: v.optional(v.string()),
+    canceledAt: v.optional(v.string()),
+    cancelReason: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  })
+    .index("by_tourId", ["tourId"])
+    .index("by_agentId", ["agentId"])
+    .index("by_agentId_and_status", ["agentId", "status"])
+    .index("by_routingPath", ["routingPath"]),
+
+  showingPayouts: defineTable({
+    tourAssignmentId: v.id("tourAssignments"),
+    tourId: v.id("tours"),
+    agentId: v.id("users"),
+    brokerage: v.string(),
+    feeAmount: v.number(),
+    payoutStatus: payoutStatus,
+    approvedBy: v.optional(v.id("users")),
+    approvedAt: v.optional(v.string()),
+    paidAt: v.optional(v.string()),
+    batchMonth: v.optional(v.string()),
+    invoiceReference: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_tourAssignmentId", ["tourAssignmentId"])
+    .index("by_agentId", ["agentId"])
+    .index("by_payoutStatus", ["payoutStatus"])
+    .index("by_batchMonth", ["batchMonth"])
+    .index("by_tourId", ["tourId"]),
 });

@@ -131,3 +131,28 @@ export const reconciliationReviewStatus = v.union(
   v.literal("reviewed"),
   v.literal("resolved")
 );
+
+// ─── Agent Coverage & Payouts (KIN-804) ────────────────────────────────────
+
+// Tour assignment routing path
+export const routingPath = v.union(
+  v.literal("network"),     // assigned from own agent network
+  v.literal("showami"),     // fallback to Showami marketplace
+  v.literal("manual")       // manual broker queue assignment
+);
+
+// Tour assignment status
+export const assignmentStatus = v.union(
+  v.literal("pending"),
+  v.literal("confirmed"),
+  v.literal("in_progress"),
+  v.literal("completed"),
+  v.literal("canceled")
+);
+
+// Showing payout status
+export const payoutStatus = v.union(
+  v.literal("pending"),
+  v.literal("approved"),
+  v.literal("paid")
+);
