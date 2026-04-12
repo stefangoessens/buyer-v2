@@ -9,6 +9,13 @@
  */
 
 import type * as aiEngineOutputs from "../aiEngineOutputs.js";
+import type * as buyerProfiles from "../buyerProfiles.js";
+import type * as dealRooms from "../dealRooms.js";
+import type * as engines_comps from "../engines/comps.js";
+import type * as engines_cost from "../engines/cost.js";
+import type * as engines_leverage from "../engines/leverage.js";
+import type * as engines_offer from "../engines/offer.js";
+import type * as engines_pricing from "../engines/pricing.js";
 import type * as health from "../health.js";
 import type * as intake from "../intake.js";
 import type * as lib_engineResult from "../lib/engineResult.js";
@@ -17,6 +24,7 @@ import type * as lib_session from "../lib/session.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as promptRegistry from "../promptRegistry.js";
 import type * as properties from "../properties.js";
+import type * as propertyMerge from "../propertyMerge.js";
 import type * as security_dataExport from "../security/dataExport.js";
 import type * as security_dataExportAction from "../security/dataExportAction.js";
 import type * as security_deletionRequest from "../security/deletionRequest.js";
@@ -31,6 +39,13 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   aiEngineOutputs: typeof aiEngineOutputs;
+  buyerProfiles: typeof buyerProfiles;
+  dealRooms: typeof dealRooms;
+  "engines/comps": typeof engines_comps;
+  "engines/cost": typeof engines_cost;
+  "engines/leverage": typeof engines_leverage;
+  "engines/offer": typeof engines_offer;
+  "engines/pricing": typeof engines_pricing;
   health: typeof health;
   intake: typeof intake;
   "lib/engineResult": typeof lib_engineResult;
@@ -39,6 +54,7 @@ declare const fullApi: ApiFromModules<{
   "lib/validators": typeof lib_validators;
   promptRegistry: typeof promptRegistry;
   properties: typeof properties;
+  propertyMerge: typeof propertyMerge;
   "security/dataExport": typeof security_dataExport;
   "security/dataExportAction": typeof security_dataExportAction;
   "security/deletionRequest": typeof security_deletionRequest;
