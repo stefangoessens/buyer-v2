@@ -1731,6 +1731,67 @@ export default defineSchema({
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_intent", ["intent"]),
 
+  // ═══ INTERNAL SETTINGS (KIN-807) ═══
+  //
+  // Mutable brokerage + product configuration. One row per
+  // catalog-registered key. Values are stored as a discriminated
+  // union so the Convex layer enforces the same kind at runtime
+  // as the pure validator in `src/lib/settings/logic.ts`.
+  //
+  // Every write also appends a row to `settingsAuditLog` so the
+  // change is traceable to a user + reason + timestamp.
+  settingsEntries: defineTable({
+    key: v.string(),
+    // Tagged value — `kind` discriminator matches the catalog entry.
+    // Exactly one of the *Value fields is set for any given row.
+    kind: v.union(
+      v.literal("string"),
+      v.literal("number"),
+      v.literal("boolean"),
+      v.literal("richText"),
+      v.literal("json")
+    ),
+    stringValue: v.optional(v.string()),
+    numberValue: v.optional(v.number()),
+    booleanValue: v.optional(v.boolean()),
+    richTextValue: v.optional(v.string()),
+    // JSON is stored as `any` — Convex doesn't have a generic
+    // object schema, and nested validation is the catalog's job.
+    jsonValue: v.optional(v.any()),
+    updatedAt: v.string(),
+    updatedBy: v.string(),
+  }).index("by_key", ["key"]),
+
+  settingsAuditLog: defineTable({
+    key: v.string(),
+    // Store both the previous and next value inline so the audit
+    // entry is self-contained. Nullable previous for the first
+    // write to a key.
+    previousKind: v.optional(
+      v.union(
+        v.literal("string"),
+        v.literal("number"),
+        v.literal("boolean"),
+        v.literal("richText"),
+        v.literal("json")
+      )
+    ),
+    previousJson: v.optional(v.any()),
+    nextKind: v.union(
+      v.literal("string"),
+      v.literal("number"),
+      v.literal("boolean"),
+      v.literal("richText"),
+      v.literal("json")
+    ),
+    nextJson: v.any(),
+    changedBy: v.string(),
+    reason: v.string(),
+    changedAt: v.string(),
+  })
+    .index("by_key_and_changedAt", ["key", "changedAt"])
+    .index("by_changedAt", ["changedAt"]),
+
   // ═══ RELEASE READINESS ITEMS (KIN-846) ═══
   //
   // Launch readiness checklist. One row per tracked item. The ops
