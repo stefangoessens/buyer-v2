@@ -1,15 +1,11 @@
 "use client";
 
-import { useMutation } from "convex/react";
 import { useCallback, useState } from "react";
-import { api } from "../../../convex/_generated/api";
-import type { FunctionReference } from "convex/server";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { TrustBar } from "@/components/marketing/TrustBar";
 import { FeatureCard } from "@/components/marketing/FeatureCard";
 import { TestimonialCard } from "@/components/marketing/TestimonialCard";
 import { PasteLinkInput } from "@/components/marketing/PasteLinkInput";
-import { track } from "@/lib/analytics";
 
 const trustStats = [
   { value: "500+", label: "Buyers served" },
@@ -67,38 +63,14 @@ const testimonials = [
 ];
 
 export default function Home() {
-  // intake module exists but isn't in generated types yet — cast through unknown
-  const submitUrl = useMutation(
-    (api as unknown as Record<string, Record<string, FunctionReference<"mutation">>>)
-      .intake.submitUrl,
-  );
   const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = useCallback(
-    async (url: string) => {
-      track("link_pasted", { url, source: "hero" });
-      setSubmitted(true);
-      try {
-        await submitUrl({ url });
-      } catch {
-        // Error handling deferred to deal room flow
-      }
-    },
-    [submitUrl],
-  );
-
-  const handleCtaSubmit = useCallback(
-    async (url: string) => {
-      track("link_pasted", { url, source: "bottom_cta" });
-      setSubmitted(true);
-      try {
-        await submitUrl({ url });
-      } catch {
-        // Error handling deferred to deal room flow
-      }
-    },
-    [submitUrl],
-  );
+  // PasteLinkInput handles track("link_pasted") internally — no duplicate here
+  const handleSubmit = useCallback(async (_url: string) => {
+    setSubmitted(true);
+    // Convex submitUrl mutation will be called when Convex is available
+    // For now, the paste-link flow transitions to the deal room on the next page
+  }, []);
 
   return (
     <>
@@ -210,7 +182,7 @@ export default function Home() {
                 Analyzing your property...
               </div>
             ) : (
-              <PasteLinkInput variant="hero" onSubmit={handleCtaSubmit} />
+              <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
             )}
           </div>
         </div>
