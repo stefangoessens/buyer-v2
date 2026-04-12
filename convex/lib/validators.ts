@@ -173,3 +173,14 @@ export const availabilityStatus = v.union(
   v.literal("unavailable"),
   v.literal("booked")
 );
+
+// ─── Communication Templates (KIN-835) ─────────────────────────────────────
+
+// Communication channel — which delivery surface the template targets.
+// "email" and "push" may have a subject; "sms" and "in_app" are body-only.
+export const communicationChannel = v.union(
+  v.literal("email"),
+  v.literal("sms"),
+  v.literal("in_app"),
+  v.literal("push")
+);
