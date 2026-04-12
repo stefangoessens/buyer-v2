@@ -1138,4 +1138,55 @@ export default defineSchema({
     .index("by_messageSid", ["messageSid"])
     .index("by_phoneHash", ["phoneHash"])
     .index("by_outcome", ["outcome"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NEGOTIATION BRIEF EXPORTS (KIN-839)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // A negotiation brief is a typed, auditable export artifact composed from
+  // pricing, comps, leverage, and offer engine outputs plus buyer strength
+  // inputs. Brokers generate it to hand to listing agents as structured
+  // negotiation data. Regeneration is deterministic given the same source
+  // versions — the `sourceVersions` field lets us detect staleness and mark
+  // old briefs when any upstream engine output changes.
+
+  negotiationBriefs: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    propertyId: v.id("properties"),
+    offerId: v.optional(v.id("offers")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("ready"),
+      v.literal("failed"),
+      v.literal("stale"),
+    ),
+    // Full brief payload as JSON-serialized string. Kept opaque to Convex so
+    // we can evolve the payload shape without schema migrations.
+    payload: v.optional(v.string()),
+    // Version fingerprint of every engine output used to assemble this brief,
+    // plus the builder's own version. Compared against fresh inputs to
+    // decide if the brief is stale.
+    sourceVersions: v.object({
+      pricingVersion: v.optional(v.string()),
+      compsVersion: v.optional(v.string()),
+      leverageVersion: v.optional(v.string()),
+      offerVersion: v.optional(v.string()),
+      builderVersion: v.string(),
+    }),
+    // Set by generator on success. 0-1 coverage ratio of how many sections
+    // were populated vs missing.
+    coverage: v.optional(v.number()),
+    // Failure details — populated when status = "failed".
+    errorMessage: v.optional(v.string()),
+    errorCount: v.number(),
+    // Who triggered the generation. Required for audit trail.
+    generatedBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    completedAt: v.optional(v.string()),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_propertyId", ["propertyId"])
+    .index("by_status", ["status"])
+    .index("by_offerId", ["offerId"]),
 });
