@@ -69,13 +69,18 @@ export const registerToken = mutation({
       // Replace or reactivate — same row, updated token + metadata.
       // Clearing invalidatedAt handles the "reactivate" case; on a
       // simple replace it's already undefined so this is a no-op.
+      //
+      // Preserve existing optional metadata when the caller omits it —
+      // clients may send a light-weight registration (e.g. after a token
+      // rotation) without re-sending deviceId/appVersion/osVersion, and
+      // we don't want to clear the device binding in that case.
       await ctx.db.patch(match._id, {
         token: args.token,
         platform: args.platform,
         environment: args.environment,
-        deviceId: args.deviceId,
-        appVersion: args.appVersion,
-        osVersion: args.osVersion,
+        deviceId: args.deviceId ?? match.deviceId,
+        appVersion: args.appVersion ?? match.appVersion,
+        osVersion: args.osVersion ?? match.osVersion,
         lastSeenAt: now,
         invalidatedAt: undefined,
         updatedAt: now,
@@ -148,28 +153,47 @@ export const invalidateToken = mutation({
 });
 
 /**
- * Delete all device token rows for the caller.
+ * Delete device token rows for the caller on sign-out.
  *
- * Called on sign-out so push notifications stop flowing to the device
- * and no stale token references remain. Returns the number of rows
- * deleted so the client can verify the cleanup happened.
+ * IMPORTANT: Scoped to the current device only, not all rows for the user.
+ * Bulk-deleting every token on sign-out would silently stop notifications
+ * on other devices where the user is still signed in. The caller must
+ * identify its device via `deviceId` (preferred) or the exact `token`
+ * string. Returns the number of rows actually deleted (0 if none match).
  */
 export const cleanupForUser = mutation({
-  args: {},
+  args: {
+    deviceId: v.optional(v.string()),
+    token: v.optional(v.string()),
+  },
   returns: v.number(),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
+
+    // Require at least one identifier so we can scope the deletion.
+    if (!args.deviceId && !args.token) {
+      return 0;
+    }
 
     const rows = await ctx.db
       .query("deviceTokens")
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .collect();
 
-    for (const row of rows) {
+    // Match by deviceId (preferred) first, then fall back to exact token.
+    // If the client sent both, we delete rows where EITHER matches —
+    // covers the case where the row's deviceId field was never set.
+    const toDelete = rows.filter((row) => {
+      if (args.deviceId && row.deviceId === args.deviceId) return true;
+      if (args.token && row.token === args.token) return true;
+      return false;
+    });
+
+    for (const row of toDelete) {
       await ctx.db.delete(row._id);
     }
 
-    return rows.length;
+    return toDelete.length;
   },
 });
 

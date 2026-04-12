@@ -19,6 +19,8 @@ final class MockTokenSyncBackend: TokenSyncBackend, @unchecked Sendable {
 
     var lastRegistration: DeviceTokenRegistration?
     var lastInvalidatedToken: String?
+    var lastCleanupDeviceId: String?
+    var lastCleanupToken: String?
 
     func register(_ registration: DeviceTokenRegistration) async throws {
         registerCallCount += 1
@@ -32,8 +34,10 @@ final class MockTokenSyncBackend: TokenSyncBackend, @unchecked Sendable {
         try invalidateResult.get()
     }
 
-    func cleanup() async throws {
+    func cleanup(deviceId: String?, token: String?) async throws {
         cleanupCallCount += 1
+        lastCleanupDeviceId = deviceId
+        lastCleanupToken = token
         try cleanupResult.get()
     }
 }
@@ -208,14 +212,16 @@ struct DeviceTokenSyncServiceTests {
 
     // MARK: - Cleanup On Sign-Out Success
 
-    @Test("cleanupOnSignOut success resets state to .idle and calls backend.cleanup")
+    @Test("cleanupOnSignOut success resets state to .idle and calls backend.cleanup with current device scope")
     func testCleanupOnSignOutSuccess() async {
         let backend = MockTokenSyncBackend()
         backend.registerResult = .success(())
         backend.cleanupResult = .success(())
 
         let service = DeviceTokenSyncService(backend: backend)
-        await service.registerDeviceToken(makeRegistration(token: "token-1"))
+        await service.registerDeviceToken(
+            makeRegistration(token: "token-1", deviceId: "device-1")
+        )
 
         // Precondition
         guard case .registered = service.state else {
@@ -223,6 +229,7 @@ struct DeviceTokenSyncServiceTests {
             return
         }
         #expect(service.currentToken == "token-1")
+        #expect(service.currentDeviceId == "device-1")
 
         await service.cleanupOnSignOut()
 
@@ -231,7 +238,11 @@ struct DeviceTokenSyncServiceTests {
             return
         }
         #expect(service.currentToken == nil)
+        #expect(service.currentDeviceId == nil)
         #expect(backend.cleanupCallCount == 1)
+        // Cleanup must be scoped to the CURRENT device, not the whole user
+        #expect(backend.lastCleanupDeviceId == "device-1")
+        #expect(backend.lastCleanupToken == "token-1")
     }
 
     // MARK: - Cleanup On Sign-Out Failure Still Resets
