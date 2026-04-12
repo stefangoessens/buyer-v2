@@ -99,17 +99,23 @@ export const initiateUpgrade = mutation({
       throw new Error("Only brokers and admins can initiate upgrades");
     }
 
-    // Find the current signed tour_pass
+    // Validate deal room belongs to this buyer
+    const dealRoom = await ctx.db.get(args.dealRoomId);
+    if (!dealRoom || dealRoom.buyerId !== args.buyerId) {
+      throw new Error("Deal room not found or does not belong to this buyer");
+    }
+
+    // Find the current signed tour_pass scoped to this deal room
     const agreements = await ctx.db
       .query("agreements")
-      .withIndex("by_buyerId_and_type", (q) =>
-        q.eq("buyerId", args.buyerId).eq("type", "tour_pass")
-      )
+      .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
       .collect();
-    const currentTourPass = agreements.find((a) => a.status === "signed");
+    const currentTourPass = agreements.find(
+      (a) => a.type === "tour_pass" && a.status === "signed" && a.buyerId === args.buyerId
+    );
 
     if (!currentTourPass) {
-      throw new Error("No signed Tour Pass found to upgrade");
+      throw new Error("No signed Tour Pass found for this deal room");
     }
 
     // Mark current as replaced
@@ -118,10 +124,10 @@ export const initiateUpgrade = mutation({
       canceledAt: new Date().toISOString(),
     });
 
-    // Create new full_representation draft
+    // Create new full_representation draft scoped to same buyer/deal room
     const newId = await ctx.db.insert("agreements", {
-      dealRoomId: args.dealRoomId,
-      buyerId: args.buyerId,
+      dealRoomId: currentTourPass.dealRoomId,
+      buyerId: currentTourPass.buyerId,
       type: "full_representation",
       status: "draft",
       documentStorageId: args.documentStorageId,
