@@ -509,13 +509,26 @@ export function buildStatusBadge(status: DealStatus): StatusBadge {
 function buildInternalSummary(
   engines: RawEngineOutput[],
 ): NonNullable<DealRoomOverview["internal"]> {
-  const providedBy = Array.from(new Set(engines.map((e) => e.engineType))).sort();
-  const pendingEngines = Array.from(
-    new Set(
-      engines.filter((e) => e.reviewState === "pending").map((e) => e.engineType),
-    ),
-  ).sort();
-  const approvedEngines = engines.filter((e) => e.reviewState === "approved");
+  // De-duplicate by engine type first — pick the latest output per
+  // type, matching what `composeOverview` uses to build the visible
+  // sections. Otherwise a stale `pending` row from an older run could
+  // coexist with a newer `approved` row and report pending work that
+  // no longer blocks the overview.
+  const latestByType = new Map<string, RawEngineOutput>();
+  for (const engine of engines) {
+    const existing = latestByType.get(engine.engineType);
+    if (!existing || engine.generatedAt > existing.generatedAt) {
+      latestByType.set(engine.engineType, engine);
+    }
+  }
+  const latest = Array.from(latestByType.values());
+
+  const providedBy = Array.from(latestByType.keys()).sort();
+  const pendingEngines = latest
+    .filter((e) => e.reviewState === "pending")
+    .map((e) => e.engineType)
+    .sort();
+  const approvedEngines = latest.filter((e) => e.reviewState === "approved");
   const lastFullRefreshAt =
     approvedEngines.length > 0
       ? approvedEngines.map((e) => e.generatedAt).sort().slice(-1)[0]

@@ -299,6 +299,33 @@ describe("composeOverview — role-based filtering", () => {
     );
     expect(result.internal?.lastFullRefreshAt).toBe("2026-04-10T00:00:00.000Z");
   });
+
+  it("dedupes pendingEngines to latest per engine type (codex P2 fix)", () => {
+    // Codex flagged that an older pending row could coexist with a
+    // newer approved row for the same engine type and still show up
+    // as pending work. Fix: pendingEngines must reflect the latest
+    // output per engine, not every historical row.
+    const result = composeOverview(
+      mkInputs({
+        engines: [
+          // Old pending pricing row — should be superseded.
+          mkEngine({
+            reviewState: "pending",
+            generatedAt: "2026-04-01T00:00:00.000Z",
+          }),
+          // Newer approved pricing row — this is what should drive state.
+          mkEngine({
+            reviewState: "approved",
+            generatedAt: "2026-04-10T00:00:00.000Z",
+          }),
+        ],
+      }),
+      { forRole: "broker" },
+    );
+    expect(result.pricing.status).toBe("available");
+    expect(result.internal?.pendingEngines).not.toContain("pricing");
+    expect(result.internal?.pendingEngines).toEqual([]);
+  });
 });
 
 describe("buildStatusBadge", () => {
