@@ -1,5 +1,6 @@
-import { query, mutation, internalQuery } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { requireAuth } from "./lib/session";
 
 export const get = query({
   args: { userId: v.id("users") },
@@ -44,7 +45,9 @@ export const getByEmail = internalQuery({
   },
 });
 
-export const create = mutation({
+// User creation is internal-only — called by auth hooks, not by clients directly.
+// This prevents privilege escalation via caller-supplied roles.
+export const create = internalMutation({
   args: {
     email: v.string(),
     name: v.string(),
@@ -66,21 +69,22 @@ export const create = mutation({
 
 export const updateProfile = mutation({
   args: {
-    userId: v.id("users"),
     name: v.optional(v.string()),
     phone: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const { userId, ...updates } = args;
+    // Enforce ownership — users can only update their own profile
+    const currentUser = await requireAuth(ctx);
+
     const patch: Record<string, string> = {};
-    if (updates.name !== undefined) patch.name = updates.name;
-    if (updates.phone !== undefined) patch.phone = updates.phone;
-    if (updates.avatarUrl !== undefined) patch.avatarUrl = updates.avatarUrl;
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.phone !== undefined) patch.phone = args.phone;
+    if (args.avatarUrl !== undefined) patch.avatarUrl = args.avatarUrl;
 
     if (Object.keys(patch).length > 0) {
-      await ctx.db.patch(userId, patch);
+      await ctx.db.patch(currentUser._id, patch);
     }
     return null;
   },
