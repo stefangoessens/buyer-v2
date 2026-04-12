@@ -37,6 +37,78 @@ export interface PricingOutput {
   overallConfidence: number;
 }
 
+// ═══ Comps Engine Types ═══
+
+/** Comparable property candidate from sold listings */
+export interface CompCandidate {
+  canonicalId: string;
+  address: string;
+  soldPrice: number;
+  soldDate: string;
+  listPrice?: number;
+  beds: number;
+  baths: number;
+  sqft: number;
+  yearBuilt: number;
+  lotSize?: number;
+  propertyType: string;
+  waterfront?: boolean;
+  pool?: boolean;
+  hoaFee?: number;
+  subdivision?: string;
+  zip: string;
+  sourcePlatform: string;
+  dom?: number;
+}
+
+/** Subject property for comps comparison */
+export interface CompsSubject {
+  address: string;
+  beds: number;
+  baths: number;
+  sqft: number;
+  yearBuilt: number;
+  lotSize?: number;
+  propertyType: string;
+  waterfront?: boolean;
+  pool?: boolean;
+  hoaFee?: number;
+  subdivision?: string;
+  zip: string;
+  listPrice: number;
+}
+
+export interface CompsInput {
+  subject: CompsSubject;
+  candidates: CompCandidate[];
+  maxComps?: number;
+}
+
+export interface CompResult {
+  candidate: CompCandidate;
+  similarityScore: number;
+  explanation: string;
+  sourceCitation: string;
+}
+
+export interface CompsAggregates {
+  medianSoldPrice: number;
+  medianPricePerSqft: number;
+  medianDom: number;
+  medianSaleToListRatio: number;
+}
+
+export interface CompsOutput {
+  comps: CompResult[];
+  aggregates: CompsAggregates;
+  selectionBasis: "subdivision" | "zip" | "school_zone";
+  selectionReason: string;
+  totalCandidates: number;
+  dedupedCandidates: number;
+}
+
+// ═══ Calibration ═══
+
 /** Calibration record for accuracy tracking */
 export interface CalibrationRecord {
   propertyId: string;
