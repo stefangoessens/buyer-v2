@@ -108,6 +108,14 @@ export async function orchestrate(
         input.question,
         input.dealContext,
       );
+      const cleaned = text.trim();
+      if (cleaned.length === 0) {
+        return {
+          classification,
+          response: composeOffTopicRefusal(input.question),
+          debug,
+        };
+      }
       return {
         classification,
         response: {
@@ -116,7 +124,7 @@ export async function orchestrate(
           stubbed: false,
           requiresLlm: false,
           citations: [],
-          text: text.trim(),
+          text: cleaned,
         },
         debug,
       };

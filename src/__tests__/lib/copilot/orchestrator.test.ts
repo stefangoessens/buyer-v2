@@ -105,6 +105,21 @@ describe("orchestrate", () => {
     expect(result.response.text).toContain("only help");
   });
 
+  it("falls back to refusal when guarded general returns empty text", async () => {
+    const result = await orchestrate(
+      {
+        question: "Recipe for paella?",
+        propertyId: "p1",
+        dealContext: "",
+      },
+      makeDeps({
+        llmGuardedGeneral: async () => "   ",
+      }),
+    );
+    expect(result.response.stubbed).toBe(true);
+    expect(result.response.text).toContain("only help");
+  });
+
   it("stubs when llmRespond throws", async () => {
     const result = await orchestrate(
       {

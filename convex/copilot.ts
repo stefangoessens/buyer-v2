@@ -255,17 +255,89 @@ export const ask = action({
       };
     };
 
-    const llmClassify = async () => {
-      return { intent: "other" as const, confidence: 0.4, method: "fallback" as const };
+    const { gateway } = await import("../src/lib/ai/gateway");
+    const {
+      COPILOT_CLASSIFIER_SYSTEM,
+      COPILOT_RESPONSE_SYSTEM,
+      COPILOT_GUARDED_GENERAL_SYSTEM,
+    } = await import("../src/lib/copilot/prompts");
+    const { ALL_INTENTS } = await import("../src/lib/copilot/intents");
+
+    const FALLBACK_GUARDED =
+      "I can only help with questions about this property and the buying process. Try asking about pricing, comps, offer terms, or next steps.";
+
+    const llmClassify = async (question: string) => {
+      const result = await gateway({
+        engineType: "copilot",
+        messages: [
+          { role: "system", content: COPILOT_CLASSIFIER_SYSTEM },
+          { role: "user", content: `Question: ${question}\n\nIntent:` },
+        ],
+        maxTokens: 12,
+        temperature: 0,
+      });
+      if (!result.success) {
+        return {
+          intent: "other" as const,
+          confidence: 0.4,
+          method: "fallback" as const,
+        };
+      }
+      const raw = result.data.content.trim().toLowerCase();
+      const matched = (ALL_INTENTS as ReadonlyArray<string>).find((i) =>
+        raw.startsWith(i),
+      );
+      return {
+        intent: (matched ?? "other") as (typeof ALL_INTENTS)[number],
+        confidence: matched ? 0.9 : 0.45,
+        method: "llm" as const,
+      };
     };
 
-    const llmRespond = async () => {
-      // Grounded answer generation currently returns a terse
-      // engine-tethered summary; wiring to the gateway lives in a follow-up.
-      return "";
+    const llmRespond = async (
+      intent: string,
+      engineRef: { snippet: string; engine: string },
+      question: string,
+    ) => {
+      void intent;
+      const result = await gateway({
+        engineType: "copilot",
+        messages: [
+          { role: "system", content: COPILOT_RESPONSE_SYSTEM },
+          {
+            role: "user",
+            content: `Buyer question: ${question}\n\nEngine (${engineRef.engine}) output: ${engineRef.snippet}\n\nRender a short grounded answer (<=4 sentences). Cite the engine name.`,
+          },
+        ],
+        maxTokens: 320,
+        temperature: 0.2,
+      });
+      if (!result.success) {
+        return `Based on the ${engineRef.engine} engine output: ${engineRef.snippet.slice(0, 200)}`;
+      }
+      const trimmed = result.data.content.trim();
+      return trimmed.length > 0
+        ? trimmed
+        : `Based on the ${engineRef.engine} engine output: ${engineRef.snippet.slice(0, 200)}`;
     };
 
-    const llmGuardedGeneral = async () => "";
+    const llmGuardedGeneral = async (question: string, dealContext: string) => {
+      const result = await gateway({
+        engineType: "copilot",
+        messages: [
+          { role: "system", content: COPILOT_GUARDED_GENERAL_SYSTEM },
+          {
+            role: "user",
+            content: `Deal room context: ${dealContext}\n\nBuyer question: ${question}\n\nAnswer (<=3 sentences):`,
+          },
+        ],
+        maxTokens: 200,
+        temperature: 0.3,
+      });
+      if (!result.success) return FALLBACK_GUARDED;
+      const trimmed = result.data.content.trim();
+      return trimmed.length > 0 ? trimmed : FALLBACK_GUARDED;
+    };
 
     const result = await orchestrate(
       {
