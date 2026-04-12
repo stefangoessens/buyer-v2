@@ -368,4 +368,77 @@ describe("buildStructuredData", () => {
     const author = data.author as Record<string, unknown>;
     expect(author.name).toBe("Jane Buyer");
   });
+
+  // Codex PR #51 regression — publishedAt vs lastModified split
+
+  it("Article JSON-LD uses publishedAt for datePublished", () => {
+    const data = buildStructuredData(
+      makeInput({
+        kind: "article",
+        path: "/blog/x",
+        publishedAt: "2026-03-01",
+        lastModified: "2026-04-10",
+      })
+    );
+    expect(data.datePublished).toBe("2026-03-01");
+    expect(data.dateModified).toBe("2026-04-10");
+  });
+
+  it("Article JSON-LD falls back to lastModified when publishedAt missing", () => {
+    const data = buildStructuredData(
+      makeInput({
+        kind: "article",
+        path: "/blog/x",
+        lastModified: "2026-04-10",
+      })
+    );
+    expect(data.datePublished).toBe("2026-04-10");
+    expect(data.dateModified).toBe("2026-04-10");
+  });
+
+  it("Article JSON-LD omits date fields when neither is supplied", () => {
+    const data = buildStructuredData(
+      makeInput({ kind: "article", path: "/blog/x" })
+    );
+    expect(data.datePublished).toBeUndefined();
+    expect(data.dateModified).toBeUndefined();
+  });
+});
+
+describe("buildMetadata article time fields (codex PR #51 regression)", () => {
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_SITE_URL = "https://buyerv2.com";
+  });
+
+  it("sets publishedTime from publishedAt, modifiedTime from lastModified", () => {
+    const md = buildMetadata(
+      makeInput({
+        kind: "article",
+        path: "/blog/x",
+        publishedAt: "2026-03-01",
+        lastModified: "2026-04-10",
+      })
+    );
+    const og = md.openGraph as
+      | { publishedTime?: string; modifiedTime?: string }
+      | undefined;
+    expect(og?.publishedTime).toBe("2026-03-01");
+    expect(og?.modifiedTime).toBe("2026-04-10");
+  });
+
+  it("non-article pages do not get publishedTime/modifiedTime", () => {
+    const md = buildMetadata(
+      makeInput({
+        kind: "marketing",
+        path: "/pricing",
+        publishedAt: "2026-03-01",
+        lastModified: "2026-04-10",
+      })
+    );
+    const og = md.openGraph as
+      | { publishedTime?: string; modifiedTime?: string }
+      | undefined;
+    expect(og?.publishedTime).toBeUndefined();
+    expect(og?.modifiedTime).toBeUndefined();
+  });
 });

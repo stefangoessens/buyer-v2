@@ -80,11 +80,21 @@ export interface SeoInput {
    */
   social?: SocialPreview;
   /**
-   * ISO-8601 date string for content that has a publication or last-
-   * modified date (legal docs, articles). Used in JSON-LD and in the
-   * sitemap's `<lastmod>` field.
+   * ISO-8601 date the content was LAST MODIFIED. Used in JSON-LD as
+   * `dateModified` and in the sitemap's `<lastmod>` field. For
+   * content that has never been updated since publication, this is
+   * the same as `publishedAt`.
    */
   lastModified?: string;
+  /**
+   * ISO-8601 date the content was FIRST PUBLISHED. Used in JSON-LD
+   * Article payloads as `datePublished` and in OpenGraph's
+   * `article:published_time` — both search engines and social
+   * networks expect this to be the original publication date, not
+   * the most recent edit. For content with no edits, defaults to
+   * `lastModified` inside the builder.
+   */
+  publishedAt?: string;
   /**
    * For paginated or canonicalized alternate URLs — e.g. a query-
    * string variant that should point back at the canonical path.
