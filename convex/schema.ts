@@ -1328,4 +1328,35 @@ export default defineSchema({
     .index("by_tokenId", ["tokenId"])
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_eventType_and_timestamp", ["eventType", "timestamp"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROPERTY CASE SYNTHESIS (KIN-854)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Cached output of the property case synthesizer for a given (property,
+  // inputHash, synthesisVersion) triple. Callers look up by propertyId and
+  // inputHash to reuse a cached synthesis; if no match they run the
+  // synthesizer and upsert the result here.
+  //
+  // The `claims` payload is stored as a JSON string so the synthesizer can
+  // evolve the claim shape without schema migrations. Consumers parse it
+  // via the shared type in `src/lib/ai/engines/caseSynthesis.ts`.
+
+  propertyCases: defineTable({
+    propertyId: v.id("properties"),
+    dealRoomId: v.optional(v.id("dealRooms")),
+    inputHash: v.string(),
+    synthesisVersion: v.string(),
+    // Serialized PropertyCase (claims[], recommendedAction, confidence).
+    payload: v.string(),
+    overallConfidence: v.number(),
+    contributingEngines: v.number(),
+    droppedEngines: v.array(v.string()),
+    generatedAt: v.string(),
+    // Number of times this cache entry has been served — informs eviction.
+    hitCount: v.number(),
+  })
+    .index("by_propertyId", ["propertyId"])
+    .index("by_propertyId_and_inputHash", ["propertyId", "inputHash"])
+    .index("by_dealRoomId", ["dealRoomId"]),
 });
