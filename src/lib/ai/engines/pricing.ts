@@ -57,12 +57,12 @@ export function buildPricePoint(
 ): PricePoint {
   return {
     value: Math.round(value),
-    deltaVsListPrice: Number(
-      (((value - listPrice) / listPrice) * 100).toFixed(1),
-    ),
-    deltaVsConsensus: Number(
-      (((value - consensus) / consensus) * 100).toFixed(1),
-    ),
+    deltaVsListPrice: listPrice > 0
+      ? Number((((value - listPrice) / listPrice) * 100).toFixed(1))
+      : 0,
+    deltaVsConsensus: consensus > 0
+      ? Number((((value - consensus) / consensus) * 100).toFixed(1))
+      : 0,
     confidence: Number(baseConfidence.toFixed(2)),
   };
 }
@@ -129,6 +129,15 @@ export function parsePricingResponse(
     if (!jsonMatch) return null;
 
     const parsed = JSON.parse(jsonMatch[0]);
+
+    // Validate required numeric fields
+    const required = ["fairValue", "likelyAccepted", "strongOpener", "walkAway"];
+    for (const field of required) {
+      if (typeof parsed[field] !== "number" || !isFinite(parsed[field]) || parsed[field] <= 0) {
+        return null;
+      }
+    }
+
     const spreadAdj = spreadConfidenceAdjustment(spread);
 
     return {
