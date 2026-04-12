@@ -100,7 +100,14 @@ function toState(doc: Doc<"propertyComparisons">): ComparisonState {
   };
 }
 
-/** Project a comparison state + property lookup into the API result. */
+/**
+ * Project a comparison state + property lookup into the API result.
+ * Uses the VISIBLE row count (not the stored-ID count) so the buyer
+ * doesn't see stale slot reservations from properties deleted in
+ * another tab. Mutations prune missing IDs from the persisted state
+ * via `pruneMissingProperties()`; this read path just reports the
+ * current visible truth.
+ */
 async function buildResult(
   ctx: { db: { get: (id: Id<"properties">) => Promise<Doc<"properties"> | null> } },
   doc: Doc<"propertyComparisons"> | null,
@@ -125,11 +132,35 @@ async function buildResult(
   return {
     comparisonId: doc._id,
     rows,
-    propertyCount: state.propertyIds.length,
+    // Report the VISIBLE count so the UI stays consistent with what's
+    // displayed. Stored IDs may still contain stale references until
+    // a mutation prunes them.
+    propertyCount: rows.length,
     maxSize: MAX_COMPARISON_SIZE,
     hasSkipped: rows.length !== state.propertyIds.length,
     updatedAt: doc.updatedAt,
   };
+}
+
+/**
+ * Remove any stored property IDs that no longer resolve to a real
+ * property document. Called at the top of every mutation so the
+ * persisted state self-heals — otherwise a stale ID could block
+ * a subsequent `addProperty` as `comparison_full` even though the
+ * buyer sees an open slot.
+ *
+ * Returns the pruned ID list and whether anything was removed.
+ */
+async function pruneMissingProperties(
+  ctx: { db: { get: (id: Id<"properties">) => Promise<Doc<"properties"> | null> } },
+  propertyIds: Id<"properties">[],
+): Promise<{ pruned: Id<"properties">[]; removed: number }> {
+  const kept: Id<"properties">[] = [];
+  for (const id of propertyIds) {
+    const p = await ctx.db.get(id);
+    if (p) kept.push(id);
+  }
+  return { pruned: kept, removed: propertyIds.length - kept.length };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -182,10 +213,31 @@ export const addProperty = mutation({
       .unique();
 
     if (!existing) {
-      // Create a fresh comparison with this property as the first entry.
+      // First-time create — still run it through the pure helper so
+      // position bounds are validated identically to the update path.
+      // addToComparison will reject an out-of-range position on a
+      // length-0 list, matching the behavior callers get post-create.
+      const emptySeed: ComparisonState = {
+        buyerId: user._id,
+        propertyIds: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      const createResult = addToComparison(
+        emptySeed,
+        args.propertyId,
+        now,
+        args.position,
+      );
+      if (!createResult.ok) {
+        throw new Error(
+          `${createResult.error.code}: ${createResult.error.message}`,
+        );
+      }
+
       const id = await ctx.db.insert("propertyComparisons", {
         buyerId: user._id,
-        propertyIds: [args.propertyId],
+        propertyIds: createResult.state.propertyIds as Id<"properties">[],
         createdAt: now,
         updatedAt: now,
       });
@@ -203,7 +255,18 @@ export const addProperty = mutation({
       return await buildResult(ctx, fresh);
     }
 
-    const state = toState(existing);
+    // Self-heal: prune any stale IDs (properties deleted in another tab)
+    // BEFORE running the add logic, otherwise a stale ID could block
+    // this call as comparison_full even though the UI shows an open slot.
+    const { pruned, removed } = await pruneMissingProperties(
+      ctx,
+      existing.propertyIds,
+    );
+    const state: ComparisonState = {
+      ...toState(existing),
+      propertyIds: pruned,
+    };
+
     const result = addToComparison(state, args.propertyId, now, args.position);
     if (!result.ok) {
       throw new Error(`${result.error.code}: ${result.error.message}`);
@@ -213,6 +276,17 @@ export const addProperty = mutation({
       propertyIds: result.state.propertyIds as Id<"properties">[],
       updatedAt: now,
     });
+
+    if (removed > 0) {
+      await ctx.db.insert("auditLog", {
+        userId: user._id,
+        action: "property_comparison_self_healed",
+        entityType: "propertyComparisons",
+        entityId: existing._id,
+        details: JSON.stringify({ removedStaleIds: removed }),
+        timestamp: now,
+      });
+    }
 
     await ctx.db.insert("auditLog", {
       userId: user._id,
@@ -248,7 +322,12 @@ export const removeProperty = mutation({
       throw new Error("No comparison exists for this buyer");
     }
 
-    const state = toState(existing);
+    // Self-heal stale IDs before applying the remove.
+    const { pruned } = await pruneMissingProperties(ctx, existing.propertyIds);
+    const state: ComparisonState = {
+      ...toState(existing),
+      propertyIds: pruned,
+    };
     const result = removeFromComparison(state, args.propertyId, now);
     if (!result.ok) {
       throw new Error(`${result.error.code}: ${result.error.message}`);
@@ -295,7 +374,13 @@ export const reorder = mutation({
       throw new Error("No comparison exists for this buyer");
     }
 
-    const state = toState(existing);
+    // Self-heal stale IDs before reordering — otherwise the from/to
+    // positions could reference stale entries that no longer display.
+    const { pruned } = await pruneMissingProperties(ctx, existing.propertyIds);
+    const state: ComparisonState = {
+      ...toState(existing),
+      propertyIds: pruned,
+    };
     const result = reorderComparison(
       state,
       args.fromPosition,
