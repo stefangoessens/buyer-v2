@@ -15,16 +15,46 @@ struct DealTrackerShell: View {
             case .loading:
                 loadingView
             case .noDeal:
-                NoDealView()
+                NavigationStack {
+                    NoDealView()
+                        .navigationTitle("buyer-v2")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { accountMenuToolbar }
+                }
             case .activeDeal(let deal):
                 activeDealView(deal: deal)
             case .error(let message):
-                errorView(message: message)
+                NavigationStack {
+                    errorView(message: message)
+                        .navigationTitle("buyer-v2")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar { accountMenuToolbar }
+                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: dealService.state)
         .task {
             await dealService.loadDeals(for: user.id)
+        }
+    }
+
+    // MARK: - Account Menu
+
+    @ToolbarContentBuilder
+    private var accountMenuToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button(role: .destructive) {
+                    Task { await authService.signOut() }
+                } label: {
+                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+            } label: {
+                Image(systemName: "person.circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Color(hex: 0x1B2B65))
+            }
+            .accessibilityLabel("Account menu")
         }
     }
 

@@ -7,6 +7,7 @@ struct DealStatusView: View {
     let deal: DealSummary
 
     @Environment(DealService.self) private var dealService
+    @Environment(AuthService.self) private var authService
 
     var body: some View {
         ScrollView {
@@ -24,6 +25,22 @@ struct DealStatusView: View {
         }
         .navigationTitle("Your Deal")
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(role: .destructive) {
+                        Task { await authService.signOut() }
+                    } label: {
+                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                } label: {
+                    Image(systemName: "person.circle")
+                        .font(.system(size: 20))
+                        .foregroundStyle(Color(hex: 0x1B2B65))
+                }
+                .accessibilityLabel("Account menu")
+            }
+        }
     }
 
     // MARK: - Property Hero
@@ -185,8 +202,13 @@ struct DealStatusView: View {
         let full = deal.property.bathsFull ?? 0
         let half = deal.property.bathsHalf ?? 0
         if full == 0 && half == 0 { return "—" }
-        if half == 0 { return "\(full)" }
-        return "\(full).\(half)"
+        // Conventional listing format: each half-bath adds 0.5 to the full count.
+        // e.g. 2 full + 1 half → "2.5", 2 full + 0 half → "2", 0 full + 1 half → "0.5".
+        let total = Double(full) + Double(half) * 0.5
+        if total.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(Int(total))
+        }
+        return String(format: "%.1f", total)
     }
 
     private var statusColor: Color {
