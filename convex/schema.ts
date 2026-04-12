@@ -24,6 +24,8 @@ import {
   reconciliationReportType,
   reconciliationReviewStatus,
   routingPath,
+  smsConsentStatus,
+  smsIntakeOutcome,
 } from "./lib/validators";
 
 // ─── buyer-v2 Convex Schema ─────────────────────────────────────────────────
@@ -1211,4 +1213,207 @@ export default defineSchema({
     .index("by_subject", ["subjectType", "subjectId"])
     .index("by_author", ["authorId"])
     .index("by_parent", ["parentNoteId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SMS INTAKE (KIN-776)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Two-table state for the Twilio-backed text-a-link intake channel:
+  //
+  //   smsConsent         — one row per phone number (hashed). Tracks the
+  //                        CTIA opt-in / opt-out state machine and any
+  //                        operator-added suppression. This table is the
+  //                        ONLY place the backend decides whether it's
+  //                        allowed to send a reply to a number.
+  //   smsIntakeMessages  — append-only log of every inbound SMS the
+  //                        webhook processed, plus the resolved outcome
+  //                        and (if applicable) the signed reply link. The
+  //                        `messageSid` index guarantees idempotency when
+  //                        Twilio retries a webhook delivery.
+  //
+  // PII rule: phone numbers are NEVER stored in clear text. We hash the
+  // normalized E.164 form with SHA-256 and store only the hex digest. The
+  // raw body is stored for debugging, but the helper layer still redacts
+  // it before any external sink (logs, analytics).
+
+  // SMS consent and suppression state — one row per phone number.
+  smsConsent: defineTable({
+    // SHA-256 hex digest of the normalized E.164 phone number. Never
+    // store raw phone numbers for consent tracking — we only need to
+    // look them up by hash.
+    phoneHash: v.string(),
+    status: smsConsentStatus,
+    // Timestamps for each major state transition. All ISO 8601.
+    optedInAt: v.optional(v.string()),
+    optedOutAt: v.optional(v.string()),
+    suppressedAt: v.optional(v.string()),
+    suppressedReason: v.optional(v.string()),
+    // Audit — the last Twilio message that triggered a state change.
+    lastTriggeringMessageSid: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_phoneHash", ["phoneHash"])
+    .index("by_status", ["status"]),
+
+  // Log of every inbound SMS processed. Append-only; dedupe is enforced
+  // by the `by_messageSid` unique lookup in the mutation handler.
+  smsIntakeMessages: defineTable({
+    // Twilio Message SID — used for idempotent deduplication.
+    messageSid: v.string(),
+    // Hashed sender phone (matches smsConsent.phoneHash).
+    phoneHash: v.string(),
+    // Hashed destination phone (our Twilio number) for audit.
+    toHash: v.string(),
+    // Raw body text — kept for ops debugging but MUST be redacted before
+    // any external sink (logs, analytics, third-party webhooks).
+    body: v.string(),
+    // Parsed outcome — see smsIntakeOutcome validator.
+    outcome: smsIntakeOutcome,
+    // Stable error code if outcome is a failure / rejection state.
+    errorCode: v.optional(v.string()),
+    // When outcome = "url_processed", the downstream artifacts created
+    // or reused by the intake pipeline. dealRoomId is optional because
+    // an anonymous SMS sender has no buyer record yet — we still create
+    // the sourceListing for ops visibility, then attach the deal room
+    // later once the user registers.
+    dealRoomId: v.optional(v.id("dealRooms")),
+    propertyId: v.optional(v.id("properties")),
+    sourceListingId: v.optional(v.id("sourceListings")),
+    // The signed reply link generated (if any) — empty for STOP replies.
+    replyLink: v.optional(v.string()),
+    // Outcome reply text that was sent back. May be "" if the user is
+    // suppressed and we suppressed the reply too.
+    replyBody: v.optional(v.string()),
+    // Whether the reply was actually sent back to the user. False for
+    // STOP / suppressed users / duplicates.
+    replySent: v.boolean(),
+    receivedAt: v.string(),
+    processedAt: v.string(),
+  })
+    .index("by_messageSid", ["messageSid"])
+    .index("by_phoneHash", ["phoneHash"])
+    .index("by_outcome", ["outcome"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NEGOTIATION BRIEF EXPORTS (KIN-839)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // A negotiation brief is a typed, auditable export artifact composed from
+  // pricing, comps, leverage, and offer engine outputs plus buyer strength
+  // inputs. Brokers generate it to hand to listing agents as structured
+  // negotiation data. Regeneration is deterministic given the same source
+  // versions — the `sourceVersions` field lets us detect staleness and mark
+  // old briefs when any upstream engine output changes.
+
+  negotiationBriefs: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    propertyId: v.id("properties"),
+    offerId: v.optional(v.id("offers")),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("ready"),
+      v.literal("failed"),
+      v.literal("stale"),
+    ),
+    // Full brief payload as JSON-serialized string. Kept opaque to Convex so
+    // we can evolve the payload shape without schema migrations.
+    payload: v.optional(v.string()),
+    // Version fingerprint of every engine output used to assemble this brief,
+    // plus the builder's own version. Compared against fresh inputs to
+    // decide if the brief is stale.
+    sourceVersions: v.object({
+      pricingVersion: v.optional(v.string()),
+      compsVersion: v.optional(v.string()),
+      leverageVersion: v.optional(v.string()),
+      offerVersion: v.optional(v.string()),
+      builderVersion: v.string(),
+    }),
+    // Set by generator on success. 0-1 coverage ratio of how many sections
+    // were populated vs missing.
+    coverage: v.optional(v.number()),
+    // Failure details — populated when status = "failed".
+    errorMessage: v.optional(v.string()),
+    errorCount: v.number(),
+    // Who triggered the generation. Required for audit trail.
+    generatedBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    completedAt: v.optional(v.string()),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_propertyId", ["propertyId"])
+    .index("by_status", ["status"])
+    .index("by_offerId", ["offerId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EXTERNAL COUNTERPARTY ACCESS (KIN-828)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Token-based limited access for external counterparties (listing agents,
+  // listing brokers, cooperating brokers) to interact with a single deal-
+  // room context without needing a full internal user account.
+  //
+  // Principles encoded in this table:
+  //   - Scope is narrow: every token is bound to ONE dealRoomId and an
+  //     explicit action allowlist. There is no general-purpose external role.
+  //   - Only hashes of tokens are stored. Plaintext is returned to the
+  //     issuer once at creation time and never recoverable afterwards.
+  //   - Revocation is first-class: revokedAt is a separate lifecycle state,
+  //     never deletion. This keeps the audit trail complete.
+
+  externalAccessTokens: defineTable({
+    hashedToken: v.string(),
+    dealRoomId: v.id("dealRooms"),
+    offerId: v.optional(v.id("offers")),
+    role: v.union(
+      v.literal("listing_agent"),
+      v.literal("listing_broker"),
+      v.literal("cooperating_broker"),
+      v.literal("other"),
+    ),
+    allowedActions: v.array(
+      v.union(
+        v.literal("view_offer"),
+        v.literal("submit_response"),
+        v.literal("confirm_compensation"),
+        v.literal("acknowledge_receipt"),
+      ),
+    ),
+    expiresAt: v.string(),
+    revokedAt: v.optional(v.string()),
+    revokedBy: v.optional(v.id("users")),
+    revokeReason: v.optional(v.string()),
+    issuedBy: v.id("users"),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    createdAt: v.string(),
+    lastUsedAt: v.optional(v.string()),
+  })
+    .index("by_hashedToken", ["hashedToken"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_offerId", ["offerId"])
+    .index("by_issuedBy", ["issuedBy"]),
+
+  // Audit trail for every external-access interaction. Kept in a separate
+  // table so the write path for a denied access is cheap and doesn't require
+  // modifying the token row itself.
+  externalAccessEvents: defineTable({
+    tokenId: v.optional(v.id("externalAccessTokens")),
+    eventType: v.union(
+      v.literal("issued"),
+      v.literal("accessed"),
+      v.literal("submitted"),
+      v.literal("denied"),
+      v.literal("revoked"),
+    ),
+    dealRoomId: v.optional(v.id("dealRooms")),
+    attemptedAction: v.optional(v.string()),
+    denialReason: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    timestamp: v.string(),
+  })
+    .index("by_tokenId", ["tokenId"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_eventType_and_timestamp", ["eventType", "timestamp"]),
 });
