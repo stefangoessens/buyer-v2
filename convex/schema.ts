@@ -16,6 +16,7 @@ import {
   feeLedgerEntryType,
   feeLedgerSource,
   financingType,
+  leadAttributionStatus,
   lenderValidationOutcome,
   lenderValidationReasonCode,
   payoutStatus,
@@ -914,4 +915,91 @@ export default defineSchema({
       "dedupeKey",
     ])
     .index("by_buyerId_and_emittedAt", ["buyerId", "emittedAt"]),
+
+  // ═══ LEAD ATTRIBUTION (KIN-819) ═══
+  //
+  // Tracks a visitor's marketing attribution from their first anonymous
+  // touch through registration and into a meaningful conversion. The same
+  // row lives through all three stages — we never orphan or re-key it —
+  // so analytics consumers can follow a single id from paid-search click
+  // through signed agreement.
+  //
+  // Shape:
+  //   - `sessionId` is the stable anonymous identifier minted on the
+  //     first public request (typically a cookie value). The capture
+  //     mutation is keyed on it so pre-auth touches find the right row.
+  //   - `userId` is populated at handoff time, when the visitor completes
+  //     registration. Until then it's absent.
+  //   - `firstTouch` is immutable once written — it's the attribution
+  //     anchor for first-touch revenue reports.
+  //   - `lastTouch` is updated whenever a distinct new touch arrives
+  //     (different source/medium/campaign) and `touchCount` is bumped.
+  //   - Status follows a monotonic arrow:
+  //       anonymous → registered → converted
+  //     Any regression (e.g. logging out) is a client concern and MUST
+  //     NOT roll this field back.
+  //
+  // Indexing note: Convex does not support nested-field indexes, so we
+  // keep indexes on top-level fields only. Filters on `firstTouch.source`
+  // or `lastTouch.campaign` are done in JS over the result of a
+  // status/userId/sessionId lookup.
+  leadAttribution: defineTable({
+    // Stable pre-registration identifier. Usually a cookie value set on
+    // first visit; may be a server-generated id for non-cookie clients.
+    // Required for every row — even post-handoff — so the pre-auth → auth
+    // crossover is auditable.
+    sessionId: v.string(),
+    // Set when the visitor registers and handoff completes. Absent while
+    // the row is still in `anonymous` state.
+    userId: v.optional(v.id("users")),
+
+    // First-touch: the visitor's earliest captured interaction. Never
+    // mutated after the row is created.
+    firstTouch: v.object({
+      source: v.string(),
+      medium: v.string(),
+      campaign: v.optional(v.string()),
+      content: v.optional(v.string()),
+      term: v.optional(v.string()),
+      landingPage: v.string(),
+      referrer: v.optional(v.string()),
+      timestamp: v.string(),
+    }),
+
+    // Last-touch: the most recent distinct interaction. Updated only when
+    // `isDistinctTouch` (in `src/lib/marketing/attribution.ts`) returns
+    // true against the previous lastTouch — we don't thrash on repeat
+    // visits from the same source.
+    lastTouch: v.object({
+      source: v.string(),
+      medium: v.string(),
+      campaign: v.optional(v.string()),
+      content: v.optional(v.string()),
+      term: v.optional(v.string()),
+      landingPage: v.string(),
+      referrer: v.optional(v.string()),
+      timestamp: v.string(),
+    }),
+
+    // Number of distinct touches captured. Starts at 1, bumps when a
+    // new distinct touch arrives. Useful for attribution modeling.
+    touchCount: v.number(),
+
+    // Lifecycle. See comment block at the top of the table for the
+    // legal transitions.
+    status: leadAttributionStatus,
+
+    // ISO timestamp of the anonymous → registered transition. Absent
+    // while the row is still anonymous.
+    registeredAt: v.optional(v.string()),
+    // ISO timestamp of the registered → converted transition (first
+    // deal room, first tour, or equivalent meaningful action).
+    convertedAt: v.optional(v.string()),
+
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_sessionId", ["sessionId"])
+    .index("by_userId", ["userId"])
+    .index("by_status", ["status"]),
 });

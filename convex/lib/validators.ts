@@ -303,3 +303,16 @@ export const lenderValidationReasonCode = v.union(
   v.literal("va_cash_in_at_closing"),
   v.literal("fha_seller_contribution_cap")
 );
+
+// ─── Lead Attribution (KIN-819) ────────────────────────────────────────────
+
+// Lifecycle status for a leadAttribution row:
+//   anonymous  — captured pre-registration, only sessionId is known
+//   registered — handoff to an authenticated user has completed (userId set)
+//   converted  — the registered user has performed a meaningful action,
+//                e.g. first deal room creation or first tour request
+export const leadAttributionStatus = v.union(
+  v.literal("anonymous"),
+  v.literal("registered"),
+  v.literal("converted")
+);
