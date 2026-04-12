@@ -15,6 +15,7 @@ import {
   lenderValidationOutcome,
   lenderValidationReasonCode,
   payoutStatus,
+  rateLimitChannel,
   reconciliationReportType,
   reconciliationReviewStatus,
   routingPath,
@@ -767,4 +768,71 @@ export default defineSchema({
     .index("by_offerId", ["offerId"])
     .index("by_validationOutcome", ["validationOutcome"])
     .index("by_dealRoomId_and_createdAt", ["dealRoomId", "createdAt"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RATE LIMITS & ABUSE CONTROLS (KIN-820)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Typed rate-limit state for the public intake channels. One row per
+  // unique `throttleKey` — keys are canonicalised as `<channel>:<identifier>`
+  // where identifier is an IP hash, phone hash, userId, or extensionId. The
+  // pure sliding-window + escalating-backoff logic lives in
+  // `convex/lib/rateLimiter.ts` (mirrored in
+  // `src/lib/security/rate-limiter.ts`); this table is just the persistence
+  // layer that the Convex mutation wraps around those pure functions.
+  //
+  // Every state transition also writes an `abuseEvents` entry (below) and,
+  // for abusive patterns, an `auditLog` entry — so brokers and ops can
+  // reconstruct why a given throttle key is currently blocked without
+  // having to replay the bucket history.
+
+  rateLimitBuckets: defineTable({
+    // Canonical throttle key: `<channel>:<identifier>`. Used as the
+    // primary lookup path and kept denormalised from `channel` so an
+    // index-only read is enough to fetch the bucket.
+    throttleKey: v.string(),
+    channel: rateLimitChannel,
+    // ISO 8601 timestamps of requests still inside the current sliding
+    // window. Pruned on every check — we never rely on insertion order
+    // beyond timestamp comparison.
+    requestTimestamps: v.array(v.string()),
+    // Last time this bucket was touched, for future TTL cleanup jobs.
+    lastRequestAt: v.string(),
+    // Count of consecutive application-level failures. Reset on
+    // `recordRequestOutcome(success)`, bumped on failure; used to
+    // grow the block duration via exponential backoff.
+    consecutiveFailures: v.number(),
+    // ISO timestamp when the block lifts, if the bucket is blocked.
+    // Absent for normal buckets; present only while a block is active.
+    blockedUntil: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_throttleKey", ["throttleKey"])
+    .index("by_channel", ["channel"])
+    .index("by_blockedUntil", ["blockedUntil"]),
+
+  // Append-only abuse event log. Written every time the rate limiter
+  // denies a request, escalates a block, or sees a suspicious pattern.
+  // Queried by the broker/admin console via
+  // `rateLimits.getAbuseEvents` for monitoring.
+  abuseEvents: defineTable({
+    throttleKey: v.string(),
+    channel: rateLimitChannel,
+    eventType: v.union(
+      v.literal("rate_limit_exceeded"),
+      v.literal("repeated_failure"),
+      v.literal("suspicious_spike"),
+      v.literal("block_applied"),
+      v.literal("block_lifted")
+    ),
+    // Optional JSON-stringified context — reason code, counts, etc.
+    // Kept as a string so the schema stays stable regardless of the
+    // payload shape used by different event types.
+    details: v.optional(v.string()),
+    timestamp: v.string(),
+  })
+    .index("by_throttleKey", ["throttleKey"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_eventType", ["eventType"]),
 });
