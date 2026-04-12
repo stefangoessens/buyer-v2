@@ -1730,4 +1730,37 @@ export default defineSchema({
     .index("by_conversationId_and_createdAt", ["conversationId", "createdAt"])
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_intent", ["intent"]),
+
+  // ═══ RELEASE READINESS ITEMS (KIN-846) ═══
+  //
+  // Launch readiness checklist. One row per tracked item. The ops
+  // dashboard and launch runbook read from here; `overall` status
+  // is derived from the items via the pure logic module in
+  // `src/lib/releaseReadiness/logic.ts` (mirrored in Convex).
+  //
+  // `itemKey` is a stable content-authored identifier separate from
+  // the Convex `_id` so the runbook can link to a specific item
+  // across environments.
+  releaseReadinessItems: defineTable({
+    itemKey: v.string(),
+    title: v.string(),
+    description: v.string(),
+    owner: v.string(),
+    severity: v.union(v.literal("p0"), v.literal("p1"), v.literal("p2")),
+    status: v.union(
+      v.literal("notStarted"),
+      v.literal("inProgress"),
+      v.literal("blocked"),
+      v.literal("atRisk"),
+      v.literal("ready"),
+      v.literal("deferred")
+    ),
+    targetDate: v.string(),
+    blockerNote: v.optional(v.string()),
+    evidenceUrl: v.optional(v.string()),
+    updatedAt: v.string(),
+    updatedBy: v.string(),
+  })
+    .index("by_itemKey", ["itemKey"])
+    .index("by_severity_and_status", ["severity", "status"]),
 });
