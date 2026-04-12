@@ -142,6 +142,58 @@ export interface LeverageOutput {
   signalCount: number;
 }
 
+// ═══ Cost Engine Types ═══
+
+export interface CostAssumptions {
+  interestRate: number;       // e.g., 0.065 for 6.5%
+  downPaymentPct: number;     // e.g., 0.20 for 20%
+  propertyTaxRate: number;    // e.g., 0.0185 for FL avg
+  maintenancePct: number;     // e.g., 0.01 for 1% of value/yr
+  pmiRate: number;            // e.g., 0.005 for 0.5%/yr
+  closingCostPct: number;     // e.g., 0.03 for 3%
+}
+
+export interface CostInput {
+  purchasePrice: number;
+  taxAnnual?: number;
+  taxAssessedValue?: number;
+  hoaFee?: number;
+  hoaFrequency?: string;
+  roofYear?: number;
+  yearBuilt: number;
+  impactWindows?: boolean;
+  stormShutters?: boolean;
+  constructionType?: string;
+  floodZone?: string;
+  assumptions?: Partial<CostAssumptions>;
+}
+
+export interface CostLineItem {
+  category: string;
+  label: string;
+  monthlyLow: number;
+  monthlyMid: number;
+  monthlyHigh: number;
+  annualMid: number;
+  source: "fact" | "assumption" | "estimate";
+  notes: string;
+}
+
+export interface CostOutput {
+  lineItems: CostLineItem[];
+  totalMonthlyLow: number;
+  totalMonthlyMid: number;
+  totalMonthlyHigh: number;
+  totalAnnual: number;
+  upfrontCosts: {
+    downPayment: number;
+    closingCosts: number;
+    total: number;
+  };
+  assumptions: CostAssumptions;
+  disclaimers: string[];
+}
+
 // ═══ Calibration ═══
 
 /** Calibration record for accuracy tracking */
