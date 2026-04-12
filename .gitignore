@@ -74,3 +74,6 @@ test-results/
 .loop-metrics.json
 .cold-start
 /tmp/
+
+# visual regression scratch
+.screenshots/
