@@ -252,22 +252,43 @@ function extractLeverageClaims(
   const claims: ComparativeClaim[] = [];
   const out = leverage.output;
 
-  // Take top 3 signals by absolute delta magnitude
+  // Take top 3 signals by absolute delta magnitude. We explicitly DROP
+  // non-numeric signals (e.g. `motivated_seller_language` which carries
+  // string value/marketReference). Coercing them to 0 would emit a
+  // nonsensical "0 vs 0" comparative claim and fabricate a market
+  // reference where none exists — a violation of the synthesis contract.
+  // Leverage sentiment from those signals is preserved in the leverage
+  // engine output itself and can be surfaced separately by the UI.
   const topSignals = [...out.signals]
-    .filter((s) => s.confidence >= MIN_CONFIDENCE && Number.isFinite(s.delta))
+    .filter(
+      (s) =>
+        s.confidence >= MIN_CONFIDENCE &&
+        Number.isFinite(s.delta) &&
+        typeof s.value === "number" &&
+        typeof s.marketReference === "number" &&
+        Number.isFinite(s.value) &&
+        Number.isFinite(s.marketReference),
+    )
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .slice(0, 3);
 
   for (const sig of topSignals) {
+    // value and marketReference are guaranteed numeric by the filter above.
+    const valueNumeric = sig.value as number;
+    const refNumeric = sig.marketReference as number;
+
+    // Derive direction from the numeric delta sign, NOT from the
+    // bullish/bearish sentiment label. A bullish DOM signal has a positive
+    // delta (more DOM than median = above), but mapping bullish→below
+    // would flip the sign and contradict the numbers the UI displays.
+    // Sentiment (bullish/bearish) is a separate concept from "above/below
+    // market reference" and shouldn't be conflated.
+    const delta = sig.delta;
     const direction: ClaimDirection =
-      sig.direction === "bullish" ? "below" : sig.direction === "bearish" ? "above" : "at";
+      delta > 0 ? "above" : delta < 0 ? "below" : "at";
 
     const unit: ComparativeClaim["unit"] =
       sig.name.includes("dom") || sig.name.includes("days") ? "days" : "count";
-
-    const valueNumeric = typeof sig.value === "number" ? sig.value : 0;
-    const refNumeric =
-      typeof sig.marketReference === "number" ? sig.marketReference : 0;
 
     claims.push({
       id: `leverage_${sig.name}`,
@@ -275,14 +296,14 @@ function extractLeverageClaims(
       value: valueNumeric,
       unit,
       marketReference: refNumeric,
-      marketReferenceLabel: typeof sig.marketReference === "string" ? sig.marketReference : "neighborhood median",
-      delta: round2(sig.delta),
+      marketReferenceLabel: "neighborhood median",
+      delta: round2(delta),
       deltaPct:
-        refNumeric !== 0 ? round2((sig.delta / Math.abs(refNumeric)) * 100) : 0,
+        refNumeric !== 0 ? round2((delta / Math.abs(refNumeric)) * 100) : 0,
       direction,
       confidence: sig.confidence,
       citation: leverage.citationId,
-      narrative: `${sig.name.replaceAll("_", " ")}: ${sig.value} vs ${sig.marketReference} (${sig.direction})`,
+      narrative: `${sig.name.replaceAll("_", " ")}: ${valueNumeric} vs ${refNumeric} (${sig.direction} sentiment, ${direction} numerically)`,
     });
   }
 
@@ -363,12 +384,16 @@ export function synthesizeCase(
 
   const recommendedAction = extractOfferRecommendation(input.offer, claims);
 
-  const contributingEngines = [
-    input.pricing && !droppedEngines.includes("pricing"),
-    input.comps && !droppedEngines.includes("comps"),
-    input.leverage && !droppedEngines.includes("leverage"),
-    input.offer,
-  ].filter(Boolean).length;
+  // Count only engines that ACTUALLY contributed output, not engines with
+  // inputs present. An engine could be supplied but produce no usable
+  // claims/recommendation (e.g. offer with empty scenarios, leverage with
+  // all non-numeric signals). Counting by input presence inflates the
+  // metric and misleads UI logic that relies on contribution counts.
+  const contributingEngines =
+    (pricingClaims.length > 0 ? 1 : 0) +
+    (compsClaims.length > 0 ? 1 : 0) +
+    (leverageClaims.length > 0 ? 1 : 0) +
+    (recommendedAction ? 1 : 0);
 
   const overallConfidence =
     claims.length > 0

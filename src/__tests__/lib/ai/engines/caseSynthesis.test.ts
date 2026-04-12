@@ -338,6 +338,99 @@ describe("synthesizeCase — input hash for caching", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+// Non-numeric leverage signals and engine counting
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("synthesizeCase — non-numeric leverage signals dropped", () => {
+  it("drops leverage signals with string value/marketReference", () => {
+    const input = fullInput();
+    // Include a string-valued signal — should be dropped, not coerced to 0
+    input.leverage!.output = {
+      score: 72,
+      signals: [
+        {
+          name: "motivated_seller_language",
+          value: "bring all offers",
+          marketReference: "standard listing",
+          delta: 1,
+          confidence: 0.85,
+          citation: "listing_description",
+          direction: "bullish",
+        },
+        {
+          name: "dom_vs_median",
+          value: 58,
+          marketReference: 28,
+          delta: 30,
+          confidence: 0.9,
+          citation: "mls",
+          direction: "bullish",
+        },
+      ],
+      overallConfidence: 0.85,
+      signalCount: 2,
+    };
+    const result = synthesizeCase(input);
+    const leverageClaims = result.claims.filter(
+      (c) => c.topic === "leverage" || c.topic === "days_on_market",
+    );
+    // Only the dom_vs_median numeric signal should produce a claim
+    expect(leverageClaims).toHaveLength(1);
+    expect(leverageClaims[0].id).toBe("leverage_dom_vs_median");
+    // No claim should have been generated for the string-valued signal
+    expect(
+      result.claims.find((c) => c.id === "leverage_motivated_seller_language"),
+    ).toBeUndefined();
+  });
+
+  it("direction follows numeric delta sign, not bullish/bearish label", () => {
+    const input = fullInput();
+    input.leverage!.output = {
+      score: 72,
+      signals: [
+        {
+          name: "dom_vs_median",
+          value: 58,
+          marketReference: 28,
+          delta: 30, // positive delta = above
+          confidence: 0.9,
+          citation: "mls",
+          direction: "bullish", // bullish sentiment BUT numerically above
+        },
+      ],
+      overallConfidence: 0.85,
+      signalCount: 1,
+    };
+    const result = synthesizeCase(input);
+    const domClaim = result.claims.find(
+      (c) => c.id === "leverage_dom_vs_median",
+    );
+    expect(domClaim?.direction).toBe("above");
+  });
+});
+
+describe("synthesizeCase — engine counting from output, not input presence", () => {
+  it("counts only engines that produced claims/recommendation", () => {
+    const input = fullInput();
+    // Replace offer with empty scenarios — recommendation will be undefined
+    input.offer!.output = {
+      scenarios: [],
+      recommendedIndex: 0,
+      inputSummary: "",
+      refreshable: true,
+    };
+    const result = synthesizeCase(input, { subjectSqft: 2450 });
+    // pricing + comps + leverage contributed; offer did NOT (empty scenarios)
+    expect(result.contributingEngines).toBe(3);
+  });
+
+  it("counts zero when no engines produce output", () => {
+    const result = synthesizeCase({ listPrice: 500_000 });
+    expect(result.contributingEngines).toBe(0);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 // Constants
 // ───────────────────────────────────────────────────────────────────────────
 

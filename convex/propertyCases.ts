@@ -17,6 +17,30 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
+import type { QueryCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+
+/**
+ * Check whether the authenticated caller is allowed to read cases for a
+ * given propertyId. Returns true if the caller is broker/admin OR owns a
+ * deal room that references this property. Returns false otherwise —
+ * without a deal-room ownership check, any signed-in user could read
+ * another buyer's synthesized claims by guessing a propertyId.
+ */
+async function canReadProperty(
+  ctx: QueryCtx,
+  propertyId: Id<"properties">,
+): Promise<boolean> {
+  const user = await requireAuth(ctx);
+  if (user.role === "broker" || user.role === "admin") return true;
+
+  // Buyer must own at least one deal room tied to this property.
+  const buyerRooms = await ctx.db
+    .query("dealRooms")
+    .withIndex("by_buyerId", (q) => q.eq("buyerId", user._id))
+    .collect();
+  return buyerRooms.some((r) => r.propertyId === propertyId);
+}
 
 // ═══ Queries ═══
 
@@ -33,11 +57,13 @@ export const getCached = query({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    await requireAuth(ctx);
-    // Access control: any authenticated user can read a cached case. The
-    // finer-grained ACL lives on the deal room itself — a buyer who
-    // can't see the deal room also can't see its propertyId, so this
-    // endpoint is effectively opaque to them. Broker/admin see all.
+    // Caller must own a deal room on this property, or be broker/admin.
+    // Without this check, any signed-in user could read another buyer's
+    // synthesized claims by guessing a propertyId — property IDs are
+    // exposed by existing property queries so this would be a practical
+    // cross-account data leak.
+    const allowed = await canReadProperty(ctx, args.propertyId);
+    if (!allowed) return null;
 
     const cached = await ctx.db
       .query("propertyCases")
@@ -62,7 +88,8 @@ export const getLatestForProperty = query({
   args: { propertyId: v.id("properties") },
   returns: v.any(),
   handler: async (ctx, args) => {
-    await requireAuth(ctx);
+    const allowed = await canReadProperty(ctx, args.propertyId);
+    if (!allowed) return null;
 
     const cases = await ctx.db
       .query("propertyCases")

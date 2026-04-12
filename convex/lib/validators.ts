@@ -316,3 +316,32 @@ export const leadAttributionStatus = v.union(
   v.literal("registered"),
   v.literal("converted")
 );
+
+// ─── SMS Intake (KIN-776) ──────────────────────────────────────────────────
+
+// SMS consent status — derived from inbound keyword tracking.
+//   opted_in   — user has sent a link or "START"
+//   opted_out  — user has sent STOP / CANCEL / QUIT / OPT-OUT / UNSUBSCRIBE
+//   suppressed — operator-added hard suppression (spam, abuse, etc.)
+//   unknown    — row exists but user hasn't performed an explicit opt action
+export const smsConsentStatus = v.union(
+  v.literal("opted_in"),
+  v.literal("opted_out"),
+  v.literal("suppressed"),
+  v.literal("unknown")
+);
+
+// Outcome of a single inbound SMS processing attempt. Stored on every
+// `smsIntakeMessages` row so ops dashboards and tests can bucket
+// messages without parsing reply text.
+export const smsIntakeOutcome = v.union(
+  v.literal("url_processed"),    // happy path: link parsed and source listing created
+  v.literal("help_reply"),       // HELP keyword — informational reply sent
+  v.literal("stop_received"),    // STOP / CANCEL / QUIT / OPT-OUT / UNSUBSCRIBE
+  v.literal("start_received"),   // START / UNSTOP — re-opted in
+  v.literal("invalid_url"),      // message has text but no supported URL
+  v.literal("unsupported_url"),  // URL is valid but not from a supported portal
+  v.literal("suppressed"),       // user is in opted_out or suppressed state
+  v.literal("duplicate"),        // messageSid already processed
+  v.literal("empty_body")        // no body at all
+);
