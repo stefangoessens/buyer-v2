@@ -80,20 +80,35 @@ export const getCached = query({
 });
 
 /**
- * Get the latest cached case for a property. Used when the caller just
- * wants "whatever the most recent synthesis is" without providing an
- * input hash.
+ * Get the latest cached case for a specific deal room. Scoped per-deal-room
+ * (NOT per-property) so when multiple buyers track the same property they
+ * each see only their own synthesized payload. A case without a
+ * `dealRoomId` is considered broker-scoped and only visible to broker/admin
+ * callers.
+ *
+ * This replaces the old per-property lookup which could leak one buyer's
+ * recommendation to another buyer tracking the same listing.
  */
-export const getLatestForProperty = query({
-  args: { propertyId: v.id("properties") },
+export const getLatestForDealRoom = query({
+  args: { dealRoomId: v.id("dealRooms") },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const allowed = await canReadProperty(ctx, args.propertyId);
-    if (!allowed) return null;
+    const user = await requireAuth(ctx);
+
+    const dealRoom = await ctx.db.get(args.dealRoomId);
+    if (!dealRoom) return null;
+
+    if (
+      dealRoom.buyerId !== user._id &&
+      user.role !== "broker" &&
+      user.role !== "admin"
+    ) {
+      return null;
+    }
 
     const cases = await ctx.db
       .query("propertyCases")
-      .withIndex("by_propertyId", (q) => q.eq("propertyId", args.propertyId))
+      .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
       .collect();
     if (cases.length === 0) return null;
 

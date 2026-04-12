@@ -126,6 +126,51 @@ export const SYNTHESIS_VERSION = "1.0.0";
 /** Confidence threshold below which a claim's engine is dropped entirely. */
 export const MIN_CONFIDENCE = 0.5;
 
+/**
+ * Explicit mapping from leverage signal name to claim topic + unit.
+ *
+ * The leverage engine (KIN-788) emits signals with stable names like
+ * `days_on_market_pressure`, `price_vs_market`, `price_reductions`, etc.
+ * Earlier substring heuristics (`sig.name.includes("dom")`) missed these
+ * names entirely, mislabeling DOM claims as "leverage"/"count" instead of
+ * "days_on_market"/"days". This explicit table keeps the mapping stable
+ * as new signal names are added upstream.
+ *
+ * Unknown signal names fall back to topic="leverage" and unit="count".
+ */
+const LEVERAGE_SIGNAL_CLASSIFICATION: Record<
+  string,
+  { topic: ClaimTopic; unit: ComparativeClaim["unit"] }
+> = {
+  dom_vs_median: { topic: "days_on_market", unit: "days" },
+  days_on_market_pressure: { topic: "days_on_market", unit: "days" },
+  listing_age: { topic: "days_on_market", unit: "days" },
+  price_vs_market: { topic: "leverage", unit: "psf" },
+  psf_vs_median: { topic: "leverage", unit: "psf" },
+  price_reductions: { topic: "leverage", unit: "count" },
+  price_cut_count: { topic: "leverage", unit: "count" },
+  price_cut_total: { topic: "leverage", unit: "usd" },
+  agent_avg_dom: { topic: "leverage", unit: "days" },
+  agent_sale_to_list: { topic: "leverage", unit: "pct" },
+};
+
+function classifyLeverageSignal(name: string): {
+  topic: ClaimTopic;
+  unit: ComparativeClaim["unit"];
+} {
+  const exact = LEVERAGE_SIGNAL_CLASSIFICATION[name];
+  if (exact) return exact;
+  // Fallback for unknown names: substring heuristic, then defaults.
+  // Prefer explicit registration above — this path is just a safety net.
+  if (/dom|days_on_market|listing_age/i.test(name)) {
+    return { topic: "days_on_market", unit: "days" };
+  }
+  if (/psf|per_sqft|sqft_price/i.test(name)) {
+    return { topic: "leverage", unit: "psf" };
+  }
+  return { topic: "leverage", unit: "count" };
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Per-engine claim extractors
 // ───────────────────────────────────────────────────────────────────────────
@@ -287,12 +332,11 @@ function extractLeverageClaims(
     const direction: ClaimDirection =
       delta > 0 ? "above" : delta < 0 ? "below" : "at";
 
-    const unit: ComparativeClaim["unit"] =
-      sig.name.includes("dom") || sig.name.includes("days") ? "days" : "count";
+    const { topic, unit } = classifyLeverageSignal(sig.name);
 
     claims.push({
       id: `leverage_${sig.name}`,
-      topic: sig.name.includes("dom") ? "days_on_market" : "leverage",
+      topic,
       value: valueNumeric,
       unit,
       marketReference: refNumeric,

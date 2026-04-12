@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>buyer-v2</title>
+    <style>
+      :root {
+        --fg: #0b0f19;
+        --muted: #6b7280;
+        --accent: #10b981;
+        --border: #e5e7eb;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 340px;
+        font-family:
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        color: var(--fg);
+      }
+      main {
+        padding: 16px;
+      }
+      h1 {
+        margin: 0 0 4px 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      p#status {
+        margin: 0 0 12px 0;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+      button#save {
+        width: 100%;
+        padding: 10px 12px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: white;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button#save:disabled {
+        background: #d1d5db;
+        color: #6b7280;
+        cursor: not-allowed;
+      }
+      footer {
+        margin-top: 12px;
+        font-size: 11px;
+        color: var(--muted);
+        border-top: 1px solid var(--border);
+        padding-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>buyer-v2</h1>
+      <p id="status">Checking current tab…</p>
+      <button id="save" disabled>Save to buyer-v2</button>
+      <footer>Supported: Zillow, Redfin, Realtor.com</footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
