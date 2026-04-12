@@ -79,8 +79,15 @@ final class DealTasksService {
     /// Load tasks for a specific deal. If we previously had data for the
     /// same deal and a refresh is in progress, the state transitions to
     /// `.stale(previous:)` so the view keeps the old data visible.
+    ///
+    /// Late-response safety: the dealRoomId is captured at call time and
+    /// compared against `currentDealRoomId` after the network await. If
+    /// the user has switched deals (or signed out) while the request was
+    /// in flight, the late response is dropped on the floor — otherwise
+    /// it would briefly overwrite state with data from the old deal.
     func loadTasks(dealRoomId: String) async {
         currentDealRoomId = dealRoomId
+        let requestedDealRoomId = dealRoomId
 
         // Preserve previous data through the refresh
         if case .loaded(let previous) = state {
@@ -90,13 +97,18 @@ final class DealTasksService {
         }
 
         do {
-            let fetched = try await backend.fetchTasks(dealRoomId: dealRoomId)
+            let fetched = try await backend.fetchTasks(dealRoomId: requestedDealRoomId)
+            // Drop stale responses: another loadTasks/clearForSignOut/
+            // handleNoActiveDeal call may have superseded us while we
+            // were awaiting the network.
+            guard currentDealRoomId == requestedDealRoomId else { return }
             if fetched.isEmpty {
                 state = .noTasks
             } else {
                 state = .loaded(tasks: fetched)
             }
         } catch {
+            guard currentDealRoomId == requestedDealRoomId else { return }
             state = .error(error.localizedDescription)
         }
     }

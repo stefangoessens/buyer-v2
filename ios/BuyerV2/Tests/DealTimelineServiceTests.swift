@@ -11,9 +11,20 @@ final class MockDealTimelineBackend: DealTimelineBackend, @unchecked Sendable {
     var fetchCallCount = 0
     var lastDealRoomId: String?
 
+    /// Per-dealRoomId result override for interleaved fetch tests.
+    var resultsByDealRoomId: [String: Result<[MilestoneEvent], Error>] = [:]
+
+    /// Pause hook invoked at the start of each fetch — lets tests
+    /// coordinate in-flight timing without wall-clock sleeps.
+    var onFetchStarted: (@Sendable () async -> Void)?
+
     func fetchEvents(dealRoomId: String) async throws -> [MilestoneEvent] {
         fetchCallCount += 1
         lastDealRoomId = dealRoomId
+        if let hook = onFetchStarted { await hook() }
+        if let override = resultsByDealRoomId[dealRoomId] {
+            return try override.get()
+        }
         return try fetchResult.get()
     }
 }
@@ -214,5 +225,75 @@ struct DealTimelineServiceTests {
             Issue.record("Expected .noActiveDeal")
             return
         }
+    }
+
+    @Test("loadEvents drops a stale response when the deal switches mid-fetch")
+    func testLateResponseDroppedOnDealSwitch() async {
+        // Regression: codex P1 on PR #42. Guard the post-fetch state
+        // update with a currentDealRoomId check so late responses from
+        // an old deal can't overwrite the new deal's state.
+        let backend = MockDealTimelineBackend()
+        backend.resultsByDealRoomId["dr-old"] = .success([
+            makeEvent(id: "old-1", dealRoomId: "dr-old"),
+        ])
+        backend.resultsByDealRoomId["dr-new"] = .success([
+            makeEvent(id: "new-1", dealRoomId: "dr-new"),
+        ])
+
+        let service = DealTimelineService(backend: backend)
+
+        let resumeOldFetch = AsyncResumeSignal()
+        backend.onFetchStarted = { await resumeOldFetch.wait() }
+
+        async let oldLoad: Void = service.loadEvents(dealRoomId: "dr-old")
+        await Task.yield()
+
+        // Swap to new deal (unset hook so this one returns fast)
+        backend.onFetchStarted = nil
+        await service.loadEvents(dealRoomId: "dr-new")
+
+        guard case .loaded(let events) = service.state else {
+            Issue.record("Expected .loaded for new deal")
+            resumeOldFetch.resume()
+            _ = await oldLoad
+            return
+        }
+        #expect(events.map(\.id) == ["new-1"])
+
+        // Let the stale fetch complete — it should be ignored
+        resumeOldFetch.resume()
+        _ = await oldLoad
+
+        guard case .loaded(let eventsAfter) = service.state else {
+            Issue.record("Expected .loaded preserved after stale response")
+            return
+        }
+        #expect(eventsAfter.map(\.id) == ["new-1"])
+    }
+}
+
+// MARK: - AsyncResumeSignal (test helper)
+
+/// One-shot async wait/resume — duplicated from DealTasksServiceTests.swift
+/// because Swift Testing test files don't share private types.
+private actor AsyncResumeSignal {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var resumed = false
+
+    func wait() async {
+        if resumed { return }
+        await withCheckedContinuation { cont in
+            self.continuation = cont
+        }
+    }
+
+    nonisolated func resume() {
+        Task { await self._resume() }
+    }
+
+    private func _resume() {
+        resumed = true
+        continuation?.resume()
+        continuation = nil
     }
 }

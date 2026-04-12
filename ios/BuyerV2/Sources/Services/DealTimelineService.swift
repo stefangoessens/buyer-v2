@@ -69,8 +69,13 @@ final class DealTimelineService {
         state = .noActiveDeal
     }
 
+    /// Load events for a specific deal. See the detailed comment on
+    /// `DealTasksService.loadTasks` — same late-response guard: if the
+    /// current deal changed while the fetch was in flight, drop the
+    /// result so old-deal events don't repopulate the new state.
     func loadEvents(dealRoomId: String) async {
         currentDealRoomId = dealRoomId
+        let requestedDealRoomId = dealRoomId
 
         if case .loaded(let previous) = state {
             state = .stale(previous: previous)
@@ -79,13 +84,15 @@ final class DealTimelineService {
         }
 
         do {
-            let fetched = try await backend.fetchEvents(dealRoomId: dealRoomId)
+            let fetched = try await backend.fetchEvents(dealRoomId: requestedDealRoomId)
+            guard currentDealRoomId == requestedDealRoomId else { return }
             if fetched.isEmpty {
                 state = .noEvents
             } else {
                 state = .loaded(events: fetched)
             }
         } catch {
+            guard currentDealRoomId == requestedDealRoomId else { return }
             state = .error(error.localizedDescription)
         }
     }
