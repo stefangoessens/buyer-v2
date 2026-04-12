@@ -161,20 +161,26 @@ export const createVersion = mutation({
       );
     }
 
-    // 2. Declared vs used variables must match exactly. We surface
-    //    both "used but not declared" and "declared but not used" as
-    //    errors so the author cannot accidentally save drift either
-    //    way.
+    // 2. Declared vs used variables must match exactly across BOTH
+    //    subject and body. We surface both "used but not declared" and
+    //    "declared but not used" as errors so the author cannot
+    //    accidentally save drift either way. Subject is validated too
+    //    so email/push templates can use placeholders in the subject
+    //    line without failing at render time.
     const bodyPlaceholders = extractPlaceholders(args.body);
-    const declaredSet = new Set(args.variables);
-    const usedSet = new Set(bodyPlaceholders);
-
-    const undeclaredInBody = bodyPlaceholders.filter(
-      (name) => !declaredSet.has(name)
+    const subjectPlaceholders = args.subject
+      ? extractPlaceholders(args.subject)
+      : [];
+    const allUsed = Array.from(
+      new Set([...bodyPlaceholders, ...subjectPlaceholders])
     );
-    if (undeclaredInBody.length > 0) {
+    const declaredSet = new Set(args.variables);
+    const usedSet = new Set(allUsed);
+
+    const undeclared = allUsed.filter((name) => !declaredSet.has(name));
+    if (undeclared.length > 0) {
       throw new Error(
-        `Template body uses placeholders not declared in variables: ${undeclaredInBody.join(", ")}`
+        `Template uses placeholders not declared in variables: ${undeclared.join(", ")}`
       );
     }
     const declaredButUnused = args.variables.filter(
@@ -182,7 +188,7 @@ export const createVersion = mutation({
     );
     if (declaredButUnused.length > 0) {
       throw new Error(
-        `Declared variables not used in template body: ${declaredButUnused.join(", ")}`
+        `Declared variables not used in template subject or body: ${declaredButUnused.join(", ")}`
       );
     }
 
