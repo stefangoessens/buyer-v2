@@ -1567,4 +1567,18 @@ export default defineSchema({
     .index("by_dealRoomId_and_buyerId", ["dealRoomId", "buyerId"])
     .index("by_buyerId_and_status", ["buyerId", "status"])
     .index("by_dealRoomId", ["dealRoomId"]),
+
+  // ═══ PROPERTY COMPARISONS (KIN-843) ═══
+  //
+  // One record per buyer representing an ordered list of property IDs
+  // they want to compare side-by-side. The list is capped at
+  // MAX_COMPARISON_SIZE and stores just the ordering — row projection
+  // happens at read time from the canonical property table.
+  propertyComparisons: defineTable({
+    buyerId: v.id("users"),
+    propertyIds: v.array(v.id("properties")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_buyerId", ["buyerId"]),
 });
