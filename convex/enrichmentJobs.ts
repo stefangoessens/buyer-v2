@@ -87,9 +87,13 @@ export const enqueueJob = internalMutation({
   },
   returns: v.id("enrichmentJobs"),
   handler: async (ctx, args) => {
+    // Take the LATEST row for this dedupe key, not the first. Older stale or
+    // failed rows must not shadow newer pending/running/succeeded rows, or
+    // idempotency collapses into "insert another pending" on every call.
     const existing = await ctx.db
       .query("enrichmentJobs")
       .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", args.dedupeKey))
+      .order("desc")
       .first();
 
     if (existing) {
@@ -183,12 +187,22 @@ export const enqueueAllSourcesForProperty = internalMutation({
   },
 });
 
+/** Atomic claim: only advance pending → running. A second worker racing on
+ *  the same pending row observes status !== "pending" and throws, so the
+ *  caller can pick a different job. Convex mutations serialize conflicting
+ *  writes, so the read-then-patch inside a single mutation handler is
+ *  race-safe for this document. */
 export const markRunning = internalMutation({
   args: { jobId: v.id("enrichmentJobs") },
   returns: v.null(),
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Enrichment job not found");
+    if (job.status !== "pending") {
+      throw new Error(
+        `Enrichment job ${args.jobId} cannot be claimed: status is "${job.status}" (expected "pending")`,
+      );
+    }
     await ctx.db.patch(args.jobId, {
       status: "running" as const,
       attempt: job.attempt + 1,
@@ -330,15 +344,38 @@ export const upsertListingAgent = internalMutation({
       )
       .unique();
 
+    const existingProvenance = (existing?.provenance ?? {}) as Record<
+      string,
+      { source: string; fetchedAt: string }
+    >;
+    const incomingFetchedMs = Date.parse(observation.fetchedAt);
+
     const patch: Record<string, unknown> = {};
     const changedKeys: string[] = [];
 
+    // For each field: only overwrite when the incoming observation is both
+    // different AND at least as recent as the existing per-field provenance.
+    // This prevents a late-arriving stale fetch from regressing newer data
+    // when workers come back in an unexpected order.
     const apply = (key: string, value: unknown) => {
       if (value === undefined || value === null) return;
-      if (!existing || (existing as Record<string, unknown>)[key] !== value) {
-        patch[key] = value;
-        changedKeys.push(key);
+      if (existing) {
+        const current = (existing as Record<string, unknown>)[key];
+        if (current === value) return;
+        const existingForField = existingProvenance[key];
+        if (existingForField) {
+          const existingMs = Date.parse(existingForField.fetchedAt);
+          if (
+            Number.isFinite(existingMs) &&
+            Number.isFinite(incomingFetchedMs) &&
+            incomingFetchedMs < existingMs
+          ) {
+            return;
+          }
+        }
       }
+      patch[key] = value;
+      changedKeys.push(key);
     };
 
     apply("name", observation.name);
@@ -353,10 +390,6 @@ export const upsertListingAgent = internalMutation({
     apply("priceCutFrequency", observation.priceCutFrequency);
     apply("recentActivityCount", observation.recentActivityCount);
 
-    const existingProvenance = (existing?.provenance ?? {}) as Record<
-      string,
-      { source: string; fetchedAt: string }
-    >;
     const nextProvenance = { ...existingProvenance };
     for (const key of changedKeys) {
       nextProvenance[key] = {
@@ -365,11 +398,20 @@ export const upsertListingAgent = internalMutation({
       };
     }
 
+    // Preserve the most-recent lastRefreshedAt across out-of-order writes.
+    const existingLastMs = existing
+      ? Date.parse(existing.lastRefreshedAt)
+      : Number.NEGATIVE_INFINITY;
+    const nextLastRefreshedAt =
+      existing && Number.isFinite(existingLastMs) && existingLastMs > incomingFetchedMs
+        ? existing.lastRefreshedAt
+        : observation.fetchedAt;
+
     if (existing) {
       await ctx.db.patch(existing._id, {
         ...patch,
         provenance: nextProvenance,
-        lastRefreshedAt: observation.fetchedAt,
+        lastRefreshedAt: nextLastRefreshedAt,
       });
       return existing._id;
     }
