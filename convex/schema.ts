@@ -1519,4 +1519,101 @@ export default defineSchema({
     .index("by_propertyId", ["propertyId"])
     .index("by_propertyId_and_inputHash", ["propertyId", "inputHash"])
     .index("by_dealRoomId", ["dealRoomId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FILE ANALYSIS JOBS (KIN-821)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Job pipeline for analyzing uploaded buyer/seller files (seller
+  // disclosures, HOA docs, inspection reports, title commitments, surveys).
+  // Orchestrates classification + extraction + FL risk rule evaluation.
+  // The actual engine lives in `src/lib/ai/engines/docParser.ts`.
+  //
+  // Lifecycle:
+  //   queued → running → { review_required | completed | failed }
+  //   review_required → resolved (broker action)
+
+  fileAnalysisJobs: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    propertyId: v.id("properties"),
+    fileStorageId: v.id("_storage"),
+    fileName: v.string(),
+    docType: v.union(
+      v.literal("unknown"),
+      v.literal("seller_disclosure"),
+      v.literal("hoa_document"),
+      v.literal("inspection_report"),
+      v.literal("title_commitment"),
+      v.literal("survey"),
+      v.literal("other"),
+    ),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("review_required"),
+      v.literal("completed"),
+      v.literal("failed"),
+      v.literal("resolved"),
+    ),
+    // Serialized DocAnalysisResult from the engine.
+    payload: v.optional(v.string()),
+    overallSeverity: v.optional(
+      v.union(
+        v.literal("info"),
+        v.literal("low"),
+        v.literal("medium"),
+        v.literal("high"),
+        v.literal("critical"),
+      ),
+    ),
+    overallConfidence: v.optional(v.number()),
+    requiresBrokerReview: v.optional(v.boolean()),
+    engineVersion: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    errorCount: v.number(),
+    uploadedBy: v.id("users"),
+    reviewedBy: v.optional(v.id("users")),
+    reviewNotes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    completedAt: v.optional(v.string()),
+    resolvedAt: v.optional(v.string()),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_propertyId", ["propertyId"])
+    .index("by_status", ["status"])
+    .index("by_uploadedBy", ["uploadedBy"]),
+
+  // Individual findings — separate table for efficient review queue queries.
+  fileAnalysisFindings: defineTable({
+    jobId: v.id("fileAnalysisJobs"),
+    dealRoomId: v.id("dealRooms"),
+    rule: v.union(
+      v.literal("roof_age_insurability"),
+      v.literal("hoa_reserves_adequate"),
+      v.literal("sirs_inspection_status"),
+      v.literal("flood_zone_risk"),
+      v.literal("permit_irregularity"),
+      v.literal("lien_or_encumbrance"),
+    ),
+    severity: v.union(
+      v.literal("info"),
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("critical"),
+    ),
+    label: v.string(),
+    summary: v.string(),
+    confidence: v.number(),
+    requiresReview: v.boolean(),
+    resolvedAt: v.optional(v.string()),
+    resolvedBy: v.optional(v.id("users")),
+    resolutionNotes: v.optional(v.string()),
+    createdAt: v.string(),
+  })
+    .index("by_jobId", ["jobId"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_rule_and_severity", ["rule", "severity"])
+    .index("by_requiresReview_and_severity", ["requiresReview", "severity"]),
 });
