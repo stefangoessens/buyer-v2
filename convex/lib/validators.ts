@@ -184,3 +184,32 @@ export const communicationChannel = v.union(
   v.literal("in_app"),
   v.literal("push")
 );
+
+// ─── Offer Eligibility State (KIN-822) ─────────────────────────────────────
+
+// Machine-readable blocking reason codes for offer eligibility.
+// Persisted alongside a human-readable message on offerEligibilityState, so
+// UI layers can branch on a stable code rather than parsing strings.
+export const eligibilityBlockingReason = v.union(
+  v.literal("no_signed_agreement"),
+  v.literal("tour_pass_only_no_full_rep"),
+  v.literal("agreement_canceled"),
+  v.literal("agreement_replaced_pending_new"),
+  v.literal("buyer_not_found"),
+  v.literal("not_authenticated")
+);
+
+// Eligibility-facing view of the current governing agreement type.
+// "none" means no agreement currently grants any level of access.
+export const eligibilityAgreementType = v.union(
+  v.literal("none"),
+  v.literal("tour_pass"),
+  v.literal("full_representation")
+);
+
+// Action the buyer must take to become eligible to make offers.
+export const eligibilityRequiredAction = v.union(
+  v.literal("none"),
+  v.literal("sign_agreement"),
+  v.literal("upgrade_to_full_rep")
+);

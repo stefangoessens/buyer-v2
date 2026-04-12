@@ -6,6 +6,9 @@ import {
   availabilityStatus,
   communicationChannel,
   compensationStatus,
+  eligibilityAgreementType,
+  eligibilityBlockingReason,
+  eligibilityRequiredAction,
   feeLedgerEntryType,
   feeLedgerSource,
   financingType,
@@ -674,4 +677,40 @@ export default defineSchema({
     createdAt: v.string(),
     updatedAt: v.string(),
   }).index("by_userId", ["userId"]),
+
+  // ═══ OFFER ELIGIBILITY STATE (KIN-822) ═══
+  //
+  // Denormalized snapshot of whether a buyer can currently make an offer on a
+  // given deal room, recomputed from the `agreements` table whenever the
+  // underlying agreement lifecycle changes. The canonical source of truth is
+  // still the `agreements` table — this table just caches the derived
+  // eligibility verdict so UI / AI engines / offer mutations can read it in
+  // one indexed lookup instead of replaying the agreement log every time.
+  //
+  // Every state change also writes an `auditLog` entry (action:
+  // "offer_eligibility_changed") so we can reconstruct the history of why
+  // eligibility flipped on or off for a given buyer + deal room.
+  offerEligibilityState: defineTable({
+    buyerId: v.id("users"),
+    dealRoomId: v.id("dealRooms"),
+    isEligible: v.boolean(),
+    currentAgreementType: eligibilityAgreementType,
+    // The signed agreement that determined the current eligibility verdict,
+    // if one exists. For non-eligible states this may be unset or point at
+    // a tour_pass that is blocking full-rep eligibility.
+    governingAgreementId: v.optional(v.id("agreements")),
+    // Machine-readable blocking reason. Unset when isEligible === true.
+    blockingReasonCode: v.optional(eligibilityBlockingReason),
+    // Human-readable companion to blockingReasonCode. Unset when eligible.
+    blockingReasonMessage: v.optional(v.string()),
+    requiredAction: eligibilityRequiredAction,
+    // ISO timestamp of the last recalculation — even a no-op recomputation
+    // bumps this, while createdAt/updatedAt track the underlying row.
+    computedAt: v.string(),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_buyerId_and_dealRoomId", ["buyerId", "dealRoomId"])
+    .index("by_buyerId", ["buyerId"])
+    .index("by_isEligible", ["isEligible"]),
 });
