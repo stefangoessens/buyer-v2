@@ -46,7 +46,7 @@ export function PasteLinkInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className={`flex w-full items-center gap-3 ${isHero ? "flex-col sm:flex-row" : ""}`}
+      className={`flex w-full items-center gap-3 ${isHero ? "flex-col" : ""}`}
     >
       <div className="relative w-full">
         <svg
@@ -81,7 +81,7 @@ export function PasteLinkInput({
         disabled={!canSubmit}
         className={`shrink-0 font-medium text-white shadow-sm transition-colors duration-[var(--duration-fast)] ${
           isHero
-            ? "h-[60px] w-full rounded-[12px] bg-primary-400 px-5 text-base hover:bg-primary-500 disabled:bg-primary-200 sm:w-auto"
+            ? "h-[60px] w-full rounded-[12px] bg-primary-400 px-5 text-base hover:bg-primary-500 disabled:bg-primary-200"
             : "h-11 rounded-[12px] bg-primary-400 px-4 text-sm hover:bg-primary-500 disabled:bg-primary-200"
         }`}
       >

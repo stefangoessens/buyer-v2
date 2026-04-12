@@ -8,11 +8,9 @@ export function HeroSection({ children }: HeroSectionProps) {
   return (
     <section className="relative w-full bg-[#FCFBFF]">
       <div className="mx-auto max-w-[1248px] px-6 pb-16 pt-10 lg:px-8 lg:pb-20 lg:pt-14">
-        <div className="relative overflow-hidden rounded-[40px] shadow-sm ring-1 ring-neutral-200/70">
+        <div className="relative overflow-hidden rounded-[40px] shadow-sm ring-1 ring-neutral-200/40">
           <div className="pointer-events-none absolute inset-0" aria-hidden="true">
             <div className="absolute inset-0 bg-[linear-gradient(180deg,#EBF4FF_0%,#FFFFFF_100%)]" />
-            <div className="absolute -left-24 -top-24 size-[420px] rounded-full bg-primary-200/25 blur-3xl" />
-            <div className="absolute -bottom-28 -right-24 size-[420px] rounded-full bg-primary-100/35 blur-3xl" />
           </div>
           <div className="relative min-h-[520px] p-8 lg:min-h-[585px] lg:p-14">
             <div className="max-w-xl lg:max-w-[560px]">
@@ -44,7 +42,7 @@ export function HeroSection({ children }: HeroSectionProps) {
               </div>
             </div>
             <div className="absolute bottom-0 right-0 hidden lg:block">
-              <div className="relative h-[550px] w-[490px] overflow-hidden rounded-t-full bg-primary-700 shadow-xl">
+              <div className="relative h-[550px] w-[490px] overflow-hidden rounded-t-full bg-primary-700">
                 <div className="absolute inset-0 pt-3 pr-3">
                   <div className="relative h-full w-full overflow-hidden rounded-t-full bg-white">
                     <Image
