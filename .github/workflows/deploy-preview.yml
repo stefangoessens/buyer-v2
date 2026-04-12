@@ -1,0 +1,36 @@
+name: Preview Deploy
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened]
+
+jobs:
+  preview-comment:
+    name: Preview deployment notice
+    runs-on: ubuntu-latest
+    # Skip for Dependabot/fork PRs where GITHUB_TOKEN lacks write permissions
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment PR with deploy info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🚀 Preview Deploy
+
+            Railway will automatically create a preview environment for this PR.
+
+            **Surfaces deployed:**
+            - Web app (Next.js)
+            - Python workers (if changed)
+
+            **Health check:** \`/api/health\` on the preview URL
+
+            **Note:** Convex uses the dev deployment for preview environments. Production Convex is only used on main.`
+            });

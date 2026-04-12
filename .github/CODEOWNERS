@@ -1,0 +1,25 @@
+# buyer-v2 code owners
+# All code changes require review from the project owner
+
+# Web application
+/src/ @stefangoessens
+
+# Convex backend
+/convex/ @stefangoessens
+
+# Python workers
+/services/ @stefangoessens
+
+# iOS app
+/ios/ @stefangoessens
+
+# Shared packages
+/packages/ @stefangoessens
+
+# Infrastructure and CI
+/.github/ @stefangoessens
+/railway.json @stefangoessens
+
+# Config files
+/*.config.* @stefangoessens
+/sentry.*.config.* @stefangoessens
