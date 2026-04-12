@@ -14,7 +14,7 @@ export function TestimonialCard({
   avatarUrl,
 }: TestimonialCardProps) {
   return (
-    <Card className="rounded-xl border-neutral-200 p-6">
+    <Card className="rounded-2xl border border-neutral-200 p-6">
       <CardContent className="p-0">
         <blockquote className="text-lg italic text-neutral-700">
           &ldquo;{quote}&rdquo;
@@ -32,7 +32,7 @@ export function TestimonialCard({
             </div>
           )}
           <div>
-            <div className="font-semibold text-neutral-900">{author}</div>
+            <div className="font-semibold text-neutral-800">{author}</div>
             {role && (
               <div className="text-sm text-neutral-500">{role}</div>
             )}

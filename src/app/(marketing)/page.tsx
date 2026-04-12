@@ -93,8 +93,8 @@ export default function Home() {
 
       {/* Features */}
       <section className="w-full bg-white py-16 lg:py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <h2 className="text-center text-3xl font-bold tracking-tight text-neutral-900">
+        <div className="mx-auto max-w-[1248px] px-6">
+          <h2 className="text-center text-3xl font-bold tracking-tight text-neutral-800">
             How buyer-v2 works for you
           </h2>
           <div className="mt-12 grid grid-cols-1 gap-8 md:grid-cols-3">
@@ -120,14 +120,14 @@ export default function Home() {
         className="w-full bg-neutral-50 py-16 lg:py-24"
       >
         <div className="mx-auto max-w-3xl px-6">
-          <h2 className="text-center text-3xl font-bold tracking-tight text-neutral-900">
+          <h2 className="text-center text-3xl font-bold tracking-tight text-neutral-800">
             Three steps to your best deal
           </h2>
           <div className="mt-12 flex flex-col items-center gap-0 md:flex-row md:items-start md:justify-between md:gap-0">
             {steps.map((step, i) => (
               <div key={step.number} className="flex items-center">
                 <div className="flex flex-col items-center text-center">
-                  <div className="flex size-10 items-center justify-center rounded-full bg-primary-500 text-lg font-bold text-white">
+                  <div className="flex size-10 items-center justify-center rounded-full bg-primary-400 text-lg font-bold text-white">
                     {step.number}
                   </div>
                   <p className="mt-3 text-base font-medium text-neutral-700">
@@ -150,8 +150,8 @@ export default function Home() {
 
       {/* Testimonials */}
       <section className="w-full bg-white py-16 lg:py-24">
-        <div className="mx-auto max-w-7xl px-6">
-          <h2 className="text-center text-3xl font-bold tracking-tight text-neutral-900">
+        <div className="mx-auto max-w-[1248px] px-6">
+          <h2 className="text-center text-3xl font-bold tracking-tight text-neutral-800">
             What buyers are saying
           </h2>
           <div className="mt-12 grid grid-cols-1 gap-8 md:grid-cols-3">
@@ -168,12 +168,12 @@ export default function Home() {
       </section>
 
       {/* Final CTA */}
-      <section className="w-full bg-primary-800 py-16 lg:py-24">
+      <section className="w-full bg-primary-700 py-16 lg:py-24">
         <div className="mx-auto max-w-3xl px-6 text-center">
           <h2 className="text-3xl font-bold tracking-tight text-white lg:text-4xl">
             Ready to find your Florida home?
           </h2>
-          <p className="mt-4 text-lg text-primary-200">
+          <p className="mt-4 text-lg text-primary-100">
             Paste a listing link and get your free AI analysis in seconds.
           </p>
           <div className="mt-8">

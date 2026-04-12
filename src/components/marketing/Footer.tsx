@@ -49,7 +49,7 @@ function FooterColumn({
 export function Footer() {
   return (
     <footer className="w-full bg-neutral-900">
-      <div className="mx-auto max-w-7xl px-6 py-16">
+      <div className="mx-auto max-w-[1248px] px-6 py-16 lg:px-8">
         <div className="grid grid-cols-1 gap-12 sm:grid-cols-3">
           <FooterColumn title="Company" links={footerLinks.company} />
           <FooterColumn title="Legal" links={footerLinks.legal} />

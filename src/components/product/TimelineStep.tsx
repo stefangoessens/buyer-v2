@@ -20,8 +20,8 @@ export function TimelineStep({
         <div
           className={cn(
             "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2",
-            status === "completed" && "border-primary-500 bg-primary-500",
-            status === "current" && "border-accent-500 bg-accent-500 animate-pulse",
+            status === "completed" && "border-primary-400 bg-primary-400",
+            status === "current" && "border-primary-400 bg-primary-400 animate-pulse",
             status === "upcoming" && "border-neutral-300 bg-neutral-200",
           )}
         >
@@ -43,7 +43,7 @@ export function TimelineStep({
           <div
             className={cn(
               "mt-1 w-0.5 grow",
-              status === "completed" ? "bg-primary-500" : "bg-neutral-200",
+              status === "completed" ? "bg-primary-400" : "bg-neutral-200",
             )}
           />
         )}
