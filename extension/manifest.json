@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "buyer-v2 Listing Saver",
+  "version": "0.1.0",
+  "description": "Save Zillow, Redfin, and Realtor.com listings directly to your buyer-v2 deal room.",
+  "action": {
+    "default_title": "Save to buyer-v2",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["activeTab", "tabs", "storage"],
+  "host_permissions": [
+    "https://*.zillow.com/*",
+    "https://*.redfin.com/*",
+    "https://*.realtor.com/*"
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
