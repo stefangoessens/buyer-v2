@@ -10,5 +10,9 @@ export function Providers({ children }: { children: ReactNode }) {
     initPostHog();
   }, []);
 
+  if (!convex) {
+    return <>{children}</>;
+  }
+
   return <ConvexProvider client={convex}>{children}</ConvexProvider>;
 }
