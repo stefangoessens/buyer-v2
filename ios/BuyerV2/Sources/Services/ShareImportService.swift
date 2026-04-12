@@ -281,27 +281,52 @@ final class ShareImportService {
         state = .submitting
         do {
             let response = try await backend.submitImport(url: url, portal: portal)
-            let outcome = decodeOutcome(from: response)
+            let outcome = try decodeOutcome(from: response)
             pendingUrl = nil
             state = .imported(outcome)
         } catch let ShareImportError.notAuthenticated {
             // Backend rejected our token — treat as session expired
             pendingUrl = url
             state = .sessionExpired(pendingUrl: url)
+        } catch ShareImportError.invalidResponse {
+            // Backend returned a malformed success payload (e.g.
+            // kind: existing without dealRoomId). Surface explicitly
+            // rather than fabricating an empty identifier that would
+            // send downstream navigation into an impossible path.
+            pendingUrl = url
+            state = .error(
+                message:
+                    "The backend returned an incomplete response. Please try again."
+            )
         } catch {
             pendingUrl = url
             state = .error(message: error.localizedDescription)
         }
     }
 
+    /// Decode a backend response into a typed outcome. Throws
+    /// `ShareImportError.invalidResponse` when the backend's contract
+    /// is violated — e.g. `kind: "existing"` without `dealRoomId` or
+    /// `kind: "created"` without `intakeJobId`. Never substitutes an
+    /// empty identifier.
     private func decodeOutcome(
         from response: ShareImportBackendResponse
-    ) -> ShareImportOutcome {
+    ) throws -> ShareImportOutcome {
         switch response.kind {
         case .existing:
-            return .existingDealRoom(dealRoomId: response.dealRoomId ?? "")
+            guard let dealRoomId = response.dealRoomId,
+                  !dealRoomId.isEmpty
+            else {
+                throw ShareImportError.invalidResponse
+            }
+            return .existingDealRoom(dealRoomId: dealRoomId)
         case .created:
-            return .newIntakeJob(intakeJobId: response.intakeJobId ?? "")
+            guard let intakeJobId = response.intakeJobId,
+                  !intakeJobId.isEmpty
+            else {
+                throw ShareImportError.invalidResponse
+            }
+            return .newIntakeJob(intakeJobId: intakeJobId)
         }
     }
 }

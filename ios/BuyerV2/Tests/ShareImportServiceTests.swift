@@ -449,6 +449,81 @@ struct ShareImportServiceTests {
         }
     }
 
+    // MARK: - Malformed success responses (codex PR #52 regression)
+
+    @Test("kind=existing with missing dealRoomId → .error (not .imported with empty id)")
+    func testMissingDealRoomIdError() async {
+        // Regression: codex P1 on PR #52. The backend returning
+        // kind: existing without a dealRoomId must surface as an
+        // error — fabricating an empty string would silently break
+        // downstream navigation.
+        let backend = MockShareImportBackend()
+        backend.submitResult = .success(
+            ShareImportBackendResponse(
+                kind: .existing,
+                dealRoomId: nil,
+                intakeJobId: nil
+            )
+        )
+        let service = ShareImportService(
+            backend: backend,
+            authState: { .signedIn(user: makeSignedInUser()) }
+        )
+
+        await service.handleSharedURL("https://www.zillow.com/homedetails/x")
+
+        guard case .error = service.state else {
+            Issue.record("Expected .error, got \(service.state)")
+            return
+        }
+    }
+
+    @Test("kind=existing with empty dealRoomId → .error")
+    func testEmptyDealRoomIdError() async {
+        let backend = MockShareImportBackend()
+        backend.submitResult = .success(
+            ShareImportBackendResponse(
+                kind: .existing,
+                dealRoomId: "",
+                intakeJobId: nil
+            )
+        )
+        let service = ShareImportService(
+            backend: backend,
+            authState: { .signedIn(user: makeSignedInUser()) }
+        )
+
+        await service.handleSharedURL("https://www.zillow.com/homedetails/x")
+
+        guard case .error = service.state else {
+            Issue.record("Expected .error for empty dealRoomId")
+            return
+        }
+    }
+
+    @Test("kind=created with missing intakeJobId → .error")
+    func testMissingIntakeJobIdError() async {
+        let backend = MockShareImportBackend()
+        backend.submitResult = .success(
+            ShareImportBackendResponse(
+                kind: .created,
+                dealRoomId: nil,
+                intakeJobId: nil
+            )
+        )
+        let service = ShareImportService(
+            backend: backend,
+            authState: { .signedIn(user: makeSignedInUser()) }
+        )
+
+        await service.handleSharedURL("https://www.redfin.com/FL/Miami/123/home/1")
+
+        guard case .error = service.state else {
+            Issue.record("Expected .error, got \(service.state)")
+            return
+        }
+    }
+
     // MARK: - Dismiss
 
     @Test("dismiss clears pendingUrl and returns to idle")
