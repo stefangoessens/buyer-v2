@@ -1763,4 +1763,151 @@ export default defineSchema({
   })
     .index("by_itemKey", ["itemKey"])
     .index("by_severity_and_status", ["severity", "status"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BACKGROUND ENRICHMENT PIPELINE (KIN-782)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Async jobs that augment a property with secondary data sources after
+  // primary extraction. The deal room renders progressively as jobs land.
+  // Each job is idempotent via `dedupeKey`, per-source failure isolated,
+  // and retry-safe via `attempt`/`maxAttempts`/`nextRetryAt`.
+  //
+  // Sources: fema_flood, county_appraiser, census_geocode,
+  // cross_portal_match, listing_agent_profile, neighborhood_market,
+  // portal_estimates, recent_sales.
+  enrichmentJobs: defineTable({
+    propertyId: v.id("properties"),
+    source: v.union(
+      v.literal("fema_flood"),
+      v.literal("county_appraiser"),
+      v.literal("census_geocode"),
+      v.literal("cross_portal_match"),
+      v.literal("listing_agent_profile"),
+      v.literal("neighborhood_market"),
+      v.literal("portal_estimates"),
+      v.literal("recent_sales"),
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    attempt: v.number(),
+    maxAttempts: v.number(),
+    priority: v.number(),
+    requestedAt: v.string(),
+    startedAt: v.optional(v.string()),
+    completedAt: v.optional(v.string()),
+    nextRetryAt: v.optional(v.string()),
+    errorCode: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    dedupeKey: v.string(),
+    resultRef: v.optional(v.string()),
+  })
+    .index("by_propertyId_and_source", ["propertyId", "source"])
+    .index("by_status_and_priority", ["status", "priority"])
+    .index("by_dedupeKey", ["dedupeKey"])
+    .index("by_nextRetryAt", ["nextRetryAt"])
+    .index("by_propertyId_and_status", ["propertyId", "status"]),
+
+  // Canonical listing-agent record — merged across portals, cached, and
+  // refreshed on a schedule. Stats drive the leverage engine and the
+  // pricing panel's context. Per-field provenance lets callers tell
+  // which portal contributed each number.
+  listingAgents: defineTable({
+    canonicalAgentId: v.string(),
+    name: v.string(),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    brokerage: v.optional(v.string()),
+    zillowProfileUrl: v.optional(v.string()),
+    redfinProfileUrl: v.optional(v.string()),
+    realtorProfileUrl: v.optional(v.string()),
+    activeListings: v.optional(v.number()),
+    soldCount: v.optional(v.number()),
+    avgDaysOnMarket: v.optional(v.number()),
+    medianListToSellRatio: v.optional(v.number()),
+    priceCutFrequency: v.optional(v.number()),
+    recentActivityCount: v.optional(v.number()),
+    // Per-field provenance — key = field name, value = { source, fetchedAt }.
+    provenance: v.record(
+      v.string(),
+      v.object({
+        source: v.string(),
+        fetchedAt: v.string(),
+      }),
+    ),
+    lastRefreshedAt: v.string(),
+  })
+    .index("by_canonicalAgentId", ["canonicalAgentId"])
+    .index("by_lastRefreshedAt", ["lastRefreshedAt"]),
+
+  // Link between a canonical listing-agent and each property they appear
+  // on. One property may have multiple (listing agent, buyer agent) rows
+  // over its lifetime.
+  propertyAgentLinks: defineTable({
+    propertyId: v.id("properties"),
+    agentId: v.id("listingAgents"),
+    role: v.union(v.literal("listing"), v.literal("buyer")),
+    source: v.string(),
+    capturedAt: v.string(),
+  })
+    .index("by_propertyId", ["propertyId"])
+    .index("by_agentId", ["agentId"])
+    .index("by_propertyId_and_role", ["propertyId", "role"]),
+
+  // Neighborhood market context per (geoKey, windowDays). Cached because
+  // neighborhood stats change slowly and the deal room render path must
+  // never block on a live portal fetch.
+  neighborhoodMarketContext: defineTable({
+    geoKey: v.string(),
+    geoKind: v.union(
+      v.literal("zip"),
+      v.literal("subdivision"),
+      v.literal("city"),
+    ),
+    windowDays: v.number(),
+    medianDom: v.optional(v.number()),
+    medianPricePerSqft: v.optional(v.number()),
+    medianListPrice: v.optional(v.number()),
+    inventoryCount: v.optional(v.number()),
+    pendingCount: v.optional(v.number()),
+    salesVelocity: v.optional(v.number()),
+    trajectory: v.optional(
+      v.union(v.literal("rising"), v.literal("flat"), v.literal("falling")),
+    ),
+    provenance: v.object({
+      source: v.string(),
+      fetchedAt: v.string(),
+    }),
+    lastRefreshedAt: v.string(),
+  })
+    .index("by_geoKey_and_windowDays", ["geoKey", "windowDays"])
+    .index("by_lastRefreshedAt", ["lastRefreshedAt"]),
+
+  // Per-portal property estimates captured as distinct values. The
+  // pricing panel triangulates across these rows — they are NEVER merged
+  // into one blended number before being stored.
+  portalEstimates: defineTable({
+    propertyId: v.id("properties"),
+    portal: v.union(
+      v.literal("zillow"),
+      v.literal("redfin"),
+      v.literal("realtor"),
+    ),
+    estimateValue: v.number(),
+    estimateLow: v.optional(v.number()),
+    estimateHigh: v.optional(v.number()),
+    asOfDate: v.optional(v.string()),
+    provenance: v.object({
+      source: v.string(),
+      fetchedAt: v.string(),
+    }),
+    capturedAt: v.string(),
+  })
+    .index("by_propertyId_and_portal", ["propertyId", "portal"])
+    .index("by_propertyId_and_capturedAt", ["propertyId", "capturedAt"]),
 });
