@@ -127,6 +127,18 @@ export const upgradeAccess = mutation({
       throw new Error("Not authorized");
     }
 
+    // "full" requires a signed agreement — only broker/admin can grant it
+    if (args.newLevel === "full" && user.role !== "broker" && user.role !== "admin") {
+      const signedAgreement = await ctx.db
+        .query("agreements")
+        .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
+        .collect();
+      const hasSigned = signedAgreement.some((a) => a.status === "signed");
+      if (!hasSigned) {
+        throw new Error("A signed agreement is required for full access");
+      }
+    }
+
     await ctx.db.patch(args.dealRoomId, {
       accessLevel: args.newLevel,
       updatedAt: new Date().toISOString(),
