@@ -2,19 +2,37 @@
   "name": "buyer-v2",
   "version": "0.0.0",
   "private": true,
-  "description": "AI-native Florida buyer brokerage platform. Root manifest — full Next.js + monorepo scaffolding lands with KIN-741.",
+  "description": "AI-native Florida buyer brokerage platform.",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "echo '[buyer-v2] cold-start: no app scaffolded yet. KIN-741 will set this up.' && exit 0",
-    "build": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0",
-    "typecheck": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0",
-    "test": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0",
-    "lint": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0"
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "next lint"
   },
   "dependencies": {
-    "convex": "^1.35.1"
+    "convex": "^1.35.1",
+    "next": "^15.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^15.3.0",
+    "@sentry/nextjs": "^9.0.0",
+    "posthog-js": "^1.200.0",
+    "postcss": "^8.5.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
   }
 }
