@@ -34,14 +34,33 @@ const testimonials = [
 
 /* ─── Bento Card ──────────────────────────────────────────────────────── */
 
-function BentoCard({ src, title, className, sizes }: { src: string; title: string; className?: string; sizes: string }) {
+function BentoCard({
+  src,
+  title,
+  description,
+  imageAspectClassName,
+  className,
+  sizes,
+}: {
+  src: string;
+  title: string;
+  description: string;
+  imageAspectClassName: string;
+  className?: string;
+  sizes: string;
+}) {
   return (
-    <div className={`group overflow-hidden rounded-[24px] border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg ${className ?? ""}`}>
-      <div className="relative aspect-[16/10] overflow-hidden bg-neutral-50">
-        <Image src={src} alt={title} fill className="object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]" sizes={sizes} />
+    <div className={`flex h-full flex-col justify-between rounded-[24px] bg-neutral-50 ${className ?? ""}`}>
+      <div className="flex flex-col gap-2 p-8 md:p-12">
+        <h3 className="text-[24px] font-semibold leading-[1.2] tracking-[-0.006em] text-neutral-800 md:text-[30px] md:leading-[36px]">
+          {title}
+        </h3>
+        <p className="text-[16px] font-normal leading-[1.5] text-neutral-500 md:text-[18px] md:leading-[27px]">
+          {description}
+        </p>
       </div>
-      <div className="px-6 py-4">
-        <h3 className="text-sm font-semibold text-neutral-800">{title}</h3>
+      <div className={`relative w-full overflow-hidden rounded-b-[28px] bg-white ${imageAspectClassName}`}>
+        <Image src={src} alt={title} fill className="object-fill" sizes={sizes} />
       </div>
     </div>
   );
@@ -89,20 +108,62 @@ export default function Home() {
       </section>
 
       {/* ── Bento Grid (PayFit-style: image + title cards) ────────── */}
-      <section className="w-full bg-neutral-50 pb-20 pt-4 lg:pb-28">
+      <section className="w-full bg-white py-20 lg:py-28">
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Everything automated</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">From analysis to closing, every step covered</h2>
             <p className="mt-4 text-lg leading-relaxed text-neutral-500">AI-powered tools that work together to give you an unfair advantage in Florida real estate.</p>
           </div>
-          <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-12">
-            <BentoCard src="/images/marketing/bento/bento-1.png" title="Fair pricing engine" className="md:col-span-5" sizes="(max-width: 768px) 100vw, 40vw" />
-            <BentoCard src="/images/marketing/bento/bento-2.png" title="Automated comp analysis" className="md:col-span-7" sizes="(max-width: 768px) 100vw, 58vw" />
-            <BentoCard src="/images/marketing/bento/bento-3.png" title="Negotiation leverage" className="md:col-span-7" sizes="(max-width: 768px) 100vw, 58vw" />
-            <BentoCard src="/images/marketing/bento/bento-4.png" title="Market intelligence" className="md:col-span-5" sizes="(max-width: 768px) 100vw, 40vw" />
-            <BentoCard src="/images/marketing/bento/bento-5.png" title="Document management" className="md:col-span-5" sizes="(max-width: 768px) 100vw, 40vw" />
-            <BentoCard src="/images/marketing/bento/bento-6.png" title="Deal room timeline" className="md:col-span-7" sizes="(max-width: 768px) 100vw, 58vw" />
+          <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-12">
+            <BentoCard
+              src="/images/marketing/bento/bento-1.png"
+              title="Fair pricing engine"
+              description="Instant fair-price ranges and overpay risk, grounded in local comparable sales."
+              imageAspectClassName="aspect-[1524/1512]"
+              className="md:col-span-5"
+              sizes="(max-width: 768px) 100vw, 40vw"
+            />
+            <BentoCard
+              src="/images/marketing/bento/bento-2.png"
+              title="Automated comp analysis"
+              description="Pulls comps, adjusts for features, and highlights the listings that truly set the market."
+              imageAspectClassName="aspect-[2160/1512]"
+              className="md:col-span-7"
+              sizes="(max-width: 768px) 100vw, 58vw"
+            />
+            <BentoCard
+              src="/images/marketing/bento/bento-3.png"
+              title="Negotiation leverage"
+              description="Turns data into crisp concession asks, counter offers, and timing advantages."
+              imageAspectClassName="aspect-[2160/1512]"
+              className="md:col-span-7"
+              sizes="(max-width: 768px) 100vw, 58vw"
+            />
+            <BentoCard
+              src="/images/marketing/bento/bento-4.png"
+              title="Market intelligence"
+              description="Track price drops, days-on-market shifts, and micro-trends as they happen."
+              imageAspectClassName="aspect-[1524/1512]"
+              className="md:col-span-5"
+              sizes="(max-width: 768px) 100vw, 40vw"
+            />
+            <BentoCard
+              src="/images/marketing/bento/bento-5.png"
+              title="Document management"
+              description="Keep disclosures, PDFs, and revisions organized in one place from offer to close."
+              imageAspectClassName="aspect-[1749/1512]"
+              className="md:col-span-5"
+              sizes="(max-width: 768px) 100vw, 40vw"
+            />
+            <BentoCard
+              src="/images/marketing/bento/bento-6.png"
+              title="Deal room timeline"
+              description="A single timeline for tasks, deadlines, and broker actions so nothing slips."
+              imageAspectClassName="aspect-[2160/1512]"
+              className="md:col-span-7"
+              sizes="(max-width: 768px) 100vw, 58vw"
+            />
           </div>
         </div>
       </section>
