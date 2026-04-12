@@ -324,6 +324,48 @@ describe("extractMilestones — month-name closing date format", () => {
     const closing = result.milestones.find((m) => m.workstream === "closing");
     expect(closing).toBeUndefined();
   });
+
+  it("handles 'Closing Date shall be May 15, 2028' (connective words)", () => {
+    const contract = `
+      Effective Date: 2028-01-15
+      Inspection Period: 10 days.
+      Closing Date shall be May 15, 2028.
+    `;
+    const result = extractMilestones({
+      contractText: contract,
+      effectiveDate: "2028-01-15",
+    });
+    const closing = result.milestones.find((m) => m.workstream === "closing");
+    expect(closing?.dueDate).toBe("2028-05-15");
+  });
+
+  it("handles 'Closing on May 15, 2028' (preposition)", () => {
+    const contract = `
+      Effective Date: 2028-01-15
+      Inspection Period: 10 days.
+      Closing on May 15, 2028.
+    `;
+    const result = extractMilestones({
+      contractText: contract,
+      effectiveDate: "2028-01-15",
+    });
+    const closing = result.milestones.find((m) => m.workstream === "closing");
+    expect(closing?.dueDate).toBe("2028-05-15");
+  });
+
+  it("handles 'Close on or before 5/15/2028' (slash + connective)", () => {
+    const contract = `
+      Effective Date: 2028-01-15
+      Inspection Period: 10 days.
+      Close on or before 5/15/2028.
+    `;
+    const result = extractMilestones({
+      contractText: contract,
+      effectiveDate: "2028-01-15",
+    });
+    const closing = result.milestones.find((m) => m.workstream === "closing");
+    expect(closing?.dueDate).toBe("2028-05-15");
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────

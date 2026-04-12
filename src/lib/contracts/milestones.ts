@@ -336,15 +336,26 @@ const MONTH_NAMES: Record<string, number> = {
 };
 
 function extractClosingDate(text: string): string | undefined {
-  // Try ISO format first: "Closing date: 2026-05-15"
-  const iso = /closing\s*(?:date)?[^0-9]{0,20}?(\d{4}-\d{2}-\d{2})/i.exec(text);
+  // Accept connective words between "closing" and the date, e.g.:
+  //   "Closing Date: 2028-05-15"
+  //   "Closing Date shall be May 15, 2028"
+  //   "Closing on May 15, 2028"
+  //   "Close on or before 5/15/2028"
+  // The lead-in pattern matches up to 40 characters of any non-digit content
+  // (words, punctuation, whitespace) between "close/closing" and the date.
+  const LEAD_IN = /(?:close|closing)[^0-9\n]{0,40}?/i.source;
+
+  // Try ISO format first: "Closing date: 2028-05-15"
+  const isoRegex = new RegExp(`${LEAD_IN}(\\d{4}-\\d{2}-\\d{2})`, "i");
+  const iso = isoRegex.exec(text);
   if (iso) return iso[1];
 
-  // Try month-name formats: "Closing: May 15, 2028" or "close on May 15 2028"
-  const monthName =
-    /closing\s*(?:date)?[^a-z0-9]{0,20}?(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i.exec(
-      text,
-    );
+  // Try month-name formats: "Closing Date shall be May 15, 2028"
+  const monthNameSource =
+    `(?:close|closing)[^\\n]{0,40}?` +
+    `(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)` +
+    `\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})`;
+  const monthName = new RegExp(monthNameSource, "i").exec(text);
   if (monthName) {
     const month = MONTH_NAMES[monthName[1].toLowerCase()];
     const day = parseInt(monthName[2], 10);
@@ -357,10 +368,12 @@ function extractClosingDate(text: string): string | undefined {
     }
   }
 
-  // Try M/D/YYYY format: "Closing: 5/15/2028"
-  const slash = /closing\s*(?:date)?[^0-9]{0,20}?(\d{1,2})\/(\d{1,2})\/(\d{4})/i.exec(
-    text,
+  // Try M/D/YYYY format: "Closing on 5/15/2028" or "Close on or before 5/15/2028"
+  const slashRegex = new RegExp(
+    `${LEAD_IN}(\\d{1,2})/(\\d{1,2})/(\\d{4})`,
+    "i",
   );
+  const slash = slashRegex.exec(text);
   if (slash) {
     const month = parseInt(slash[1], 10);
     const day = parseInt(slash[2], 10);
