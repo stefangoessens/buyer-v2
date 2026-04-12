@@ -79,3 +79,55 @@ export const aiReviewState = v.union(
   v.literal("approved"),
   v.literal("rejected")
 );
+
+// Financing type (for IPC limits)
+export const financingType = v.union(
+  v.literal("cash"),
+  v.literal("conventional"),
+  v.literal("fha"),
+  v.literal("va"),
+  v.literal("other")
+);
+
+// ─── Fee Ledger & Compensation (KIN-814) ────────────────────────────────────
+
+// Compensation status state machine
+export const compensationStatus = v.union(
+  v.literal("unknown"),
+  v.literal("seller_disclosed_off_mls"),
+  v.literal("negotiated_in_offer"),
+  v.literal("buyer_paid")
+);
+
+// Fee ledger entry types
+export const feeLedgerEntryType = v.union(
+  v.literal("fee_set"),
+  v.literal("seller_credit"),
+  v.literal("buyer_credit"),
+  v.literal("closing_credit_projection"),
+  v.literal("actual_closing"),
+  v.literal("adjustment")
+);
+
+// Fee ledger source
+export const feeLedgerSource = v.union(
+  v.literal("listing_agent"),
+  v.literal("offer_term"),
+  v.literal("contract"),
+  v.literal("closing_statement"),
+  v.literal("manual"),
+  v.literal("system")
+);
+
+// Reconciliation report type
+export const reconciliationReportType = v.union(
+  v.literal("post_close"),
+  v.literal("monthly")
+);
+
+// Reconciliation review status
+export const reconciliationReviewStatus = v.union(
+  v.literal("pending"),
+  v.literal("reviewed"),
+  v.literal("resolved")
+);
