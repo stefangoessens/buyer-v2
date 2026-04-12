@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as adminShell from "../adminShell.js";
 import type * as agentCoverage from "../agentCoverage.js";
 import type * as agreements from "../agreements.js";
 import type * as aiEngineOutputs from "../aiEngineOutputs.js";
@@ -61,6 +62,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  adminShell: typeof adminShell;
   agentCoverage: typeof agentCoverage;
   agreements: typeof agreements;
   aiEngineOutputs: typeof aiEngineOutputs;

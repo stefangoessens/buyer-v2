@@ -1059,6 +1059,166 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // INTERNAL CONSOLE (KIN-797 Admin Shell + downstream ops tools)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // adminNavItems — custom nav entries surfaced alongside the canonical static
+  // nav in `src/lib/admin/nav.ts`. Empty by default; ops can add pinned items,
+  // feature flags, or A/B surfaces without a schema change.
+  adminNavItems: defineTable({
+    slug: v.string(),
+    label: v.string(),
+    href: v.string(),
+    section: v.union(
+      v.literal("overview"),
+      v.literal("queues"),
+      v.literal("metrics"),
+      v.literal("tools"),
+      v.literal("settings"),
+    ),
+    allowedRoles: v.array(
+      v.union(v.literal("admin"), v.literal("broker")),
+    ),
+    order: v.number(),
+    hidden: v.optional(v.boolean()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_section_and_order", ["section", "order"]),
+
+  // opsReviewQueueItems — owned by KIN-798. Placeholder shape so KIN-797
+  // queue routes can render a typed empty state without a follow-up migration.
+  opsReviewQueueItems: defineTable({
+    queueKey: v.union(
+      v.literal("intake_review"),
+      v.literal("offer_review"),
+      v.literal("contract_review"),
+      v.literal("tour_dispute"),
+      v.literal("payout_dispute"),
+      v.literal("escalation"),
+    ),
+    subjectType: v.string(),
+    subjectId: v.string(),
+    priority: v.union(
+      v.literal("urgent"),
+      v.literal("high"),
+      v.literal("normal"),
+      v.literal("low"),
+    ),
+    status: v.union(
+      v.literal("open"),
+      v.literal("in_review"),
+      v.literal("resolved"),
+      v.literal("dismissed"),
+    ),
+    summary: v.string(),
+    assignedTo: v.optional(v.id("users")),
+    resolvedAt: v.optional(v.string()),
+    resolvedBy: v.optional(v.id("users")),
+    resolutionNotes: v.optional(v.string()),
+    openedAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_queue_and_status", ["queueKey", "status"])
+    .index("by_status_and_priority", ["status", "priority"])
+    .index("by_assignedTo", ["assignedTo"]),
+
+  // kpiSnapshots — owned by KIN-800. Precomputed metric values so the dashboard
+  // never recomputes on the client.
+  kpiSnapshots: defineTable({
+    metricKey: v.string(),
+    bucket: v.union(
+      v.literal("hourly"),
+      v.literal("daily"),
+      v.literal("weekly"),
+      v.literal("monthly"),
+    ),
+    bucketStart: v.string(),
+    value: v.number(),
+    unit: v.optional(v.string()),
+    numerator: v.optional(v.number()),
+    denominator: v.optional(v.number()),
+    sampleSize: v.optional(v.number()),
+    computedAt: v.string(),
+  })
+    .index("by_metric_and_bucketStart", ["metricKey", "bucketStart"])
+    .index("by_bucket_and_bucketStart", ["bucket", "bucketStart"])
+    // `by_computedAt` is the canonical "freshness" index. The admin shell
+    // topbar uses it to pick the globally-newest snapshot across every
+    // metric key without mis-ordering by lexicographic metricKey.
+    .index("by_computedAt", ["computedAt"]),
+
+  // manualOverrideRecords — owned by KIN-799. Every manual override writes one
+  // row with before/after state and a structured reason for audit.
+  manualOverrideRecords: defineTable({
+    targetType: v.string(),
+    targetId: v.string(),
+    field: v.string(),
+    beforeValue: v.optional(v.any()),
+    afterValue: v.optional(v.any()),
+    reasonCode: v.union(
+      v.literal("ops_request"),
+      v.literal("buyer_request"),
+      v.literal("legal_requirement"),
+      v.literal("data_correction"),
+      v.literal("escalation"),
+      v.literal("other"),
+    ),
+    reasonDetail: v.string(),
+    performedBy: v.id("users"),
+    performedAt: v.string(),
+    reversedAt: v.optional(v.string()),
+    reversedBy: v.optional(v.id("users")),
+  })
+    .index("by_target", ["targetType", "targetId"])
+    .index("by_performedBy", ["performedBy"])
+    .index("by_performedAt", ["performedAt"]),
+
+  // internalSettings — owned by KIN-807. Mutable runtime settings (feature
+  // flags, thresholds, message templates) with an audit trail.
+  internalSettings: defineTable({
+    key: v.string(),
+    valueJson: v.string(),
+    valueType: v.union(
+      v.literal("boolean"),
+      v.literal("number"),
+      v.literal("string"),
+      v.literal("json"),
+    ),
+    category: v.string(),
+    description: v.optional(v.string()),
+    allowedRoles: v.array(
+      v.union(v.literal("admin"), v.literal("broker")),
+    ),
+    updatedBy: v.id("users"),
+    updatedAt: v.string(),
+  })
+    .index("by_key", ["key"])
+    .index("by_category", ["category"]),
+
+  // internalNotes — owned by KIN-808. Buyer-hidden notes attached to any
+  // internal subject. History retained (notes are append-only — edits write
+  // a new row with parentNoteId).
+  internalNotes: defineTable({
+    subjectType: v.string(),
+    subjectId: v.string(),
+    body: v.string(),
+    authorId: v.id("users"),
+    visibility: v.union(
+      v.literal("internal"),
+      v.literal("broker_only"),
+      v.literal("admin_only"),
+    ),
+    parentNoteId: v.optional(v.id("internalNotes")),
+    pinned: v.optional(v.boolean()),
+    createdAt: v.string(),
+  })
+    .index("by_subject", ["subjectType", "subjectId"])
+    .index("by_author", ["authorId"])
+    .index("by_parent", ["parentNoteId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // CONTRACT MILESTONES (KIN-806)
   // ═══════════════════════════════════════════════════════════════════════════
   //
