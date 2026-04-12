@@ -27,9 +27,12 @@ export default function AdminShellPreviewPage() {
     latestKpiComputedAt: "2026-04-12T21:00:00Z",
     pendingOverrideCount: 3,
   };
+  // Non-identifying placeholders. This route is a bundled client page
+  // any visitor can hit, so it must never leak real staff names or
+  // emails. Keep these synthetic.
   const user = {
-    name: "Stefan Goessens",
-    email: "stefan@kindservices.com",
+    name: "Ops Preview",
+    email: "preview@example.test",
     role: "admin" as const,
   };
 

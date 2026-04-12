@@ -171,22 +171,27 @@ export const getCurrentSession = query({
       .collect();
     const urgent = openReviewItems.filter((row) => row.priority === "urgent");
 
+    // Pick the globally-newest snapshot across every metric key via the
+    // dedicated `by_computedAt` index. Using `by_metric_and_bucketStart`
+    // here would order by metricKey first and return a stale timestamp
+    // from the lexicographically-highest key.
     const latestKpi = await ctx.db
       .query("kpiSnapshots")
-      .withIndex("by_metric_and_bucketStart")
+      .withIndex("by_computedAt")
       .order("desc")
       .take(1);
 
     // Overrides that have not yet been reversed count as "pending" for the
     // overview — ops uses this to check that every change has a matched
-    // review entry in the audit log. When KIN-799 lands it will be replaced
-    // with a stronger review-state field.
-    const recentOverrides = await ctx.db
+    // review entry in the audit log. We count the full unreversed set
+    // rather than a capped window so older pending overrides never get
+    // dropped and give operators a false "all clear" signal. The table
+    // is small (manual overrides are rare) so a collect() is fine here;
+    // KIN-799 will replace this with an indexed status field.
+    const allOverrides = await ctx.db
       .query("manualOverrideRecords")
-      .withIndex("by_performedAt")
-      .order("desc")
-      .take(100);
-    const pendingOverrideCount = recentOverrides.filter(
+      .collect();
+    const pendingOverrideCount = allOverrides.filter(
       (row) => !row.reversedAt,
     ).length;
 

@@ -1143,7 +1143,11 @@ export default defineSchema({
     computedAt: v.string(),
   })
     .index("by_metric_and_bucketStart", ["metricKey", "bucketStart"])
-    .index("by_bucket_and_bucketStart", ["bucket", "bucketStart"]),
+    .index("by_bucket_and_bucketStart", ["bucket", "bucketStart"])
+    // `by_computedAt` is the canonical "freshness" index. The admin shell
+    // topbar uses it to pick the globally-newest snapshot across every
+    // metric key without mis-ordering by lexicographic metricKey.
+    .index("by_computedAt", ["computedAt"]),
 
   // manualOverrideRecords — owned by KIN-799. Every manual override writes one
   // row with before/after state and a structured reason for audit.
