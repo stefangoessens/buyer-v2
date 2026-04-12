@@ -49,15 +49,29 @@ export interface OverrideFieldDef {
   allowedRoles: readonly InternalConsoleRole[];
 }
 
+// All enum values below MUST match the canonical enums declared in
+// `convex/schema.ts`. If a status transitions on any of these entities,
+// update both the schema and this catalog in the same PR.
+
 export const OVERRIDE_CATALOG: readonly OverrideFieldDef[] = [
   {
     key: "dealRoom.status",
     label: "Deal room status",
     targetType: "dealRoom",
     valueType: "enum",
-    enumValues: ["active", "on_hold", "archived"],
+    enumValues: [
+      "intake",
+      "analysis",
+      "tour_scheduled",
+      "offer_prep",
+      "offer_sent",
+      "under_contract",
+      "closing",
+      "closed",
+      "withdrawn",
+    ],
     description:
-      "Force a deal room between active / on hold / archived. Use only when the buyer requests a pause or legal flags the deal.",
+      "Force a deal room into a specific workflow state. Use only when the buyer requests a pause or legal flags the deal.",
     allowedRoles: ["admin"],
   },
   {
@@ -75,13 +89,23 @@ export const OVERRIDE_CATALOG: readonly OverrideFieldDef[] = [
     label: "Offer status",
     targetType: "offer",
     valueType: "enum",
-    enumValues: ["draft", "submitted", "withdrawn", "accepted", "rejected", "countered"],
+    enumValues: [
+      "draft",
+      "pending_review",
+      "approved",
+      "submitted",
+      "countered",
+      "accepted",
+      "rejected",
+      "withdrawn",
+      "expired",
+    ],
     description:
       "Transition an offer into a new status outside the normal submission flow. Rarely needed — escalations only.",
     allowedRoles: ["admin"],
   },
   {
-    key: "buyerProfile.preapprovalAmount",
+    key: "buyerProfile.preApprovalAmount",
     label: "Buyer pre-approval amount",
     targetType: "buyerProfile",
     valueType: "number",
@@ -90,13 +114,12 @@ export const OVERRIDE_CATALOG: readonly OverrideFieldDef[] = [
     allowedRoles: ["admin"],
   },
   {
-    key: "buyerProfile.financingStatus",
-    label: "Buyer financing status",
+    key: "buyerProfile.preApproved",
+    label: "Buyer pre-approved flag",
     targetType: "buyerProfile",
-    valueType: "enum",
-    enumValues: ["not_started", "in_progress", "verified", "expired"],
+    valueType: "boolean",
     description:
-      "Bring financing status into sync with an out-of-band lender update.",
+      "Toggle the buyer's pre-approved status when lender documentation lands out-of-band.",
     allowedRoles: ["admin"],
   },
   {
@@ -104,9 +127,9 @@ export const OVERRIDE_CATALOG: readonly OverrideFieldDef[] = [
     label: "Contract status",
     targetType: "contract",
     valueType: "enum",
-    enumValues: ["draft", "pending_signature", "executed", "closed", "voided"],
+    enumValues: ["pending_signatures", "fully_executed", "amended", "terminated"],
     description:
-      "Override contract status when the execution flow did not capture a real-world signature or voiding.",
+      "Override contract status when the execution flow did not capture a real-world signature, amendment, or termination.",
     allowedRoles: ["admin"],
   },
   {
@@ -114,19 +137,10 @@ export const OVERRIDE_CATALOG: readonly OverrideFieldDef[] = [
     label: "Buyer agreement status",
     targetType: "agreement",
     valueType: "enum",
-    enumValues: ["draft", "sent", "signed", "countersigned", "executed", "expired", "revoked"],
+    enumValues: ["draft", "sent", "signed", "canceled", "replaced"],
     description:
       "Move a buyer brokerage agreement into a terminal state for audit when the signing flow was bypassed.",
     allowedRoles: ["admin"],
-  },
-  {
-    key: "property.reviewFlag",
-    label: "Property review flag",
-    targetType: "property",
-    valueType: "boolean",
-    description:
-      "Flag a property record for manual review. Used when ingestion confidence is low but ops already validated.",
-    allowedRoles: ["broker", "admin"],
   },
 ];
 

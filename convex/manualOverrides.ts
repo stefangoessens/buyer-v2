@@ -50,12 +50,26 @@ interface CatalogEntry {
   allowedRoles: readonly ("broker" | "admin")[];
 }
 
+// Every enum in this catalog MUST match the canonical enum declared on
+// the corresponding table in `convex/schema.ts`. `executeOverride`
+// validates values against these lists, so a drifted enum would block
+// legitimate overrides. Cross-referenced against schema.ts main branch.
 const CATALOG: readonly CatalogEntry[] = [
   {
     key: "dealRoom.status",
     targetType: "dealRoom",
     valueType: "enum",
-    enumValues: ["active", "on_hold", "archived"],
+    enumValues: [
+      "intake",
+      "analysis",
+      "tour_scheduled",
+      "offer_prep",
+      "offer_sent",
+      "under_contract",
+      "closing",
+      "closed",
+      "withdrawn",
+    ],
     allowedRoles: ["admin"],
   },
   {
@@ -69,41 +83,44 @@ const CATALOG: readonly CatalogEntry[] = [
     key: "offer.status",
     targetType: "offer",
     valueType: "enum",
-    enumValues: ["draft", "submitted", "withdrawn", "accepted", "rejected", "countered"],
+    enumValues: [
+      "draft",
+      "pending_review",
+      "approved",
+      "submitted",
+      "countered",
+      "accepted",
+      "rejected",
+      "withdrawn",
+      "expired",
+    ],
     allowedRoles: ["admin"],
   },
   {
-    key: "buyerProfile.preapprovalAmount",
+    key: "buyerProfile.preApprovalAmount",
     targetType: "buyerProfile",
     valueType: "number",
     allowedRoles: ["admin"],
   },
   {
-    key: "buyerProfile.financingStatus",
+    key: "buyerProfile.preApproved",
     targetType: "buyerProfile",
-    valueType: "enum",
-    enumValues: ["not_started", "in_progress", "verified", "expired"],
+    valueType: "boolean",
     allowedRoles: ["admin"],
   },
   {
     key: "contract.status",
     targetType: "contract",
     valueType: "enum",
-    enumValues: ["draft", "pending_signature", "executed", "closed", "voided"],
+    enumValues: ["pending_signatures", "fully_executed", "amended", "terminated"],
     allowedRoles: ["admin"],
   },
   {
     key: "agreement.status",
     targetType: "agreement",
     valueType: "enum",
-    enumValues: ["draft", "sent", "signed", "countersigned", "executed", "expired", "revoked"],
+    enumValues: ["draft", "sent", "signed", "canceled", "replaced"],
     allowedRoles: ["admin"],
-  },
-  {
-    key: "property.reviewFlag",
-    targetType: "property",
-    valueType: "boolean",
-    allowedRoles: ["broker", "admin"],
   },
 ];
 
@@ -200,7 +217,15 @@ async function writeAudit(
 
 // ─── queries ────────────────────────────────────────────────────────────────
 
-/** Paginated recent-overrides list. Role-gated. Limits to 200 rows. */
+/**
+ * Paginated recent-overrides list. Role-gated. Limits to 200 rows.
+ *
+ * When `targetType` is present we collect the full, time-sorted set
+ * first and then slice — otherwise `take(limit)` would pull the most
+ * recent N rows globally and filter AFTER, producing fewer results
+ * than requested whenever the newest rows belong to a different
+ * target type.
+ */
 export const listRecent = query({
   args: {
     targetType: v.optional(v.string()),
@@ -210,15 +235,20 @@ export const listRecent = query({
   handler: async (ctx, args) => {
     await requireInternalUser(ctx);
     const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
-    const rows = await ctx.db
+    if (args.targetType) {
+      const all = await ctx.db
+        .query("manualOverrideRecords")
+        .withIndex("by_performedAt")
+        .order("desc")
+        .collect();
+      const filtered = all.filter((r) => r.targetType === args.targetType);
+      return filtered.slice(0, limit);
+    }
+    return await ctx.db
       .query("manualOverrideRecords")
       .withIndex("by_performedAt")
       .order("desc")
       .take(limit);
-    if (args.targetType) {
-      return rows.filter((r) => r.targetType === args.targetType);
-    }
-    return rows;
   },
 });
 
@@ -396,6 +426,10 @@ export const reverseOverride = mutation({
       reversedBy: user._id,
     });
 
+    // Persist the full reversal reason in the audit row — not just
+    // its length — so reviewers can reconstruct why a reversal
+    // happened. The auditLog table is the canonical explanation
+    // store for override state changes.
     await writeAudit(ctx, {
       userId: user._id,
       action: "manual_override_reversed",
@@ -405,7 +439,7 @@ export const reverseOverride = mutation({
         targetType: row.targetType,
         targetId: row.targetId,
         originalReason: row.reasonCode,
-        reversalReasonLength: trimmed.length,
+        reversalReasonDetail: trimmed,
       },
     });
 

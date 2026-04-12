@@ -61,8 +61,14 @@ describe("admin/overrideCatalog", () => {
   });
 
   describe("canExecuteOverride", () => {
-    const adminOnlyField = OVERRIDE_CATALOG.find((f) => !f.allowedRoles.includes("broker"))!;
-    const brokerFriendlyField = OVERRIDE_CATALOG.find((f) => f.allowedRoles.includes("broker"))!;
+    const adminOnlyField = OVERRIDE_CATALOG[0]!;
+    // Synthetic broker-friendly field — the current live catalog is
+    // admin-only, but the role check must still work when a future
+    // entry adds broker access.
+    const brokerFriendlyField = {
+      ...adminOnlyField,
+      allowedRoles: ["broker", "admin"] as const,
+    };
 
     it("admin can execute any override", () => {
       for (const entry of OVERRIDE_CATALOG) {
@@ -70,14 +76,17 @@ describe("admin/overrideCatalog", () => {
       }
     });
 
-    it("broker can execute only broker-allowed overrides", () => {
-      expect(canExecuteOverride("broker", brokerFriendlyField)).toBe(true);
+    it("broker is denied on admin-only overrides", () => {
       expect(canExecuteOverride("broker", adminOnlyField)).toBe(false);
     });
 
+    it("broker can execute fields that include broker in allowedRoles", () => {
+      expect(canExecuteOverride("broker", brokerFriendlyField)).toBe(true);
+    });
+
     it("null / undefined role cannot execute anything", () => {
-      expect(canExecuteOverride(null, brokerFriendlyField)).toBe(false);
-      expect(canExecuteOverride(undefined, brokerFriendlyField)).toBe(false);
+      expect(canExecuteOverride(null, adminOnlyField)).toBe(false);
+      expect(canExecuteOverride(undefined, adminOnlyField)).toBe(false);
     });
   });
 
