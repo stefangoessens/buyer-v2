@@ -43,19 +43,15 @@ export function HeroSection({ children }: HeroSectionProps) {
       </div>
 
       <div className="pointer-events-none absolute right-0 top-[110px] hidden lg:block" aria-hidden="true">
-        <div className="relative h-[640px] w-[640px] translate-x-[15%] overflow-hidden rounded-full bg-primary-700">
-          <div className="absolute inset-0 p-3">
-            <div className="relative h-full w-full overflow-hidden rounded-full bg-white">
-              <Image
-                src="/images/marketing/hero/product-dashboard.png"
-                alt="buyer-v2 product dashboard"
-                fill
-                priority
-                className="object-cover object-left-top"
-                sizes="(min-width: 1024px) 640px, 0px"
-              />
-            </div>
-          </div>
+        <div className="relative h-[640px] w-[640px] translate-x-[15%] overflow-hidden rounded-full border-[8px] border-primary-700 bg-white shadow-[0_16px_40px_rgba(3,14,29,0.12)]">
+          <Image
+            src="/images/marketing/hero/product-dashboard.png"
+            alt="buyer-v2 product dashboard"
+            fill
+            priority
+            className="object-cover object-left-top"
+            sizes="(min-width: 1024px) 640px, 0px"
+          />
         </div>
       </div>
     </section>
