@@ -50,9 +50,9 @@ function BentoCard({
   sizes: string;
 }) {
   return (
-    <div className={`flex h-full flex-col justify-between rounded-[24px] bg-neutral-50 ${className ?? ""}`}>
+    <div className={`flex h-full flex-col justify-between rounded-[24px] bg-neutral-100 ${className ?? ""}`}>
       <div className="flex flex-col gap-2 p-8 md:p-12">
-        <h3 className="text-[24px] font-semibold leading-[1.2] tracking-[-0.006em] text-neutral-800 md:text-[30px] md:leading-[36px]">
+        <h3 className="text-[30px] font-semibold leading-[36px] tracking-[-0.006em] text-neutral-800">
           {title}
         </h3>
         <p className="text-[16px] font-normal leading-[1.5] text-neutral-500 md:text-[18px] md:leading-[27px]">
@@ -111,11 +111,9 @@ export default function Home() {
       <section className="w-full bg-white py-20 lg:py-28">
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Everything automated</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">From analysis to closing, every step covered</h2>
-            <p className="mt-4 text-lg leading-relaxed text-neutral-500">AI-powered tools that work together to give you an unfair advantage in Florida real estate.</p>
+            <h2 className="text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">From analysis to closing, every step covered</h2>
           </div>
-          <div className="mt-14 grid grid-cols-1 gap-5 md:grid-cols-12">
+          <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-12">
             <BentoCard
               src="/images/marketing/bento/bento-1.png"
               title="Fair pricing engine"
