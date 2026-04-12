@@ -194,6 +194,38 @@ export interface CostOutput {
   disclaimers: string[];
 }
 
+// ═══ Offer Engine Types ═══
+
+export interface OfferInput {
+  listPrice: number;
+  fairValue?: number;
+  leverageScore?: number; // 0-100 from leverage engine
+  buyerMaxBudget?: number;
+  daysOnMarket?: number;
+  competingOffers?: number;
+  isNewConstruction?: boolean;
+  sellerMotivated?: boolean;
+}
+
+export interface OfferScenario {
+  name: string;
+  price: number;
+  priceVsListPct: number;
+  earnestMoney: number;
+  closingDays: number;
+  contingencies: string[];
+  competitivenessScore: number; // 0-100
+  riskLevel: "low" | "medium" | "high";
+  explanation: string;
+}
+
+export interface OfferOutput {
+  scenarios: OfferScenario[];
+  recommendedIndex: number;
+  inputSummary: string;
+  refreshable: boolean;
+}
+
 // ═══ Calibration ═══
 
 /** Calibration record for accuracy tracking */
