@@ -8,6 +8,8 @@ struct DealTrackerShell: View {
 
     @Environment(DealService.self) private var dealService
     @Environment(AuthService.self) private var authService
+    @Environment(DealTasksService.self) private var tasksService
+    @Environment(DealTimelineService.self) private var timelineService
 
     var body: some View {
         Group {
@@ -35,6 +37,28 @@ struct DealTrackerShell: View {
         .animation(.easeInOut(duration: 0.25), value: dealService.state)
         .task {
             await dealService.loadDeals(for: user.id)
+        }
+        // Drive the tasks/timeline services whenever the deal state changes —
+        // loading tasks/events when we resolve to an active deal, flipping
+        // to signed-out/no-active-deal otherwise so the tab views render the
+        // correct placeholder without ad hoc branching.
+        .onChange(of: dealService.state) { _, newState in
+            Task {
+                await syncChildServices(with: newState)
+            }
+        }
+    }
+
+    private func syncChildServices(with state: DealTrackerState) async {
+        switch state {
+        case .activeDeal(let deal):
+            await tasksService.loadTasks(dealRoomId: deal.id)
+            await timelineService.loadEvents(dealRoomId: deal.id)
+        case .noDeal:
+            tasksService.handleNoActiveDeal()
+            timelineService.handleNoActiveDeal()
+        case .error, .loading:
+            break
         }
     }
 
