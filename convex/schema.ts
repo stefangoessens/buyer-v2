@@ -4,6 +4,10 @@ import {
   assignmentStatus,
   availabilityOwnerType,
   availabilityStatus,
+  buyerEventPriority,
+  buyerEventResolvedBy,
+  buyerEventStatus,
+  buyerEventType,
   communicationChannel,
   compensationStatus,
   eligibilityAgreementType,
@@ -835,4 +839,79 @@ export default defineSchema({
     .index("by_throttleKey", ["throttleKey"])
     .index("by_timestamp", ["timestamp"])
     .index("by_eventType", ["eventType"]),
+
+  // ═══ BUYER UPDATE EVENTS (KIN-837) ═══
+  //
+  // Typed records used to surface updates to a buyer in their deal room
+  // inbox — "tour confirmed", "offer countered", "new comp arrived", etc.
+  // Events are the backend state; channel-specific rendering (email,
+  // push, SMS, in-app badge) is a separate layer that READS these rows
+  // but never writes its own.
+  //
+  // Dedupe contract:
+  //   - `dedupeKey` is `<eventType>:<referenceId>` built by `makeDedupeKey`
+  //     in `convex/lib/buyerEvents.ts`. The "reference id" is whatever
+  //     external object the event is about — tour id, offer id, comp id.
+  //   - (buyerId, dealRoomId, dedupeKey) is the natural uniqueness key.
+  //     The mutation layer enforces this by looking up the existing row
+  //     and bumping `dedupeCount` / `lastDedupedAt` / title / body rather
+  //     than inserting a second row.
+  //   - `dedupeCount` starts at 1 on first emit and increments on every
+  //     coalesced re-emit. The UI can use it for "updated 3x" hints.
+  //
+  // Every create, bump, mark-seen, and resolve also writes an `auditLog`
+  // entry so the history of a buyer's inbox is reconstructable even after
+  // events are cleaned up.
+  buyerUpdateEvents: defineTable({
+    buyerId: v.id("users"),
+    dealRoomId: v.id("dealRooms"),
+    // Machine-readable event type — see convex/lib/validators.ts.
+    eventType: buyerEventType,
+    // Human-readable title rendered to the buyer.
+    title: v.string(),
+    // Optional body / context string.
+    body: v.optional(v.string()),
+    // Deduplication key — events with the same key for the same (buyer,
+    // dealRoom) are coalesced. Example: "tour_confirmed:tour_123".
+    dedupeKey: v.string(),
+    // Lifecycle status: pending → seen → resolved; or superseded.
+    status: buyerEventStatus,
+    // Priority used for ordering in the UI (low / normal / high).
+    priority: buyerEventPriority,
+    // Structured context — varies by eventType. `extra` is a free-form
+    // JSON string for anything that doesn't fit the declared fields,
+    // kept as a string so the schema stays stable across event shapes.
+    context: v.optional(
+      v.object({
+        tourId: v.optional(v.id("tours")),
+        offerId: v.optional(v.id("offers")),
+        contractId: v.optional(v.id("contracts")),
+        propertyId: v.optional(v.id("properties")),
+        linkUrl: v.optional(v.string()),
+        extra: v.optional(v.string()),
+      })
+    ),
+    // When the event was first emitted (ISO 8601).
+    emittedAt: v.string(),
+    // When the buyer or system acknowledged/dismissed the event.
+    resolvedAt: v.optional(v.string()),
+    // Who resolved it — "buyer", "system" (auto), or "broker" (override).
+    resolvedBy: v.optional(buyerEventResolvedBy),
+    // First emit is 1; each dedupe attempt increments. Used for
+    // "updated 3x" UX and for rate-limiting noisy emitters.
+    dedupeCount: v.number(),
+    // Last time a dedupe attempt bumped this record.
+    lastDedupedAt: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_buyerId_and_status", ["buyerId", "status"])
+    .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
+    .index("by_dedupeKey", ["dedupeKey"])
+    .index("by_buyerId_and_dealRoomId_and_dedupeKey", [
+      "buyerId",
+      "dealRoomId",
+      "dedupeKey",
+    ])
+    .index("by_buyerId_and_emittedAt", ["buyerId", "emittedAt"]),
 });

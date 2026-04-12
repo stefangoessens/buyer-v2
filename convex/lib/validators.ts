@@ -230,6 +230,56 @@ export const rateLimitChannel = v.union(
   v.literal("manual_entry") // manual address entry
 );
 
+// ─── Buyer Update Events (KIN-837) ─────────────────────────────────────────
+
+// Buyer update event types — aligned with the analytics taxonomy (KIN-860)
+// but not every event fires both a buyer update and an analytics event.
+// Keep this union in sync with `BuyerEventType` in `convex/lib/buyerEvents.ts`
+// and the mirror at `src/lib/dealroom/buyer-events.ts`.
+export const buyerEventType = v.union(
+  v.literal("tour_confirmed"),
+  v.literal("tour_canceled"),
+  v.literal("tour_reminder"),
+  v.literal("agent_assigned"),
+  v.literal("offer_countered"),
+  v.literal("offer_accepted"),
+  v.literal("offer_rejected"),
+  v.literal("agreement_received"),
+  v.literal("agreement_signed_reminder"),
+  v.literal("document_ready"),
+  v.literal("milestone_upcoming"),
+  v.literal("price_changed"),
+  v.literal("new_comp_arrived"),
+  v.literal("ai_analysis_ready"),
+  v.literal("broker_message")
+);
+
+// Event lifecycle status:
+//   pending    — newly emitted, not yet seen by buyer
+//   seen       — buyer has viewed it (but not dismissed)
+//   resolved   — dismissed or acted upon
+//   superseded — replaced by a newer event on the same dedupeKey
+export const buyerEventStatus = v.union(
+  v.literal("pending"),
+  v.literal("seen"),
+  v.literal("resolved"),
+  v.literal("superseded")
+);
+
+// Event display priority — ordered low → normal → high.
+export const buyerEventPriority = v.union(
+  v.literal("low"),
+  v.literal("normal"),
+  v.literal("high")
+);
+
+// Who resolved the event, for audit provenance.
+export const buyerEventResolvedBy = v.union(
+  v.literal("buyer"),
+  v.literal("system"),
+  v.literal("broker")
+);
+
 // ─── Lender Credit Validation (KIN-838) ────────────────────────────────────
 
 // Lender credit validation outcome — tri-state so review_required cases are
