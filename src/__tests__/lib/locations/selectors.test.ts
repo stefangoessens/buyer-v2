@@ -451,4 +451,18 @@ describe("real LOCATION_CATALOG", () => {
       expect(citySlugs.has(community.citySlug)).toBe(true);
     }
   });
+
+  // Codex P2 regression (PR #63): `buildMetadata` already appends
+  // " | buyer-v2" to every non-root title, so catalog `pageTitle`
+  // values must NOT include the suffix — otherwise the rendered
+  // <title> ends up with "... | buyer-v2 | buyer-v2".
+  it("no pageTitle contains the site suffix", async () => {
+    const { LOCATION_CATALOG } = await import("@/content/locations");
+    for (const city of LOCATION_CATALOG.cities) {
+      expect(city.pageTitle).not.toMatch(/\|\s*buyer-v2/i);
+    }
+    for (const community of LOCATION_CATALOG.communities) {
+      expect(community.pageTitle).not.toMatch(/\|\s*buyer-v2/i);
+    }
+  });
 });

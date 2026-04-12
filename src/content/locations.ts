@@ -18,7 +18,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
       slug: "miami",
       displayName: "Miami",
       state: "FL",
-      pageTitle: "Buying a Home in Miami | buyer-v2",
+      pageTitle: "Buying a Home in Miami",
       summary:
         "Everything you need to know about buying a home in Miami — market snapshots, brokerage services, neighborhood breakdowns, and how buyer-v2's commission rebate works for Miami buyers.",
       heroHeadline: "Your AI-native buyer brokerage for Miami",
@@ -97,7 +97,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
       slug: "tampa",
       displayName: "Tampa",
       state: "FL",
-      pageTitle: "Buying a Home in Tampa | buyer-v2",
+      pageTitle: "Buying a Home in Tampa",
       summary:
         "A plain-language guide to buying a home in Tampa — neighborhood snapshots, closing costs, buyer representation, and how buyer-v2 rebates a portion of the commission back at closing.",
       heroHeadline: "Your AI-native buyer brokerage for Tampa",
@@ -161,7 +161,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
       slug: "orlando",
       displayName: "Orlando",
       state: "FL",
-      pageTitle: "Buying a Home in Orlando | buyer-v2",
+      pageTitle: "Buying a Home in Orlando",
       summary:
         "Your guide to buying a home in Orlando — neighborhood picks, new-construction trends, buyer representation, and how buyer-v2's buyer credit translates into real cash back at closing.",
       heroHeadline: "Your AI-native buyer brokerage for Orlando",
@@ -215,7 +215,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
       slug: "jacksonville-draft",
       displayName: "Jacksonville",
       state: "FL",
-      pageTitle: "Buying a Home in Jacksonville | buyer-v2",
+      pageTitle: "Buying a Home in Jacksonville",
       summary:
         "Draft — not yet published. Held in the content catalog so the visibility filter is exercised on real data.",
       heroHeadline: "Draft Jacksonville page",
@@ -235,7 +235,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
       slug: "brickell",
       displayName: "Brickell",
       citySlug: "miami",
-      pageTitle: "Buying a Home in Brickell | buyer-v2",
+      pageTitle: "Buying a Home in Brickell",
       summary:
         "Brickell is Miami's financial district — high-rise condos, walkable urban core, rapid appreciation. Here's what Brickell buyers should know before they paste their first link.",
       heroHeadline: "buyer-v2 for Brickell buyers",
@@ -273,7 +273,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
       slug: "coconut-grove",
       displayName: "Coconut Grove",
       citySlug: "miami",
-      pageTitle: "Buying a Home in Coconut Grove | buyer-v2",
+      pageTitle: "Buying a Home in Coconut Grove",
       summary:
         "Coconut Grove mixes historic single-family homes with new-build townhomes. This guide covers neighborhood specifics and how buyer-v2 helps Coconut Grove buyers negotiate.",
       heroHeadline: "buyer-v2 for Coconut Grove",
@@ -302,7 +302,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
       slug: "hyde-park",
       displayName: "Hyde Park",
       citySlug: "tampa",
-      pageTitle: "Buying a Home in Hyde Park, Tampa | buyer-v2",
+      pageTitle: "Buying a Home in Hyde Park, Tampa",
       summary:
         "Hyde Park is Tampa's historic walkable core — bungalows, restaurants, and premium walkability. Here's what buyer-v2 can do for Hyde Park buyers specifically.",
       heroHeadline: "buyer-v2 for Hyde Park, Tampa",
@@ -331,7 +331,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
       slug: "seminole-heights",
       displayName: "Seminole Heights",
       citySlug: "tampa",
-      pageTitle: "Buying a Home in Seminole Heights, Tampa | buyer-v2",
+      pageTitle: "Buying a Home in Seminole Heights, Tampa",
       summary:
         "Seminole Heights has been one of Tampa's hottest emerging neighborhoods. Here's what matters for Seminole Heights buyers and how buyer-v2's analysis adapts.",
       heroHeadline: "buyer-v2 for Seminole Heights",
