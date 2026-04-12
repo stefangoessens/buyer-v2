@@ -2,6 +2,8 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
   assignmentStatus,
+  availabilityOwnerType,
+  availabilityStatus,
   compensationStatus,
   feeLedgerEntryType,
   feeLedgerSource,
@@ -550,6 +552,39 @@ export default defineSchema({
     .index("by_payoutStatus", ["payoutStatus"])
     .index("by_batchMonth", ["batchMonth"])
     .index("by_tourId", ["tourId"]),
+
+  // ═══ AVAILABILITY WINDOWS (KIN-836) ═══
+  //
+  // Typed availability and scheduling utility model. Used by tour coordination,
+  // buyer intake flows, and agent assignment flows. Windows are stored as
+  // ISO-8601 strings with explicit IANA timezone — not as epoch ms — so the
+  // original wall-clock intent is preserved for display while UTC conversion
+  // is handled by the shared `src/lib/scheduling/windows.ts` helper.
+  //
+  // `ownerType` + `ownerId` is intentionally a string pair instead of a
+  // dedicated v.id("users"|"tours"|...) because the owner can point at
+  // different tables (buyer/agent users, or a tour_request). Callers must
+  // resolve the concrete doc themselves when needed.
+  availabilityWindows: defineTable({
+    ownerType: availabilityOwnerType,
+    ownerId: v.string(),
+    startAt: v.string(), // ISO-8601 with timezone offset
+    endAt: v.string(), // ISO-8601 with timezone offset
+    timezone: v.string(), // IANA timezone name
+    recurring: v.optional(
+      v.object({
+        daysOfWeek: v.array(v.number()), // 0-6 (Sun=0)
+        until: v.optional(v.string()), // ISO-8601 date
+      })
+    ),
+    status: availabilityStatus,
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_ownerType_and_ownerId", ["ownerType", "ownerId"])
+    .index("by_status", ["status"])
+    .index("by_ownerId", ["ownerId"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // DEVICE TOKENS (Push Notification Registration — KIN-826)
