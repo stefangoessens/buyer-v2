@@ -1328,4 +1328,89 @@ export default defineSchema({
     .index("by_tokenId", ["tokenId"])
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_eventType_and_timestamp", ["eventType", "timestamp"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TOUR REQUESTS (KIN-802)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // The tour-REQUEST envelope: buyer drafts → submits → broker triages →
+  // assigns to an agent → confirms. Separate from the executed `tours` table
+  // so request-level state (preferred windows, attendee count, blocking
+  // reasons) is tracked independently from the executed showing.
+  //
+  // Lifecycle:
+  //   draft → submitted → { blocked | assigned } → confirmed → completed
+  //   any state → canceled
+  //   any non-terminal state → failed
+  //
+  // Agreement state snapshot is captured at submission time and never
+  // mutated, so audit trails can answer "was the buyer under a tour pass
+  // when they requested this tour?" even after the agreement changes.
+
+  tourRequests: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    propertyId: v.id("properties"),
+    buyerId: v.id("users"),
+    agentId: v.optional(v.id("users")),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("submitted"),
+      v.literal("blocked"),
+      v.literal("assigned"),
+      v.literal("confirmed"),
+      v.literal("completed"),
+      v.literal("canceled"),
+      v.literal("failed"),
+    ),
+    // Preferred time windows the buyer is available for the tour.
+    // Typically 1-5 windows; each carries an ISO start and end.
+    preferredWindows: v.array(
+      v.object({
+        start: v.string(),
+        end: v.string(),
+      }),
+    ),
+    attendeeCount: v.number(),
+    buyerNotes: v.optional(v.string()),
+    // Agreement state captured at submission time. Frozen for audit.
+    agreementStateSnapshot: v.object({
+      type: v.union(
+        v.literal("none"),
+        v.literal("tour_pass"),
+        v.literal("full_representation"),
+      ),
+      status: v.union(
+        v.literal("none"),
+        v.literal("draft"),
+        v.literal("sent"),
+        v.literal("signed"),
+        v.literal("replaced"),
+        v.literal("canceled"),
+      ),
+      signedAt: v.optional(v.string()),
+    }),
+    // Structured blocking or failure reason codes. Populated only when
+    // status is "blocked" or "failed".
+    blockingReason: v.optional(v.string()),
+    failureReason: v.optional(v.string()),
+    // Optional internal notes — never exposed to buyer.
+    internalNotes: v.optional(v.string()),
+    // Once a request is assigned + confirmed, an executed `tours` row may
+    // be linked. Optional because some requests never execute (canceled,
+    // failed) and the tours table is owned by the execution layer.
+    linkedTourId: v.optional(v.id("tours")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    submittedAt: v.optional(v.string()),
+    assignedAt: v.optional(v.string()),
+    confirmedAt: v.optional(v.string()),
+    completedAt: v.optional(v.string()),
+    canceledAt: v.optional(v.string()),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_buyerId", ["buyerId"])
+    .index("by_buyerId_and_status", ["buyerId", "status"])
+    .index("by_propertyId", ["propertyId"])
+    .index("by_agentId_and_status", ["agentId", "status"])
+    .index("by_status", ["status"]),
 });
