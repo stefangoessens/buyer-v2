@@ -1,12 +1,12 @@
 import type { SourceRecord, MergeResult, FieldProvenance } from "./types";
 import { SOURCE_PRIORITY } from "./types";
 
-/** Fields that are portal-specific estimates — never merged, stored separately */
-const PORTAL_ESTIMATE_FIELDS = [
-  "zestimate",
-  "redfinEstimate",
-  "realtorEstimate",
-];
+/** Portal estimate fields — only accepted from their owning portal */
+const PORTAL_ESTIMATE_OWNERSHIP: Record<string, string> = {
+  zestimate: "zillow",
+  redfinEstimate: "redfin",
+  realtorEstimate: "realtor",
+};
 
 /** Fields where county records are preferred over portal data */
 const COUNTY_PREFERRED_FIELDS = [
@@ -56,8 +56,9 @@ export function mergeSourceRecords(sources: SourceRecord[]): MergeResult {
     for (const [field, value] of Object.entries(source.data)) {
       if (value === undefined || value === null || value === "") continue;
 
-      // Portal estimates go directly to their own field
-      if (PORTAL_ESTIMATE_FIELDS.includes(field)) {
+      // Portal estimates only accepted from their owning portal
+      if (field in PORTAL_ESTIMATE_OWNERSHIP) {
+        if (source.sourcePlatform !== PORTAL_ESTIMATE_OWNERSHIP[field]) continue;
         mergedFields[field] = value;
         provenance[field] = {
           source: source.sourcePlatform,

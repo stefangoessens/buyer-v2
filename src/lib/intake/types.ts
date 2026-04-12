@@ -32,11 +32,11 @@ export type ParseResult =
 
 /** Source priority for conflict resolution (lower = higher priority) */
 export const SOURCE_PRIORITY: Record<string, number> = {
-  county: 0, // County records highest priority for tax/legal
   zillow: 1,
   redfin: 2,
   realtor: 3,
-  manual: 4,
+  county: 4, // County is NOT globally highest — only preferred for tax/legal via getFieldPriority
+  manual: 5,
 };
 
 /** Per-field provenance tracking */
