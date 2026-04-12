@@ -1,0 +1,17 @@
+{
+  "name": "buyer-v2",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AI-native Florida buyer brokerage platform. Root manifest — full Next.js + monorepo scaffolding lands with KIN-741.",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "echo '[buyer-v2] cold-start: no app scaffolded yet. KIN-741 will set this up.' && exit 0",
+    "build": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0",
+    "typecheck": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0",
+    "test": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0",
+    "lint": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0"
+  }
+}

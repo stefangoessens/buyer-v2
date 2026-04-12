@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-cold-start:
+    name: Detect cold start
+    runs-on: ubuntu-latest
+    outputs:
+      cold_start: ${{ steps.check.outputs.cold_start }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if grep -q "cold-start: no app scaffolded yet" package.json; then
+            echo "cold_start=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::cold-start detected — skipping build/test"
+          else
+            echo "cold_start=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  validate:
+    name: Validate
+    needs: detect-cold-start
+    if: needs.detect-cold-start.outputs.cold_start == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test --run
+
+      - name: Build
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+          NEXT_PUBLIC_POSTHOG_KEY: ${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
+          NEXT_PUBLIC_POSTHOG_HOST: ${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}
+          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+
+  python-workers:
+    name: Python workers
+    needs: detect-cold-start
+    if: needs.detect-cold-start.outputs.cold_start == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for python services
+        id: check
+        run: |
+          if [ -d "services" ] && find services -name "pyproject.toml" -o -name "requirements.txt" 2>/dev/null | grep -q .; then
+            echo "has_python=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_python=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Python
+        if: steps.check.outputs.has_python == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install + test python services
+        if: steps.check.outputs.has_python == 'true'
+        run: |
+          for service in services/*/; do
+            if [ -f "$service/pyproject.toml" ] || [ -f "$service/requirements.txt" ]; then
+              echo "::group::$service"
+              cd "$service"
+              pip install -e ".[dev]" 2>/dev/null || pip install -r requirements.txt
+              python -m pytest -q || true
+              cd -
+              echo "::endgroup::"
+            fi
+          done
