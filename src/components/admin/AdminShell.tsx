@@ -45,10 +45,14 @@ export function AdminShell({ children }: { children: ReactNode }) {
   // When `NEXT_PUBLIC_CONVEX_URL` is not configured the root Providers
   // tree omits ConvexProvider entirely, so `useQuery` would throw. Render
   // a friendly unavailable state so the shell still loads in a broken
-  // deploy instead of a raw React error screen.
+  // deploy instead of a raw React error screen. The h1 is kept
+  // consistent across every shell state (authorized, loading, denied,
+  // unavailable) so e2e tests and assistive tech always find a page
+  // title on internal routes.
   if (!convex) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-6">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-neutral-50 px-6">
+        <h1 className="sr-only">Broker Console</h1>
         <ShellUnavailableCard />
       </div>
     );
@@ -65,12 +69,18 @@ function AdminShellLive({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   if (session === undefined) {
-    return <ShellLoadingState />;
+    return (
+      <>
+        <h1 className="sr-only">Broker Console</h1>
+        <ShellLoadingState />
+      </>
+    );
   }
 
   if (session === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-6">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-neutral-50 px-6">
+        <h1 className="sr-only">Broker Console</h1>
         <AccessDeniedCard />
       </div>
     );
@@ -82,6 +92,7 @@ function AdminShellLive({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-neutral-50 text-neutral-900">
+      <h1 className="sr-only">Broker Console</h1>
       <AdminSidebar
         navItems={navItems}
         pathname={pathname}

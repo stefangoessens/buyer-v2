@@ -26,9 +26,9 @@ export function AdminPageHeader({
             {eyebrow}
           </div>
         ) : null}
-        <h1 className="text-2xl font-semibold text-neutral-900 md:text-3xl">
+        <h2 className="text-2xl font-semibold text-neutral-900 md:text-3xl">
           {title}
-        </h1>
+        </h2>
         {description ? (
           <p className="mt-2 max-w-2xl text-sm text-neutral-600">{description}</p>
         ) : null}

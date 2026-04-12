@@ -38,6 +38,7 @@ export default function AdminShellPreviewPage() {
 
   return (
     <div className="flex min-h-screen bg-neutral-50 text-neutral-900">
+      <h1 className="sr-only">Broker Console Preview</h1>
       <AdminSidebar
         navItems={navItems}
         pathname="/console"
