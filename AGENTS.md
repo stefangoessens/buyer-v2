@@ -16,7 +16,8 @@ Read these files in order before changing code:
 ## Working Rules
 
 - Build in `/Users/stefang/Desktop/buyer-v2`.
-- **Claude Code writes ALL code directly** — no Codex MCP for coding. Subagents are spawned via the Agent tool.
+- **Every issue MUST use an Agent Team** — TeamCreate → TaskCreate → Spawn teammates → Work → TeamDelete. No exceptions. The lead orchestrates but never writes code directly on a card. See https://code.claude.com/docs/en/agent-teams
+- **Claude Code subagents write ALL code** — no Codex MCP for coding. Subagents are spawned via the Agent tool with distinct file ownership.
 - **Code review is owned by the `@codex` GitHub integration** — it auto-runs on every PR. Claude's job is to fetch the review, implement fixes, reply to each comment, and re-trigger until clean.
 - Each subagent owns a **distinct, exclusive** set of files. No overlap between teammates.
 - Use the Convex client for all data access — never bypass with raw DB.

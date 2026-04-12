@@ -201,6 +201,10 @@ If `railway variables` shows missing required vars (compare against `.env.exampl
 
 #### Phase 2: Implementation via Agent Teams
 
+> **MANDATORY**: Every single Linear issue MUST be implemented by an Agent Team. No exceptions. The lead NEVER writes code directly on a card — it always creates a team, spawns specialized teammates, and orchestrates. This is a hard requirement, not a suggestion. Reference: https://code.claude.com/docs/en/agent-teams
+
+The lifecycle for every card is: **TeamCreate → TaskCreate → Spawn teammates → Teammates work → Lead reviews → TeamDelete**. The lead's job is orchestration (pick card, analyze scope, design team, assign files, run design review, validate, PR, fetch codex review). The teammates' job is writing code.
+
 Every Linear issue is implemented by an **Agent Team**. The lead creates a team, spawns 2-4 specialized subagents via the Agent tool, and coordinates through TaskCreate / SendMessage / TaskUpdate.
 
 ##### Step 1: Start new issue (Todo → In Progress)
@@ -597,7 +601,7 @@ When P0 is fully Done, P1 issues continue (they're already Todo). When P1 is Don
 ## Guardrails
 
 1. **Fully autonomous** — no human in the loop. Don't stop to ask. Log + carry on, except for the destructive guardrails below.
-2. **Claude Code writes ALL code** — no Codex MCP for coding. Subagents are spawned via the Agent tool.
+2. **Every issue = Agent Team** — TeamCreate → spawn teammates → TeamDelete. The lead orchestrates, teammates code. No card is ever implemented without a team. No code is ever written by the lead directly (except trivial design polish in the review loop).
 3. **Code review is owned by `@codex` GitHub integration** — Claude fetches review, implements fixes, replies to comments. **MAX 2 rounds**, then merge regardless. Leftovers → new Backlog issue.
 4. **Design loop is the exception to "carry on"** — design quality is non-negotiable. Run **at least 2 rounds, ideally 3, more if the screen still doesn't match the reference**. Never ship half-assed UI.
 5. **Use `/clone-website` for any card based on a reference site** (Hosman, PayFit, RealAdvisor, etc.) before spawning the implementation team. Then polish on top.
