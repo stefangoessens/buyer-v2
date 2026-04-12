@@ -244,12 +244,20 @@ class ZillowExtractor:
             if parsed is not None:
                 out.update(parsed)
         price_text = _meta_content(doc, 'meta[@name="twitter:data1"]')
-        if price_text:
-            out["price_usd"] = _parse_price(price_text)
-        if "price_usd" not in out:
+        meta_price = _parse_price(price_text) if price_text else None
+        if meta_price is not None:
+            out["price_usd"] = meta_price
+        else:
+            # Fall through to the visible price span when the twitter meta
+            # tag is absent OR present but non-numeric (e.g. "Contact agent",
+            # "Price on request"). Previously a non-numeric meta wrote
+            # `price_usd=None` and short-circuited the span path, causing
+            # extraction to wrongly raise SchemaShiftError.
             price_spans = doc.xpath('//span[@data-testid="price"]')
             if price_spans:
-                out["price_usd"] = _parse_price(price_spans[0].text_content() or "")
+                span_price = _parse_price(price_spans[0].text_content() or "")
+                if span_price is not None:
+                    out["price_usd"] = span_price
         description_nodes = doc.xpath('//*[@data-testid="description"]')
         if description_nodes:
             out["description"] = (description_nodes[0].text_content() or "").strip() or None
@@ -306,10 +314,14 @@ class ZillowExtractor:
         photos: tuple[PropertyPhoto, ...] = (
             photos_raw if isinstance(photos_raw, tuple) else tuple(photos_raw)
         )
+        # Backfill listing_id from the source URL's `<zpid>_zpid/` segment
+        # when neither JSON-LD nor Apollo provided one. This keeps the
+        # provenance/dedup key stable on HTML-only flows.
+        listing_id = raw.get("listing_id") or _listing_id_from_url(source_url)
         return CanonicalProperty(
             source_platform="zillow",
             source_url=source_url,
-            listing_id=raw.get("listing_id"),
+            listing_id=listing_id,
             mls_number=raw.get("mls_number"),
             extracted_at=datetime.now(UTC),
             address_line1=str(raw["address_line1"]),
@@ -396,6 +408,14 @@ def _parse_price(text: str) -> int | None:
         return int(match.group(1).replace(",", ""))
     except ValueError:
         return None
+
+
+_ZPID_RE = re.compile(r"/(\d+)_zpid(?:/|$)")
+
+
+def _listing_id_from_url(source_url: str) -> str | None:
+    match = _ZPID_RE.search(source_url)
+    return match.group(1) if match else None
 
 
 def _parse_address_line(text: str) -> dict[str, str] | None:

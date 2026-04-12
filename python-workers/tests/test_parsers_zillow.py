@@ -525,6 +525,66 @@ class TestHtmlFallbackPriceSpan:
         assert prop.price_usd == 485_000
         assert prop.city == "Orlando"
 
+    def test_non_numeric_twitter_meta_falls_through_to_span(self) -> None:
+        """Regression: twitter:data1="Contact agent" must not skip the span fallback.
+
+        Previously, a non-numeric meta value wrote ``price_usd=None`` and the
+        ``"price_usd" not in out`` check short-circuited the span parse,
+        causing SchemaShiftError on listings that only carry the visible
+        price in the span.
+        """
+        html = """<!DOCTYPE html>
+<html><head>
+<meta name="twitter:data1" content="Contact agent">
+</head><body>
+<main>
+<h1>456 Span Ave, Miami, FL 33131</h1>
+<span data-testid="price">$625,000</span>
+<span data-testid="bed-bath-beyond">2 bd | 2 ba | 1,100 sqft</span>
+</main>
+</body></html>"""
+        url = "https://www.zillow.com/homedetails/456-span-ave/7777_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 625_000
+        assert prop.listing_id == "7777"
+
+
+class TestListingIdBackfill:
+    """Listing ID is backfilled from the source URL when parsers don't provide one."""
+
+    def test_listing_id_backfilled_from_url_on_html_fallback(self) -> None:
+        html = """<!DOCTYPE html>
+<html><head>
+<meta name="twitter:data1" content="$395,000">
+</head><body>
+<h1>789 Backfill Rd, Fort Myers, FL 33901</h1>
+<span data-testid="bed-bath-beyond">3 bd | 2 ba | 1,500 sqft</span>
+</body></html>"""
+        url = "https://www.zillow.com/homedetails/789-backfill-rd/12345678_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.listing_id == "12345678"
+
+    def test_listing_id_none_when_url_has_no_zpid(self) -> None:
+        html = """<!DOCTYPE html>
+<html><head>
+<meta name="twitter:data1" content="$200,000">
+</head><body>
+<h1>1 Noid Way, Tampa, FL 33602</h1>
+<span data-testid="bed-bath-beyond">1 bd | 1 ba | 600 sqft</span>
+</body></html>"""
+        url = "https://www.zillow.com/homedetails/1-noid-way/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.listing_id is None
+
+    def test_listing_id_from_apollo_wins_over_url(self) -> None:
+        """When Apollo provides a listing_id it must not be overwritten by the URL."""
+        base = _load("zillow_sfh_homestead.html")
+        # Change the URL's zpid to something different from Apollo's zpid
+        # (50000005) to prove Apollo wins.
+        url = "https://www.zillow.com/homedetails/homestead-fl/99999999_zpid/"
+        prop = ZillowExtractor().extract(html=base, source_url=url)
+        assert prop.listing_id == "50000005"
+
 
 class TestApolloDecoyDoesNotPoison:
     """A decoy ``hdpApolloPreloadedData`` inside a string literal must not poison Apollo parsing.
