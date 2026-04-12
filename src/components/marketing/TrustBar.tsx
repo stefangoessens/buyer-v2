@@ -17,7 +17,7 @@ export function TrustBar({ stats }: TrustBarProps) {
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 border-t border-neutral-200 pt-8">
           <p className="text-xs font-medium uppercase tracking-widest text-neutral-400">Trusted by buyers across Florida</p>
           {["Zillow", "Redfin", "Realtor.com", "MLS"].map((name) => (
-            <div key={name} className="flex h-8 items-center rounded-md px-3 text-sm font-semibold tracking-wide text-neutral-300">{name}</div>
+            <div key={name} className="flex h-8 items-center rounded-md border border-neutral-200 bg-white px-4 text-sm font-semibold tracking-wide text-neutral-400">{name}</div>
           ))}
         </div>
       </div>
