@@ -56,10 +56,11 @@ export function estimateFlInsurance(
 /** FL flood insurance estimation by FEMA zone */
 export function estimateFloodInsurance(floodZone?: string): { low: number; mid: number; high: number } {
   if (!floodZone) return { low: 0, mid: 0, high: 0 };
-  const zone = floodZone.toUpperCase();
+  // Normalize: strip trailing digits/suffixes (e.g., "AE1" → "AE", "X500" → "X")
+  const zone = floodZone.toUpperCase().replace(/[0-9]+$/, "").trim();
   if (zone === "VE" || zone === "V") return { low: 3000, mid: 5000, high: 8000 };
-  if (zone === "AE" || zone === "A" || zone === "AO" || zone === "AH") return { low: 1500, mid: 2500, high: 4000 };
-  if (zone === "X" || zone === "B" || zone === "C") return { low: 400, mid: 600, high: 900 };
+  if (zone === "AE" || zone === "A" || zone === "AO" || zone === "AH" || zone === "AR") return { low: 1500, mid: 2500, high: 4000 };
+  if (zone === "X" || zone === "B" || zone === "C" || zone === "D") return { low: 400, mid: 600, high: 900 };
   return { low: 0, mid: 0, high: 0 };
 }
 

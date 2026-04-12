@@ -11,10 +11,13 @@ export const runCostEngine = internalAction({
     const property: any = await ctx.runQuery(internal.properties.getInternal, { propertyId: args.propertyId });
     if (!property) return null;
 
+    const purchasePrice = property.listPrice ?? 0;
+    if (purchasePrice <= 0) return null;
+
     const { computeOwnershipCosts } = await import("../../src/lib/ai/engines/cost");
 
     const input = {
-      purchasePrice: property.listPrice ?? 0,
+      purchasePrice,
       taxAnnual: property.taxAnnual,
       taxAssessedValue: property.taxAssessedValue,
       hoaFee: property.hoaFee,
