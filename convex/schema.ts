@@ -645,4 +645,33 @@ export default defineSchema({
     .index("by_key_and_channel", ["key", "channel"])
     .index("by_key_and_channel_and_isActive", ["key", "channel", "isActive"])
     .index("by_isActive", ["isActive"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MESSAGE DELIVERY PREFERENCES (KIN-829)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Typed, buyer-scoped state that governs which channels and categories
+  // of messages the platform delivers to a user. The delivery layer
+  // (email, SMS, push, in-app inbox) consults these preferences via the
+  // shared `src/lib/messagePreferences.ts` helper — delivery logic
+  // never reads channel-local flags.
+
+  messageDeliveryPreferences: defineTable({
+    userId: v.id("users"),
+    channels: v.object({
+      email: v.boolean(),
+      sms: v.boolean(),
+      push: v.boolean(),
+      inApp: v.boolean(),
+    }),
+    categories: v.object({
+      transactional: v.boolean(),
+      tours: v.boolean(),
+      offers: v.boolean(),
+      updates: v.boolean(),
+      marketing: v.boolean(),
+    }),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  }).index("by_userId", ["userId"]),
 });
