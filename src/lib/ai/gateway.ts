@@ -33,17 +33,23 @@ function isRetryableError(error: unknown): boolean {
   return false;
 }
 
-async function callProvider(
+async function callWithTimeout(
   provider: "anthropic" | "openai",
   model: string,
   messages: GatewayRequest["messages"],
   maxTokens: number,
-  temperature: number
+  temperature: number,
+  timeoutMs: number
 ) {
-  if (provider === "anthropic") {
-    return callAnthropic(messages, model, maxTokens, temperature);
-  }
-  return callOpenAI(messages, model, maxTokens, temperature);
+  const call = provider === "anthropic"
+    ? callAnthropic(messages, model, maxTokens, temperature)
+    : callOpenAI(messages, model, maxTokens, temperature);
+
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(`timeout after ${timeoutMs}ms`)), timeoutMs)
+  );
+
+  return Promise.race([call, timeout]);
 }
 
 /**
@@ -57,57 +63,60 @@ export async function gateway(request: GatewayRequest): Promise<GatewayResult> {
 
   const maxTokens = request.maxTokens ?? 4096;
   const temperature = request.temperature ?? 0;
+  const timeoutMs = config.timeoutMs ?? 30000;
+  const maxRetries = config.maxRetries ?? 1;
 
-  // Try primary provider
-  try {
-    const response = await callProvider(
-      config.primaryProvider,
-      config.primaryModel,
-      request.messages,
-      maxTokens,
-      temperature
-    );
-    return { success: true, data: response };
-  } catch (primaryError) {
-    // If not retryable or no fallback, fail immediately
-    if (
-      !isRetryableError(primaryError) ||
-      !config.fallbackProvider ||
-      !config.fallbackModel
-    ) {
-      return {
-        success: false,
-        error: {
-          code: "provider_error",
-          message:
-            primaryError instanceof Error
-              ? primaryError.message
-              : "Unknown error",
-          provider: config.primaryProvider,
-        },
-      };
-    }
-
-    // Try fallback provider
+  // Try primary provider with retries
+  let lastPrimaryError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const response = await callProvider(
-        config.fallbackProvider,
-        config.fallbackModel,
+      const response = await callWithTimeout(
+        config.primaryProvider,
+        config.primaryModel,
         request.messages,
         maxTokens,
-        temperature
+        temperature,
+        timeoutMs
       );
-      response.usage.fallbackUsed = true;
       return { success: true, data: response };
-    } catch (fallbackError) {
-      return {
-        success: false,
-        error: {
-          code: "all_providers_failed",
-          message: `Primary (${config.primaryProvider}): ${primaryError instanceof Error ? primaryError.message : "unknown"}. Fallback (${config.fallbackProvider}): ${fallbackError instanceof Error ? fallbackError.message : "unknown"}`,
-        },
-      };
+    } catch (err) {
+      lastPrimaryError = err;
+      if (!isRetryableError(err) || attempt === maxRetries) break;
     }
+  }
+
+  // If no fallback configured, fail
+  if (!config.fallbackProvider || !config.fallbackModel) {
+    return {
+      success: false,
+      error: {
+        code: "provider_error",
+        message: lastPrimaryError instanceof Error ? lastPrimaryError.message : "Unknown error",
+        provider: config.primaryProvider,
+      },
+    };
+  }
+
+  // Try fallback provider
+  try {
+    const response = await callWithTimeout(
+      config.fallbackProvider,
+      config.fallbackModel,
+      request.messages,
+      maxTokens,
+      temperature,
+      timeoutMs
+    );
+    response.usage.fallbackUsed = true;
+    return { success: true, data: response };
+  } catch (fallbackError) {
+    return {
+      success: false,
+      error: {
+        code: "all_providers_failed",
+        message: `Primary (${config.primaryProvider}): ${lastPrimaryError instanceof Error ? lastPrimaryError.message : "unknown"}. Fallback (${config.fallbackProvider}): ${fallbackError instanceof Error ? fallbackError.message : "unknown"}`,
+      },
+    };
   }
 }
 

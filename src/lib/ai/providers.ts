@@ -43,15 +43,16 @@ export async function callAnthropic(
   const client = getAnthropicClient();
   const start = Date.now();
 
-  // Separate system message from user/assistant messages
-  const systemMsg = messages.find((m) => m.role === "system");
+  // Concatenate all system messages, separate from user/assistant
+  const systemMsgs = messages.filter((m) => m.role === "system");
+  const systemPrompt = systemMsgs.length > 0 ? systemMsgs.map((m) => m.content).join("\n\n") : undefined;
   const chatMsgs = messages.filter((m) => m.role !== "system");
 
   const response = await client.messages.create({
     model,
     max_tokens: maxTokens,
     temperature,
-    system: systemMsg?.content,
+    system: systemPrompt,
     messages: chatMsgs.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
