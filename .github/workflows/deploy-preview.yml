@@ -1,15 +1,16 @@
 name: Preview Deploy
 
 on:
-  pull_request:
+  pull_request_target:
     branches: [main]
-    types: [opened, synchronize]
+    types: [opened]
 
 jobs:
   preview-comment:
     name: Preview deployment notice
     runs-on: ubuntu-latest
-    if: github.event.action == 'opened'
+    # Skip for Dependabot/fork PRs where GITHUB_TOKEN lacks write permissions
+    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       pull-requests: write
     steps:

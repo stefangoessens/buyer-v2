@@ -31,7 +31,8 @@ jobs:
           if echo "$response" | grep -q '"status":"ok"'; then
             echo "✅ Production health check passed"
           else
-            echo "⚠️ Health check returned unexpected response (deploy may still be in progress)"
+            echo "::error::Production health check failed: $response"
+            exit 1
           fi
 
       - name: Post-deploy summary
