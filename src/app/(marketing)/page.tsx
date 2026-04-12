@@ -124,7 +124,7 @@ export default function Home() {
                 {/* Phone mockup image */}
                 <div className="mt-6 overflow-hidden rounded-[24px] border border-neutral-200 bg-neutral-50 transition-shadow duration-300 group-hover:shadow-lg">
                   <div className="relative aspect-[3/4]">
-                    <Image src={step.imageSrc} alt={step.title} fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 33vw" />
+                    <Image src={step.imageSrc} alt="" fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 33vw" />
                   </div>
                 </div>
               </div>

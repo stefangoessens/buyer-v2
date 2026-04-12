@@ -40,14 +40,14 @@ export function TrustBar({ stats }: TrustBarProps) {
             <span className="text-xs text-neutral-400">from 500+ reviews</span>
           </div>
 
-          <div className="h-6 w-px bg-neutral-200" />
+          <div className="hidden h-6 w-px bg-neutral-200 sm:block" />
 
           {/* Review platform logo */}
           <div className="flex items-center gap-3">
             <Image src="/images/marketing/trust/capterra.svg" alt="Capterra" width={80} height={20} className="opacity-60 grayscale" />
           </div>
 
-          <div className="h-6 w-px bg-neutral-200" />
+          <div className="hidden h-6 w-px bg-neutral-200 sm:block" />
 
           {/* Client logo */}
           <div className="flex items-center gap-3">
