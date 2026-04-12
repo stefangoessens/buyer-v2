@@ -615,3 +615,121 @@ class TestApolloDecoyDoesNotPoison:
         assert prop.baths == 2.5
         assert prop.living_area_sqft == 1750
         assert prop.city == "Fort Lauderdale"
+
+
+class TestCompactPriceFormats:
+    """Regression: compact shorthand prices like $1.2M must not truncate to 1.
+
+    Previously the price regex was ``\\$?([\\d,]+)`` which stops at the
+    first non-digit/comma, so ``$1.2M`` matched just ``1`` and ``_parse_price``
+    accepted it — silently corrupting price data. The fix adds an optional
+    K/M/B suffix and rejects unsuffixed decimals.
+    """
+
+    @pytest.mark.parametrize(
+        ("price_text", "expected"),
+        [
+            ("$1.2M", 1_200_000),
+            ("$750K", 750_000),
+            ("$1.25M", 1_250_000),
+            ("$1,250,000", 1_250_000),
+            ("$675,000", 675_000),
+            ("$1.5B", 1_500_000_000),
+            ("1.2m", 1_200_000),  # lowercase suffix
+            ("$2M", 2_000_000),
+            ("$999K", 999_000),
+        ],
+    )
+    def test_compact_price_parses(self, price_text: str, expected: int) -> None:
+        html = f"""<!DOCTYPE html>
+<html><head>
+<meta name="twitter:data1" content="{price_text}">
+</head><body>
+<h1>100 Compact Way, Miami, FL 33131</h1>
+<span data-testid="bed-bath-beyond">2 bd | 2 ba | 1,100 sqft</span>
+</body></html>"""
+        url = "https://www.zillow.com/homedetails/100-compact-way/1111_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == expected
+
+    def test_bare_decimal_without_suffix_rejects(self) -> None:
+        """A bare ``1.2`` with no K/M/B suffix is not a valid USD price."""
+        html = """<!DOCTYPE html>
+<html><head>
+<meta name="twitter:data1" content="1.2">
+</head><body>
+<h1>200 Bare Rd, Miami, FL 33131</h1>
+<span data-testid="price">$850,000</span>
+<span data-testid="bed-bath-beyond">2 bd | 2 ba | 1,100 sqft</span>
+</body></html>"""
+        url = "https://www.zillow.com/homedetails/200-bare-rd/2222_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        # Span price ($850,000) must be used since meta is unparseable.
+        assert prop.price_usd == 850_000
+
+
+class TestJsonLdTypeAsList:
+    """Regression: JSON-LD @type as list must not produce junk property_type.
+
+    schema.org allows ``"@type": ["Product", "RealEstateListing",
+    "SingleFamilyResidence"]``. Previously the parser passed the raw list
+    to ``_normalize_property_type``, which stringified it to a value like
+    ``"['product',_'realestatelisting'...]"``. Because JSON-LD merge
+    order preferred earlier values, this junk then overrode Apollo's
+    ``homeType`` and persisted into ``CanonicalProperty``.
+    """
+
+    def test_list_type_picks_specific_residential(self) -> None:
+        html = """<!DOCTYPE html>
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": ["Product", "RealEstateListing", "SingleFamilyResidence"],
+  "name": "Nice house",
+  "address": {
+    "streetAddress": "500 ListType Ln",
+    "addressLocality": "Miami",
+    "addressRegion": "FL",
+    "postalCode": "33131"
+  },
+  "offers": {"@type": "Offer", "price": 950000}
+}
+</script>
+</head><body>
+<h1>500 ListType Ln, Miami, FL 33131</h1>
+</body></html>"""
+        url = "https://www.zillow.com/homedetails/500-listtype-ln/3333_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 950_000
+        assert prop.property_type == "single_family"
+
+    def test_list_type_falls_back_to_last_when_no_match(self) -> None:
+        """When no list entry matches a known type, last string entry wins."""
+        html = """<!DOCTYPE html>
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": ["Product", "RealEstateListing", "CustomExoticType"],
+  "name": "Unusual listing",
+  "address": {
+    "streetAddress": "600 Fallback Rd",
+    "addressLocality": "Tampa",
+    "addressRegion": "FL",
+    "postalCode": "33602"
+  },
+  "offers": {"@type": "Offer", "price": 500000}
+}
+</script>
+</head><body>
+<h1>600 Fallback Rd, Tampa, FL 33602</h1>
+</body></html>"""
+        url = "https://www.zillow.com/homedetails/600-fallback-rd/4444_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 500_000
+        # Falls back to last-entry string, passed through normalizer's
+        # lowercase path. Must NOT be a stringified list.
+        assert prop.property_type is not None
+        assert "[" not in prop.property_type
+        assert "'" not in prop.property_type

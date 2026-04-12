@@ -41,8 +41,13 @@ _APOLLO_RE = re.compile(
     re.DOTALL,
 )
 
-# Matches price strings like "$1,250,000" or "$675,000" in twitter:data1.
-_PRICE_RE = re.compile(r"\$?([\d,]+)")
+# Matches price strings in two formats:
+#   1. Full numeric: "$1,250,000" / "$675,000" / "1250000"
+#   2. Compact shorthand: "$1.2M" / "$750K" / "1.25M"
+# Compact suffixes (K/M/B) are resolved in `_parse_price`.
+_PRICE_RE = re.compile(
+    r"\$?\s*(?P<num>\d+(?:[,.]\d+)*)\s*(?P<suffix>[KkMmBb])?",
+)
 
 # Address like "7421 Mirabella Way, Boca Raton, FL 33433" (state is 2-letter,
 # ZIP is 5 digits). Kept deliberately lenient on the street portion.
@@ -184,8 +189,14 @@ class ZillowExtractor:
             out["living_area_sqft"] = _to_int(floor_size.get("value"))
         out["year_built"] = _to_int(node.get("yearBuilt"))
         out["description"] = _clean_str(node.get("description"))
+        # JSON-LD `@type` may be a string or a list of type strings. Pick
+        # the most specific residential type when a list is provided rather
+        # than passing the raw list to the normalizer (which would stringify
+        # it to a junk value that could override the later Apollo homeType).
         additional_type = node.get("additionalType") or node.get("@type")
-        out["property_type"] = _normalize_property_type(additional_type)
+        out["property_type"] = _normalize_property_type(
+            _pick_residential_type(additional_type)
+        )
         images = node.get("image")
         if isinstance(images, list):
             out["photos"] = tuple(
@@ -400,13 +411,26 @@ def _first_int(text: str) -> int | None:
         return None
 
 
+_PRICE_SUFFIX_MULTIPLIER = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}
+
+
 def _parse_price(text: str) -> int | None:
     match = _PRICE_RE.search(text)
     if match is None:
         return None
+    raw = match.group("num").replace(",", "")
+    suffix = (match.group("suffix") or "").upper()
     try:
-        return int(match.group(1).replace(",", ""))
-    except ValueError:
+        if suffix:
+            # "1.2M" / "750K" / "1.25B" → float × multiplier.
+            return int(float(raw) * _PRICE_SUFFIX_MULTIPLIER[suffix])
+        # Bare "1.2" makes no sense as a USD price (the comma branch above
+        # handles "1,250,000"); reject unsuffixed decimals to avoid parsing
+        # a stray "1" out of "1.2M"-like text when the suffix match failed.
+        if "." in raw:
+            return None
+        return int(raw)
+    except (ValueError, KeyError):
         return None
 
 
@@ -464,3 +488,28 @@ def _normalize_property_type(value: Any) -> str | None:
     if key in _PROPERTY_TYPE_MAP:
         return _PROPERTY_TYPE_MAP[key]
     return key
+
+
+def _pick_residential_type(value: Any) -> Any:
+    """Pick the most specific residential @type when JSON-LD provides a list.
+
+    Schema.org lets `@type` be a single string or a list of strings (e.g.
+    `["Product", "RealEstateListing", "SingleFamilyResidence"]`). Pass a
+    list straight into the normalizer and it stringifies the whole list;
+    instead, iterate and return the first value whose lowercase form is a
+    known key in the property-type map, falling back to the last entry
+    (typically the most specific) or the raw value for a string.
+    """
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        for item in value:
+            if not isinstance(item, str):
+                continue
+            key = item.strip().lower().replace(" ", "_").replace("-", "_")
+            if key in _PROPERTY_TYPE_MAP:
+                return item
+        # No match — prefer the last string entry (schema.org convention).
+        strings = [item for item in value if isinstance(item, str)]
+        return strings[-1] if strings else None
+    return value
