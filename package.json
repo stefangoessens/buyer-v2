@@ -15,7 +15,9 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
-    "lint": "next lint"
+    "lint": "next lint",
+    "eval": "npx tsx scripts/ai-eval.ts",
+    "eval:drift": "npx tsx scripts/ai-eval.ts drift"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
