@@ -1,18 +1,20 @@
 import type { OfferInput, OfferScenario, OfferOutput } from "./types";
 
 function computeBaseDiscount(input: OfferInput): number {
+  // Discount is NEGATIVE = lower price (good for buyer)
+  // Discount is POSITIVE = higher price (needed in competition)
   let discount = 0;
-  // Leverage score influence: high leverage = more seller pressure = bigger discount
-  if (input.leverageScore) {
-    discount -= (input.leverageScore - 50) * 0.1; // 50=neutral, 80=-3%, 20=+3%
+  // High leverage = more seller pressure = lower offer price
+  if (input.leverageScore !== undefined) {
+    discount -= (input.leverageScore - 50) * 0.1;
   }
-  // DOM influence: longer on market = more room
+  // Long DOM = stale listing = lower offer price
   if (input.daysOnMarket && input.daysOnMarket > 60) {
-    discount += Math.min((input.daysOnMarket - 60) * 0.05, 3);
+    discount -= Math.min((input.daysOnMarket - 60) * 0.05, 3);
   }
-  // Competition reduces discount
+  // Competition = higher offer price needed to win
   if (input.competingOffers && input.competingOffers > 0) {
-    discount -= input.competingOffers * 1.5;
+    discount += input.competingOffers * 1.5;
   }
   return discount;
 }
@@ -86,11 +88,9 @@ export function generateOfferScenarios(input: OfferInput): OfferOutput {
   );
   balanced.explanation = `Near fair value at ${balanced.priceVsListPct > 0 ? "+" : ""}${balanced.priceVsListPct}% vs list. Standard terms. Good balance of savings and acceptance probability.`;
 
-  // Scenario 3: Competitive — maximize win probability
-  const competitivePct = Math.min(
-    1.05,
-    reference / input.listPrice + 0.02 + baseDiscount / 300,
-  );
+  // Scenario 3: Competitive — maximize win probability (always above balanced)
+  const competitiveRaw = reference / input.listPrice + 0.02 + baseDiscount / 300;
+  const competitivePct = Math.min(1.05, Math.max(balancedPct + 0.02, competitiveRaw));
   const competitive = buildScenario(
     "Competitive",
     input,
