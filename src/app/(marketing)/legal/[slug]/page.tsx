@@ -11,6 +11,7 @@ import {
 } from "@/components/marketing/content/LegalDocumentTemplate";
 import type { ContentPageMeta } from "@/lib/content/types";
 import { filterPublic } from "@/lib/content/publicFilter";
+import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
 
 type PageParams = { slug: string };
 
@@ -26,17 +27,28 @@ export async function generateMetadata({
   const { slug } = await params;
   const doc = LEGAL_DOCUMENTS[slug];
   if (!doc) {
-    return { title: "Not found | buyer-v2" };
+    // Unknown legal slugs must NOT be indexed — mark as gated so
+    // buildMetadata emits noindex,nofollow. The page itself calls
+    // notFound() below which surfaces the 404, but the metadata is
+    // computed before that runs, so we need the explicit guard here
+    // to prevent indexing of stray /legal/<wrong-slug> URLs.
+    return buildMetadata({
+      title: "Not found",
+      description:
+        "The legal document you're looking for doesn't exist or has moved.",
+      path: "/legal/not-found",
+      visibility: "gated",
+      kind: "system",
+    });
   }
-  return {
-    title: `${doc.title} | buyer-v2`,
+  return buildMetadata({
+    title: doc.title,
     description: doc.summary,
-    openGraph: {
-      title: doc.title,
-      description: doc.summary,
-      type: "article",
-    },
-  };
+    path: `/legal/${doc.slug}`,
+    visibility: "public",
+    kind: "legal",
+    lastModified: doc.effectiveDate,
+  });
 }
 
 export default async function LegalDocumentPage({
@@ -61,18 +73,33 @@ export default async function LegalDocumentPage({
   const publicSections = filterPublic(doc.sections);
   const hasContent = publicSections.length > 0;
 
+  const jsonLd = buildStructuredData({
+    title: doc.title,
+    description: doc.summary,
+    path: `/legal/${doc.slug}`,
+    visibility: "public",
+    kind: "legal",
+    lastModified: doc.effectiveDate,
+  });
+
   return (
-    <ContentPageTemplate
-      meta={meta}
-      heroSuffix={<EffectiveDateStamp doc={doc} />}
-    >
-      {hasContent ? (
-        <LegalDocumentTemplate doc={doc} />
-      ) : (
-        <ContentValidationError
-          missing={[`legal/${doc.slug}: no public sections`]}
-        />
-      )}
-    </ContentPageTemplate>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <ContentPageTemplate
+        meta={meta}
+        heroSuffix={<EffectiveDateStamp doc={doc} />}
+      >
+        {hasContent ? (
+          <LegalDocumentTemplate doc={doc} />
+        ) : (
+          <ContentValidationError
+            missing={[`legal/${doc.slug}: no public sections`]}
+          />
+        )}
+      </ContentPageTemplate>
+    </>
   );
 }
