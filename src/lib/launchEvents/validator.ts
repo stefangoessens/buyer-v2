@@ -174,7 +174,11 @@ function checkNumericConstraints(
   value: unknown
 ): LaunchEventValidationError | null {
   if (spec.type !== "number" && spec.type !== "integer") return null;
-  if (typeof value !== "number" || Number.isNaN(value)) return null;
+  if (typeof value !== "number") return null;
+  // NaN is caught by the main validator loop before this helper
+  // runs; keep the type narrow here to `number` without an early
+  // NaN-as-skip branch so future refactors don't accidentally
+  // reintroduce the codex P1 finding.
 
   if (spec.type === "integer" && !Number.isInteger(value)) {
     return {
