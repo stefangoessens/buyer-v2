@@ -332,6 +332,16 @@ export const getForDealRoom = query({
  * Upsert a manual risk entry (broker/admin). Manual risks are stored
  * separately in the manualRisks table and composed into the summary
  * alongside property-facts and file-findings risks.
+ *
+ * Source semantics:
+ *   - `source` arg is optional. When omitted it defaults to "manual_broker".
+ *     Callers can pass "manual_agent" to record a risk that was flagged
+ *     by a showing agent via an internal tool.
+ *
+ * Update semantics:
+ *   - Partial updates preserve unspecified fields. Passing `undefined`
+ *     for `internalDetail` does NOT blank existing broker notes —
+ *     only an explicit empty string overwrites them.
  */
 export const upsertManualRisk = mutation({
   args: {
@@ -343,6 +353,9 @@ export const upsertManualRisk = mutation({
     buyerSummary: v.string(),
     internalDetail: v.optional(v.string()),
     confidence: v.number(),
+    source: v.optional(
+      v.union(v.literal("manual_broker"), v.literal("manual_agent")),
+    ),
   },
   returns: v.id("manualRisks"),
   handler: async (ctx, args) => {
@@ -362,15 +375,26 @@ export const upsertManualRisk = mutation({
       if (existing.dealRoomId !== args.dealRoomId) {
         throw new Error("Manual risk does not belong to the specified deal room");
       }
-      await ctx.db.patch(args.riskId, {
+
+      // Build a patch that only includes internalDetail when the caller
+      // explicitly passed it. `undefined` means "don't touch this field";
+      // an explicit empty string means "blank the existing note".
+      const patch: Record<string, unknown> = {
         category: args.category,
         severity: args.severity,
         title: args.title,
         buyerSummary: args.buyerSummary,
-        internalDetail: args.internalDetail ?? "",
         confidence: args.confidence,
         updatedAt: now,
-      });
+      };
+      if (args.internalDetail !== undefined) {
+        patch.internalDetail = args.internalDetail;
+      }
+      if (args.source !== undefined) {
+        patch.source = args.source;
+      }
+      await ctx.db.patch(args.riskId, patch);
+
       await ctx.db.insert("auditLog", {
         userId: user._id,
         action: "manual_risk_updated",
@@ -386,7 +410,9 @@ export const upsertManualRisk = mutation({
       propertyId: dealRoom.propertyId,
       category: args.category,
       severity: args.severity,
-      source: user.role === "admin" ? "manual_broker" : "manual_broker",
+      // Default to broker when not specified. Callers can explicitly
+      // set "manual_agent" for agent-flagged risks.
+      source: args.source ?? "manual_broker",
       title: args.title,
       buyerSummary: args.buyerSummary,
       internalDetail: args.internalDetail ?? "",
