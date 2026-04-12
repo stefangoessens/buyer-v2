@@ -66,9 +66,23 @@ export const getDashboard = query({
       "../src/lib/dealroom/close-dashboard-logic"
     );
 
-    const closeDate = activeContract?.milestones?.find((m: any) =>
-      m.name?.toLowerCase().includes("clos"),
-    )?.dueDate ?? null;
+    // Derive the close date from the live milestone set rather than the
+    // legacy optional `activeContract.milestones` field (which is rarely
+    // populated). Preference order: earliest pending "closing" workstream
+    // milestone, then any pending milestone whose name contains "clos".
+    const closingWorkstreamMilestones = milestones
+      .filter((m) => m.workstream === "closing" && m.status !== "completed")
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    const nameCloseMatch = milestones.find(
+      (m) =>
+        m.status !== "completed" &&
+        typeof m.name === "string" &&
+        m.name.toLowerCase().includes("clos"),
+    );
+    const closeDate =
+      closingWorkstreamMilestones[0]?.dueDate ??
+      nameCloseMatch?.dueDate ??
+      null;
 
     const address = property.address.formatted ??
       `${property.address.street}${property.address.unit ? ` ${property.address.unit}` : ""}, ${property.address.city}, ${property.address.state} ${property.address.zip}`;

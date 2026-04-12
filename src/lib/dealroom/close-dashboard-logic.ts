@@ -340,12 +340,34 @@ export function buildCloseDashboard(
 // ICS calendar generation — pure string builder for .ics attachment.
 // The delivery pipeline (Resend + APNs) lives in a separate lane and
 // will consume this output.
+//
+// IMPORTANT: for VALUE=DATE events, DTEND is EXCLUSIVE per RFC 5545. A
+// one-day event on 2026-04-25 must have DTSTART=20260425 and
+// DTEND=20260426. Setting DTEND equal to DTSTART creates a zero-length
+// event that some clients (Google Calendar, Outlook) drop or render in
+// unexpected ways.
+export function nextDayDate(iso: string): string {
+  const parts = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!parts) return iso.replace(/-/g, "");
+  const [, y, m, d] = parts;
+  const next = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d) + 1));
+  const yy = next.getUTCFullYear().toString().padStart(4, "0");
+  const mm = (next.getUTCMonth() + 1).toString().padStart(2, "0");
+  const dd = next.getUTCDate().toString().padStart(2, "0");
+  return `${yy}${mm}${dd}`;
+}
+
+function icsCompactDate(iso: string): string {
+  return iso.replace(/-/g, "");
+}
+
 export function buildIcsForMilestone(
   milestone: CloseDashboardMilestone,
   dealRoomId: string,
 ): string {
   const uid = `${dealRoomId}-${milestone.id}@buyer-v2`;
-  const dt = milestone.dueDate.replace(/-/g, "");
+  const dtStart = icsCompactDate(milestone.dueDate);
+  const dtEnd = nextDayDate(milestone.dueDate);
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -354,9 +376,9 @@ export function buildIcsForMilestone(
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
     `UID:${uid}`,
-    `DTSTAMP:${dt}T000000Z`,
-    `DTSTART;VALUE=DATE:${dt}`,
-    `DTEND;VALUE=DATE:${dt}`,
+    `DTSTAMP:${dtStart}T000000Z`,
+    `DTSTART;VALUE=DATE:${dtStart}`,
+    `DTEND;VALUE=DATE:${dtEnd}`,
     `SUMMARY:${milestone.name}`,
     `DESCRIPTION:Closing milestone (${milestone.workstream}). Responsible: ${milestone.responsibleParty}.`,
     "END:VEVENT",
@@ -384,13 +406,14 @@ export function buildIcsForWeeklyPlan(
   for (const item of unique.values()) {
     const m = item.milestone;
     const uid = `${dealRoomId}-${m.id}-weekly@buyer-v2`;
-    const dt = m.dueDate.replace(/-/g, "");
+    const dtStart = icsCompactDate(m.dueDate);
+    const dtEnd = nextDayDate(m.dueDate);
     events.push(
       "BEGIN:VEVENT",
       `UID:${uid}`,
-      `DTSTAMP:${dt}T000000Z`,
-      `DTSTART;VALUE=DATE:${dt}`,
-      `DTEND;VALUE=DATE:${dt}`,
+      `DTSTAMP:${dtStart}T000000Z`,
+      `DTSTART;VALUE=DATE:${dtStart}`,
+      `DTEND;VALUE=DATE:${dtEnd}`,
       `SUMMARY:${m.name}`,
       `DESCRIPTION:${item.reason}`,
       "END:VEVENT",

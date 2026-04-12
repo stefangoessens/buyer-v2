@@ -235,6 +235,26 @@ describe("buildIcsForMilestone", () => {
     expect(ics).toContain("UID:dr1-1@buyer-v2");
     expect(ics).toContain("DTSTART;VALUE=DATE:20260425");
   });
+
+  it("uses next-day DTEND for all-day events (RFC 5545 exclusive)", () => {
+    const milestone = toCloseDashboardMilestone(
+      raw("1", "Closing day", "closing", "2026-04-25"),
+      NOW,
+    );
+    const ics = buildIcsForMilestone(milestone, "dr1");
+    expect(ics).toContain("DTEND;VALUE=DATE:20260426");
+    expect(ics).not.toContain("DTEND;VALUE=DATE:20260425");
+  });
+
+  it("handles month rollover in next-day calculation", () => {
+    const milestone = toCloseDashboardMilestone(
+      raw("1", "Month-end close", "closing", "2026-04-30"),
+      NOW,
+    );
+    const ics = buildIcsForMilestone(milestone, "dr1");
+    expect(ics).toContain("DTSTART;VALUE=DATE:20260430");
+    expect(ics).toContain("DTEND;VALUE=DATE:20260501");
+  });
 });
 
 describe("buildIcsForWeeklyPlan", () => {
