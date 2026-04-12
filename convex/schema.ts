@@ -4,6 +4,7 @@ import {
   assignmentStatus,
   availabilityOwnerType,
   availabilityStatus,
+  communicationChannel,
   compensationStatus,
   feeLedgerEntryType,
   feeLedgerSource,
@@ -612,6 +613,38 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_token", ["token"])
     .index("by_userId_and_deviceId", ["userId", "deviceId"]),
+
+  // ═══ COMMUNICATION TEMPLATES (KIN-835) ═══
+  //
+  // Typed registry for all outbound communication templates (email, SMS,
+  // in-app, push) used across buyer, ops, and agent flows. Templates are
+  // stored with declared variables and rendered from typed inputs via the
+  // pure render library in `convex/lib/templateRender.ts` /
+  // `src/lib/templates/render.ts`. Versions are tracked and only one
+  // version per (key, channel) is marked active at a time.
+  //
+  // Why this lives in the DB and not UI code:
+  //   - legal/ops want to review and edit copy without code deploys
+  //   - render-time variable validation catches drift early
+  //   - every send references the concrete version that was rendered,
+  //     so we can reproduce historical messages exactly
+  communicationTemplates: defineTable({
+    key: v.string(), // stable identifier e.g. "tour_confirmation"
+    channel: communicationChannel,
+    version: v.string(), // semver-style "1.0.0"
+    subject: v.optional(v.string()), // email / push
+    body: v.string(), // template with {{variable}} placeholders
+    variables: v.array(v.string()), // declared required variable names
+    isActive: v.boolean(), // at most one active per (key, channel)
+    description: v.optional(v.string()),
+    author: v.string(),
+    changeNotes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_key_and_channel", ["key", "channel"])
+    .index("by_key_and_channel_and_isActive", ["key", "channel", "isActive"])
+    .index("by_isActive", ["isActive"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // MESSAGE DELIVERY PREFERENCES (KIN-829)
