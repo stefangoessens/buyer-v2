@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
 import { requireAuth, requireRole } from "./lib/session";
 import { assignmentStatus, routingPath } from "./lib/validators";
+import { createPayoutObligationCore } from "./showingPayouts";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // KIN-804 — Agent Coverage Registry & Tour Assignment Routing
@@ -472,6 +473,20 @@ export const recordAssignmentFromShowami = mutation({
     const agentUser = await ctx.db.get(args.agentId);
     if (!agentUser) throw new Error("Agent user not found");
 
+    // Guard against duplicate active assignments (same semantics as assignTour).
+    const existing = await ctx.db
+      .query("tourAssignments")
+      .withIndex("by_tourId", (q) => q.eq("tourId", args.tourId))
+      .collect();
+    const hasActive = existing.some(
+      (a) => a.status !== "canceled" && a.status !== "completed",
+    );
+    if (hasActive) {
+      throw new Error(
+        "Tour already has an active assignment. Cancel it first before retrying Showami handoff.",
+      );
+    }
+
     const now = new Date().toISOString();
 
     const assignmentId = await ctx.db.insert("tourAssignments", {
@@ -521,6 +536,20 @@ export const recordManualAssignment = mutation({
 
     const agentUser = await ctx.db.get(args.agentId);
     if (!agentUser) throw new Error("Agent user not found");
+
+    // Guard against duplicate active assignments (same semantics as assignTour).
+    const existing = await ctx.db
+      .query("tourAssignments")
+      .withIndex("by_tourId", (q) => q.eq("tourId", args.tourId))
+      .collect();
+    const hasActive = existing.some(
+      (a) => a.status !== "canceled" && a.status !== "completed",
+    );
+    if (hasActive) {
+      throw new Error(
+        "Tour already has an active assignment. Cancel it first before manual reassignment.",
+      );
+    }
 
     const now = new Date().toISOString();
 
@@ -608,6 +637,13 @@ export const updateAssignmentStatus = mutation({
       timestamp: now,
     });
 
+    // Auto-create payout obligation on completion so monthly batches never
+    // undercount broker-to-broker liabilities (FL Statute 475 cooperative
+    // arrangement). Idempotent — core helper throws if one already exists.
+    if (args.newStatus === "completed") {
+      await createPayoutObligationCore(ctx, args.assignmentId, user._id);
+    }
+
     return null;
   },
 });
@@ -666,6 +702,12 @@ export const syncShowamiStatus = mutation({
     }
 
     await ctx.db.patch(assignment._id, patch);
+
+    // Auto-create payout obligation when Showami syncs to completed, so the
+    // cooperating-brokerage fee is never missed by monthly batch generation.
+    if (args.newStatus === "completed") {
+      await createPayoutObligationCore(ctx, assignment._id, user._id);
+    }
 
     await ctx.db.insert("auditLog", {
       userId: user._id,

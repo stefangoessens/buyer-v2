@@ -101,7 +101,7 @@ export const getBatchForMonth = query({
  *   - The tour assignment is not in "completed" status
  *   - A payout already exists for this tour assignment
  */
-async function createPayoutObligationCore(
+export async function createPayoutObligationCore(
   ctx: MutationCtx,
   tourAssignmentId: Id<"tourAssignments">,
   actorId: Id<"users"> | undefined
