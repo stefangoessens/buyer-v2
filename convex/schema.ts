@@ -585,4 +585,31 @@ export default defineSchema({
     .index("by_ownerType_and_ownerId", ["ownerType", "ownerId"])
     .index("by_status", ["status"])
     .index("by_ownerId", ["ownerId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DEVICE TOKENS (Push Notification Registration — KIN-826)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  deviceTokens: defineTable({
+    userId: v.id("users"),
+    token: v.string(),                    // APNS device token (hex-encoded string)
+    platform: v.union(
+      v.literal("ios"),
+      v.literal("android")                // multi-state ready but only ios used today
+    ),
+    environment: v.union(
+      v.literal("development"),
+      v.literal("production")
+    ),
+    deviceId: v.optional(v.string()),     // opaque iOS-generated identifier (IDFV)
+    appVersion: v.optional(v.string()),   // e.g. "1.0.0"
+    osVersion: v.optional(v.string()),    // e.g. "iOS 17.4"
+    lastSeenAt: v.string(),               // ISO timestamp
+    invalidatedAt: v.optional(v.string()),// set when APNS reports token invalid
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_token", ["token"])
+    .index("by_userId_and_deviceId", ["userId", "deviceId"]),
 });
