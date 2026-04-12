@@ -71,18 +71,18 @@ export function PasteLinkInput({
           placeholder={placeholder}
           className={
             isHero
-              ? "h-14 rounded-xl border-primary-600 bg-white pl-10 text-lg"
-              : "h-10 rounded-lg pl-9"
+              ? "h-[68px] rounded-3xl border-2 border-primary-200 bg-white pl-10 text-lg"
+              : "h-10 rounded-xl pl-9"
           }
         />
       </div>
       <button
         type="submit"
         disabled={!canSubmit}
-        className={`shrink-0 rounded-xl font-semibold text-white transition-colors duration-[var(--duration-normal)] ${
+        className={`shrink-0 font-semibold text-white transition-colors duration-[var(--duration-normal)] ${
           isHero
-            ? "h-14 bg-accent-500 px-8 text-lg hover:bg-accent-600 disabled:bg-accent-300 sm:w-auto w-full"
-            : "h-10 bg-accent-500 px-5 text-sm hover:bg-accent-600 disabled:bg-accent-300"
+            ? "h-16 rounded-3xl bg-primary-400 px-8 text-lg hover:bg-primary-500 disabled:bg-primary-200 sm:w-auto w-full"
+            : "h-10 rounded-xl bg-primary-400 px-5 text-sm hover:bg-primary-500 disabled:bg-primary-200"
         }`}
       >
         {isHero ? "Get free analysis" : "Analyze"}
