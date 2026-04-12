@@ -240,12 +240,29 @@ export const supersede = mutation({
       );
     }
 
-    // Prevent creating a cycle: the successor must not (directly or
-    // transitively) point back at the predecessor.
+    // Load all of this buyer's agreements once — we need them for both
+    // the single-predecessor check below AND the cycle walk further down.
     const allForBuyer = await ctx.db
       .query("agreements")
       .withIndex("by_buyerId", (q) => q.eq("buyerId", predecessor.buyerId))
       .collect();
+
+    // Enforce LINEAR chains: the successor must not ALREADY be pointed
+    // at by any other agreement's replacedById. Otherwise two calls
+    // like supersede(A, C) and supersede(B, C) would create a fan-in
+    // graph (A→C, B→C), making audit/history queries ambiguous because
+    // walkChain would only discover the first lineage it encounters.
+    const existingPredecessorOfSuccessor = allForBuyer.find(
+      (a) => a.replacedById === args.successorId,
+    );
+    if (existingPredecessorOfSuccessor) {
+      throw new Error(
+        `Successor is already the replacement for ${existingPredecessorOfSuccessor._id} — a successor can have at most one predecessor (linear chain invariant)`,
+      );
+    }
+
+    // Prevent creating a cycle: the successor must not (directly or
+    // transitively) point back at the predecessor.
     const byId = new Map(allForBuyer.map((a) => [a._id, a]));
     let cursor: Doc<"agreements"> | undefined = successor;
     const visited = new Set<Id<"agreements">>();
