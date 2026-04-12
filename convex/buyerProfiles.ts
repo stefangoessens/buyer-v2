@@ -115,10 +115,16 @@ export const createOrUpdate = mutation({
       v.literal("6_plus_months"),
       v.literal("just_looking")
     )),
+    notes: v.optional(v.string()), // Internal — only broker/admin should set this
   },
   returns: v.id("buyerProfiles"),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
+
+    // Strip notes from buyer input — only broker/admin can write notes
+    if (args.notes !== undefined && user.role === "buyer") {
+      delete (args as Record<string, unknown>).notes;
+    }
 
     const existing = await ctx.db
       .query("buyerProfiles")
