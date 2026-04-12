@@ -32,6 +32,7 @@ export const processDeletion = internalMutation({
         name: "[Deleted User]",
         phone: undefined,
         avatarUrl: undefined,
+        authSubject: undefined, // Clear auth binding to prevent re-login
       });
       deletedRecords++;
     }

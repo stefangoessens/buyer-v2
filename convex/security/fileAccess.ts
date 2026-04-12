@@ -61,7 +61,7 @@ export const getSecureFileUrl = query({
       .unique();
     if (!user) return null;
 
-    // Check access
+    // Check deal room access
     const dealRoom = await ctx.db.get(args.dealRoomId);
     if (!dealRoom) return null;
 
@@ -71,6 +71,27 @@ export const getSecureFileUrl = query({
       dealRoom.buyerId === user._id;
 
     if (!hasAccess) return null;
+
+    // Verify the file is actually referenced by a record in this deal room
+    // Check agreements and contracts for this deal room
+    const agreements = await ctx.db
+      .query("agreements")
+      .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
+      .collect();
+    const contracts = await ctx.db
+      .query("contracts")
+      .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
+      .collect();
+
+    const referencedFileIds = new Set<string>();
+    for (const a of agreements) {
+      if (a.documentStorageId) referencedFileIds.add(a.documentStorageId);
+    }
+    for (const c of contracts) {
+      if (c.documentStorageId) referencedFileIds.add(c.documentStorageId);
+    }
+
+    if (!referencedFileIds.has(args.fileId)) return null;
 
     return await ctx.storage.getUrl(args.fileId);
   },
