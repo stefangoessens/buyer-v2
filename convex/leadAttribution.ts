@@ -311,8 +311,47 @@ export const handoffToUser = mutation({
       return existing._id;
     }
 
-    // No pre-registration row — create a minimal "direct" attribution
-    // so the user still has a row in the read model.
+    // No pre-registration row for this session — but before inserting a
+    // synthetic one, check if the user already has an attribution row
+    // from a previous handoff (e.g., callback replay, second device,
+    // repeated login flow). Without this guard, duplicate inserts would
+    // break the `.unique()` reads in getByUserId / markConverted.
+    const existingForUser = await ctx.db
+      .query("leadAttribution")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .unique();
+
+    if (existingForUser) {
+      // Idempotent handoff — the user already has an attribution row,
+      // just ensure its status reflects registered. We intentionally do
+      // NOT overwrite the existing sessionId since the original session
+      // is the canonical first-touch anchor.
+      if (existingForUser.status === "anonymous") {
+        await ctx.db.patch(existingForUser._id, {
+          status: "registered",
+          registeredAt: existingForUser.registeredAt ?? now,
+          updatedAt: now,
+        });
+      }
+
+      await ctx.db.insert("auditLog", {
+        userId: args.userId,
+        action: "lead_attribution_handoff_duplicate_session",
+        entityType: "leadAttribution",
+        entityId: existingForUser._id,
+        details: JSON.stringify({
+          requestedSessionId: args.sessionId,
+          canonicalSessionId: existingForUser.sessionId,
+          reason: "user already has attribution row from prior handoff",
+        }),
+        timestamp: now,
+      });
+
+      return existingForUser._id;
+    }
+
+    // Truly first handoff for this user — create a minimal "direct"
+    // attribution so the user still has a row in the read model.
     const syntheticTouch: Touch = {
       source: "direct",
       medium: "none",
