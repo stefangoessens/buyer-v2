@@ -107,6 +107,41 @@ export interface CompsOutput {
   dedupedCandidates: number;
 }
 
+// ═══ Leverage Engine Types ═══
+
+export interface LeverageInput {
+  propertyId: string;
+  listPrice: number;
+  daysOnMarket: number;
+  description?: string;
+  priceReductions?: Array<{ amount: number; date: string }>;
+  neighborhoodMedianDom?: number;
+  neighborhoodMedianPsf?: number;
+  sqft: number;
+  wasRelisted?: boolean;
+  wasWithdrawn?: boolean;
+  wasPendingFellThrough?: boolean;
+  listingAgentAvgDom?: number;
+  listingAgentAvgSaleToList?: number;
+}
+
+export interface LeverageSignal {
+  name: string;
+  value: number | string;
+  marketReference: number | string;
+  delta: number;
+  confidence: number;
+  citation: string;
+  direction: "bullish" | "bearish" | "neutral";
+}
+
+export interface LeverageOutput {
+  score: number; // 0-100, higher = more seller pressure
+  signals: LeverageSignal[];
+  overallConfidence: number;
+  signalCount: number;
+}
+
 // ═══ Calibration ═══
 
 /** Calibration record for accuracy tracking */
