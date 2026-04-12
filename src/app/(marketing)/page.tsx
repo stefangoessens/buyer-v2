@@ -50,7 +50,7 @@ function BentoCard({
   sizes: string;
 }) {
   return (
-    <div className={`flex h-full flex-col justify-between rounded-[24px] bg-neutral-100 ${className ?? ""}`}>
+    <div className={`flex h-full flex-col justify-between rounded-[24px] bg-neutral-50 ${className ?? ""}`}>
       <div className="flex flex-col gap-2 p-8 md:p-12">
         <h3 className="text-[30px] font-semibold leading-[36px] tracking-[-0.006em] text-neutral-800">
           {title}
@@ -59,8 +59,8 @@ function BentoCard({
           {description}
         </p>
       </div>
-      <div className={`relative w-full overflow-hidden rounded-b-[28px] ${imageAspectClassName}`}>
-        <div className="absolute inset-0 p-8 md:p-10">
+      <div className={`relative w-full overflow-hidden rounded-b-[24px] ${imageAspectClassName}`}>
+        <div className="absolute inset-0 px-8 pb-8 pt-12 md:px-10 md:pb-10 md:pt-16">
           <div className="relative h-full w-full">
             <Image src={src} alt={title} fill className="object-contain object-bottom" sizes={sizes} />
           </div>
@@ -117,7 +117,7 @@ export default function Home() {
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">From analysis to closing, every step covered</h2>
           </div>
-          <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-12">
+          <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-12">
             <BentoCard
               src="/images/marketing/bento/bento-1.png"
               title="Fair pricing engine"
