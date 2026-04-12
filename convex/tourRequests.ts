@@ -438,6 +438,43 @@ export const submit = mutation({
   },
 });
 
+/**
+ * Unblock a blocked request, returning it to `submitted` so broker can
+ * then assign it. Matches the shared state machine: blocked → submitted.
+ * Broker/admin only.
+ */
+export const unblock = mutation({
+  args: { requestId: v.id("tourRequests") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    if (user.role !== "broker" && user.role !== "admin") {
+      throw new Error("Only brokers/admins can unblock tour requests");
+    }
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Tour request not found");
+    if (request.status !== "blocked") {
+      throw new Error(
+        `ILLEGAL_TRANSITION: Cannot unblock request in status "${request.status}" — only blocked requests can be unblocked`,
+      );
+    }
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.requestId, {
+      status: "submitted",
+      blockingReason: undefined,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "tour_request_unblocked",
+      entityType: "tourRequests",
+      entityId: args.requestId,
+      timestamp: now,
+    });
+    return null;
+  },
+});
+
 /** Broker/admin marks a request blocked with a structured reason. */
 export const markBlocked = mutation({
   args: {
@@ -488,8 +525,14 @@ export const assignAgent = mutation({
 
     const request = await ctx.db.get(args.requestId);
     if (!request) throw new Error("Tour request not found");
-    if (request.status !== "submitted" && request.status !== "blocked") {
-      throw new Error(`Cannot assign request in status "${request.status}"`);
+    // Only submitted requests can be assigned directly. A blocked request
+    // must be unblocked (blocked → submitted via unblock()) before
+    // assignment, matching the shared state machine in
+    // src/lib/tours/requestValidation.ts.
+    if (request.status !== "submitted") {
+      throw new Error(
+        `ILLEGAL_TRANSITION: Cannot assign request in status "${request.status}" — only submitted requests can be assigned (blocked requests must be unblocked first)`,
+      );
     }
 
     // Verify the agent exists and has the right role
@@ -505,7 +548,6 @@ export const assignAgent = mutation({
       agentId: args.agentId,
       assignedAt: now,
       updatedAt: now,
-      blockingReason: undefined,
     });
     await ctx.db.insert("auditLog", {
       userId: user._id,
@@ -536,6 +578,31 @@ export const confirm = mutation({
     if (request.status !== "assigned") {
       throw new Error(`Cannot confirm request in status "${request.status}"`);
     }
+
+    // Validate linkedTourId belongs to the SAME deal room, property, and
+    // buyer as this request before persisting. Prevents a broker from
+    // accidentally attaching an unrelated tour row (which is hard to
+    // unwind once persisted).
+    if (args.linkedTourId) {
+      const tour = await ctx.db.get(args.linkedTourId);
+      if (!tour) throw new Error("Linked tour not found");
+      if (tour.dealRoomId !== request.dealRoomId) {
+        throw new Error(
+          "Linked tour deal room does not match this tour request",
+        );
+      }
+      if (tour.propertyId !== request.propertyId) {
+        throw new Error(
+          "Linked tour property does not match this tour request",
+        );
+      }
+      if (tour.buyerId !== request.buyerId) {
+        throw new Error(
+          "Linked tour buyer does not match this tour request",
+        );
+      }
+    }
+
     const now = new Date().toISOString();
     await ctx.db.patch(args.requestId, {
       status: "confirmed",
