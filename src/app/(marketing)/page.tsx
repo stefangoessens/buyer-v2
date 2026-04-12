@@ -21,13 +21,13 @@ const features = [
 ];
 
 const steps = [
-  { number: 1, title: "Paste a link", description: "Copy any listing URL from Zillow, Redfin, or Realtor.com and paste it into our analysis bar." },
-  { number: 2, title: "Review your analysis", description: "Get an instant AI-powered report with fair pricing, comps, leverage signals, and a property score." },
-  { number: 3, title: "Close with confidence", description: "Connect with a licensed Florida broker who uses your analysis to negotiate the best possible deal." },
+  { number: 1, title: "Paste a link", description: "Copy any listing URL from Zillow, Redfin, or Realtor.com and paste it into our analysis bar.", imageSrc: "/images/marketing/steps/step-1.png" },
+  { number: 2, title: "Review your analysis", description: "Get an instant AI-powered report with fair pricing, comps, leverage signals, and a property score.", imageSrc: "/images/marketing/steps/step-2.png" },
+  { number: 3, title: "Close with confidence", description: "Connect with a licensed Florida broker who uses your analysis to negotiate the best possible deal.", imageSrc: "/images/marketing/steps/step-3.png" },
 ];
 
 const testimonials = [
-  { quote: "I pasted a Zillow link and within seconds had a full pricing analysis. Saved us $18,000 on our first home in Tampa.", author: "Maria Gonzalez", role: "First-time buyer, Tampa" },
+  { quote: "I pasted a Zillow link and within seconds had a full pricing analysis. Saved us $18,000 on our first home in Tampa.", author: "Maria Gonzalez", role: "First-time buyer, Tampa", avatarSrc: "/images/marketing/testimonials/testimonial-1.jpg" },
   { quote: "The AI analysis caught overpricing my agent missed. buyer-v2 gave us the confidence to negotiate hard and win.", author: "James Chen", role: "Homebuyer, Miami" },
   { quote: "From paste to close in 23 days. The deal room kept everything organized and our broker was incredible.", author: "Sarah Mitchell", role: "Relocating buyer, Orlando" },
 ];
@@ -107,20 +107,26 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── How It Works ─────────────────────────────────────────────── */}
+      {/* ── How It Works (PayFit-style: number + title + desc + phone mockup) */}
       <section id="how-it-works" className="scroll-mt-[84px] w-full bg-white py-20 lg:py-28">
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Simple process</p>
             <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">Three steps to your best deal</h2>
           </div>
-          <div className="relative mt-16 grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-12">
-            <div className="pointer-events-none absolute left-[16.67%] right-[16.67%] top-8 hidden h-px bg-gradient-to-r from-primary-200 via-primary-300 to-primary-200 md:block" />
+          <div className="mt-16 grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-6">
             {steps.map((step) => (
-              <div key={step.number} className="relative text-center">
-                <div className="relative mx-auto flex size-16 items-center justify-center rounded-[20px] bg-primary-50 text-2xl font-semibold text-primary-400">{step.number}</div>
-                <h3 className="mt-5 text-lg font-semibold text-neutral-800">{step.title}</h3>
+              <div key={step.number} className="group text-center">
+                {/* Step number */}
+                <p className="text-sm font-bold text-primary-400">{step.number}</p>
+                <h3 className="mt-2 text-xl font-semibold text-neutral-800">{step.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-neutral-500">{step.description}</p>
+                {/* Phone mockup image */}
+                <div className="mt-6 overflow-hidden rounded-[24px] border border-neutral-200 bg-neutral-50 transition-shadow duration-300 group-hover:shadow-lg">
+                  <div className="relative aspect-[3/4]">
+                    <Image src={step.imageSrc} alt={step.title} fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 33vw" />
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -135,7 +141,7 @@ export default function Home() {
             <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">What buyers are saying</h2>
           </div>
           <div className="mt-14 grid grid-cols-1 gap-8 md:grid-cols-3">
-            {testimonials.map((t) => <TestimonialCard key={t.author} quote={t.quote} author={t.author} role={t.role} />)}
+            {testimonials.map((t) => <TestimonialCard key={t.author} quote={t.quote} author={t.author} role={t.role} avatarSrc={t.avatarSrc} />)}
           </div>
         </div>
       </section>
