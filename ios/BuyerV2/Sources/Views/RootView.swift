@@ -14,7 +14,7 @@ struct RootView: View {
             case .signedOut:
                 SignInView()
             case .signedIn(let user):
-                authenticatedView(user: user)
+                ContentView(user: user)
             case .expired:
                 // Show sign-in with alert overlay
                 SignInView()
@@ -48,45 +48,5 @@ struct RootView: View {
         .background(Color(.systemBackground))
     }
 
-    // MARK: - Authenticated (stub)
-
-    private func authenticatedView(user: AuthUser) -> some View {
-        VStack(spacing: 24) {
-            Image(systemName: "person.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(Color(hex: 0x1B2B65))
-
-            VStack(spacing: 6) {
-                Text(user.name)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                Text(user.email)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text(user.role.rawValue.capitalized)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .background(Color(hex: 0x1B2B65).opacity(0.1))
-                    .foregroundStyle(Color(hex: 0x1B2B65))
-                    .clipShape(Capsule())
-            }
-
-            Button {
-                Task { await authService.signOut() }
-            } label: {
-                Text("Sign Out")
-                    .fontWeight(.medium)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            .buttonStyle(.bordered)
-            .tint(Color(hex: 0xFF6B4A))
-            .padding(.horizontal, 40)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
-    }
 }
 
