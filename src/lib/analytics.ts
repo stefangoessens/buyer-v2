@@ -1,5 +1,5 @@
 import posthog from "posthog-js";
-import { stripPii } from "@/lib/security/pii-guard";
+import { deepScrubPii } from "@/lib/security/pii-guard";
 
 /**
  * Canonical analytics event catalog for buyer-v2.
@@ -529,9 +529,13 @@ export function track<K extends AnalyticsEventName>(
   properties: AnalyticsEventMap[K],
 ): void {
   const metadata = EVENT_METADATA[event];
+  // For non-piiSafe events, run deep scrubbing that walks BOTH field
+  // names AND string values. This catches PII that leaks into free-text
+  // fields like error messages, reason strings, or parser output —
+  // cases where field-name redaction alone can't see the risk.
   const safeProps =
     metadata && !metadata.piiSafe
-      ? (stripPii(
+      ? (deepScrubPii(
           properties as unknown as Record<string, unknown>,
         ) as AnalyticsEventMap[K])
       : properties;
