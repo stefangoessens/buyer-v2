@@ -16,8 +16,8 @@
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
     "lint": "next lint",
-    "eval": "npx tsx scripts/ai-eval.ts",
-    "eval:drift": "npx tsx scripts/ai-eval.ts drift"
+    "eval": "tsx scripts/ai-eval.ts",
+    "eval:drift": "tsx scripts/ai-eval.ts drift"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",
@@ -45,6 +45,7 @@
     "postcss": "^8.5.0",
     "posthog-js": "^1.200.0",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }
