@@ -1055,4 +1055,75 @@ export default defineSchema({
     .index("by_sessionId", ["sessionId"])
     .index("by_userId", ["userId"])
     .index("by_status", ["status"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EXTERNAL COUNTERPARTY ACCESS (KIN-828)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Token-based limited access for external counterparties (listing agents,
+  // listing brokers, cooperating brokers) to interact with a single deal-
+  // room context without needing a full internal user account.
+  //
+  // Principles encoded in this table:
+  //   - Scope is narrow: every token is bound to ONE dealRoomId and an
+  //     explicit action allowlist. There is no general-purpose external role.
+  //   - Only hashes of tokens are stored. Plaintext is returned to the
+  //     issuer once at creation time and never recoverable afterwards.
+  //   - Revocation is first-class: revokedAt is a separate lifecycle state,
+  //     never deletion. This keeps the audit trail complete.
+
+  externalAccessTokens: defineTable({
+    hashedToken: v.string(),
+    dealRoomId: v.id("dealRooms"),
+    offerId: v.optional(v.id("offers")),
+    role: v.union(
+      v.literal("listing_agent"),
+      v.literal("listing_broker"),
+      v.literal("cooperating_broker"),
+      v.literal("other"),
+    ),
+    allowedActions: v.array(
+      v.union(
+        v.literal("view_offer"),
+        v.literal("submit_response"),
+        v.literal("confirm_compensation"),
+        v.literal("acknowledge_receipt"),
+      ),
+    ),
+    expiresAt: v.string(),
+    revokedAt: v.optional(v.string()),
+    revokedBy: v.optional(v.id("users")),
+    revokeReason: v.optional(v.string()),
+    issuedBy: v.id("users"),
+    contactName: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    createdAt: v.string(),
+    lastUsedAt: v.optional(v.string()),
+  })
+    .index("by_hashedToken", ["hashedToken"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_offerId", ["offerId"])
+    .index("by_issuedBy", ["issuedBy"]),
+
+  // Audit trail for every external-access interaction. Kept in a separate
+  // table so the write path for a denied access is cheap and doesn't require
+  // modifying the token row itself.
+  externalAccessEvents: defineTable({
+    tokenId: v.optional(v.id("externalAccessTokens")),
+    eventType: v.union(
+      v.literal("issued"),
+      v.literal("accessed"),
+      v.literal("submitted"),
+      v.literal("denied"),
+      v.literal("revoked"),
+    ),
+    dealRoomId: v.optional(v.id("dealRooms")),
+    attemptedAction: v.optional(v.string()),
+    denialReason: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    timestamp: v.string(),
+  })
+    .index("by_tokenId", ["tokenId"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_eventType_and_timestamp", ["eventType", "timestamp"]),
 });
