@@ -347,6 +347,35 @@ export function formatUSD(
   }).format(amount);
 }
 
+// MARK: - Raw-input parsing (for interactive edit state)
+
+/**
+ * Parse a single raw string field into a number for the calculator.
+ *
+ * Why this exists: when the UI binds numeric `input` state directly,
+ * transient decimal input like `"2."` gets immediately coerced to `2`
+ * by `Number(...)`, eating the trailing dot and making it impossible
+ * to type `2.5`. Components should hold a `Record<field, string>`
+ * edit state as the source of truth and run it through this helper
+ * to derive the numeric calculator input on each render.
+ *
+ * Return contract:
+ * - Empty / whitespace / `.` / `-` / trailing-dot → NaN
+ *   (surfaced as `missingInput` by the calculator — UI hint)
+ * - Fully-formed numbers → the parsed number
+ * - Non-finite (Infinity, bad text) → NaN
+ */
+export function parseRawField(raw: string): number {
+  const trimmed = raw.trim();
+  if (trimmed === "" || trimmed === "." || trimmed === "-") return Number.NaN;
+  // Trailing decimal like "2." means the user is mid-type — treat as
+  // NaN so the calculator waits for a full number without the UI
+  // losing the raw edit state.
+  if (trimmed.endsWith(".")) return Number.NaN;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
 // MARK: - Private helpers
 
 function isFiniteNumber(v: unknown): v is number {

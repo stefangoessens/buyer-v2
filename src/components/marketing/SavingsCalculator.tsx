@@ -5,6 +5,7 @@ import {
   calculateSavings,
   defaultCalculatorInput,
   formatUSD,
+  parseRawField,
   type SavingsCalculatorInput,
 } from "@/lib/pricing/savingsCalculator";
 import {
@@ -12,6 +13,37 @@ import {
   getHeadlineDisclosures,
   type Disclosure,
 } from "@/lib/pricing/disclosures";
+
+/**
+ * Raw-string edit state. Each field is stored as exactly what the user
+ * typed (or the initial numeric default rendered to a string). This is
+ * the source of truth while editing — the parsed numeric `input` is
+ * derived from this state on every render via `parseRawField`.
+ *
+ * Keeping the raw string separate preserves transient decimal input
+ * like `"2."` that would otherwise be lost if we round-tripped through
+ * `Number(...)` on every keystroke — the bug that codex flagged on PR
+ * #45 where typing `2.5` would immediately collapse to `25`.
+ */
+type RawInput = Record<keyof SavingsCalculatorInput, string>;
+
+function toRawInput(input: SavingsCalculatorInput): RawInput {
+  return {
+    purchasePrice: String(input.purchasePrice),
+    totalCommissionPercent: String(input.totalCommissionPercent),
+    buyerAgentCommissionPercent: String(input.buyerAgentCommissionPercent),
+    buyerCreditPercent: String(input.buyerCreditPercent),
+  };
+}
+
+function parseRawInput(raw: RawInput): SavingsCalculatorInput {
+  return {
+    purchasePrice: parseRawField(raw.purchasePrice),
+    totalCommissionPercent: parseRawField(raw.totalCommissionPercent),
+    buyerAgentCommissionPercent: parseRawField(raw.buyerAgentCommissionPercent),
+    buyerCreditPercent: parseRawField(raw.buyerCreditPercent),
+  };
+}
 
 /**
  * Interactive savings calculator + commission education module for
@@ -33,22 +65,17 @@ export function SavingsCalculator({
   variant?: "full" | "compact";
   initialPurchasePrice?: number;
 }) {
-  const [input, setInput] = useState<SavingsCalculatorInput>(
-    defaultCalculatorInput(initialPurchasePrice)
+  const [raw, setRaw] = useState<RawInput>(() =>
+    toRawInput(defaultCalculatorInput(initialPurchasePrice))
   );
 
+  // Derive the parsed calculator input from the raw edit state.
+  // Memoized so calculator runs only when a raw field actually changes.
+  const input = useMemo(() => parseRawInput(raw), [raw]);
   const calculation = useMemo(() => calculateSavings(input), [input]);
 
-  const updateField = <K extends keyof SavingsCalculatorInput>(
-    field: K,
-    raw: string
-  ) => {
-    // Parse the raw input into a number. An empty string produces NaN
-    // which the calculator surfaces as a missingInput error — the UI
-    // renders that as a field-level hint, which matches what users
-    // expect when they clear a control.
-    const parsed = raw === "" ? Number.NaN : Number(raw);
-    setInput((prev) => ({ ...prev, [field]: parsed }));
+  const updateField = (field: keyof SavingsCalculatorInput, next: string) => {
+    setRaw((prev) => ({ ...prev, [field]: next }));
   };
 
   return (
@@ -56,7 +83,7 @@ export function SavingsCalculator({
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
         {/* Controls */}
         <div className="lg:col-span-3">
-          <CalculatorControls input={input} onChange={updateField} />
+          <CalculatorControls raw={raw} onChange={updateField} />
         </div>
 
         {/* Result + headline disclosures */}
@@ -77,14 +104,11 @@ export function SavingsCalculator({
 // MARK: - Controls
 
 function CalculatorControls({
-  input,
+  raw,
   onChange,
 }: {
-  input: SavingsCalculatorInput;
-  onChange: <K extends keyof SavingsCalculatorInput>(
-    field: K,
-    raw: string
-  ) => void;
+  raw: RawInput;
+  onChange: (field: keyof SavingsCalculatorInput, next: string) => void;
 }) {
   return (
     <div className="rounded-2xl bg-white p-6 shadow-md ring-1 ring-neutral-200 lg:p-8">
@@ -102,7 +126,7 @@ function CalculatorControls({
           id="purchase-price"
           label="Purchase price"
           suffix="USD"
-          value={valueString(input.purchasePrice)}
+          value={raw.purchasePrice}
           onChange={(v) => onChange("purchasePrice", v)}
           placeholder="500000"
           inputMode="numeric"
@@ -113,7 +137,7 @@ function CalculatorControls({
           id="total-commission"
           label="Total commission"
           suffix="%"
-          value={valueString(input.totalCommissionPercent)}
+          value={raw.totalCommissionPercent}
           onChange={(v) => onChange("totalCommissionPercent", v)}
           placeholder="6"
           inputMode="decimal"
@@ -125,7 +149,7 @@ function CalculatorControls({
           id="buyer-agent"
           label="Buyer-agent commission"
           suffix="%"
-          value={valueString(input.buyerAgentCommissionPercent)}
+          value={raw.buyerAgentCommissionPercent}
           onChange={(v) => onChange("buyerAgentCommissionPercent", v)}
           placeholder="3"
           inputMode="decimal"
@@ -137,7 +161,7 @@ function CalculatorControls({
           id="buyer-credit"
           label="Buyer credit (our rebate)"
           suffix="%"
-          value={valueString(input.buyerCreditPercent)}
+          value={raw.buyerCreditPercent}
           onChange={(v) => onChange("buyerCreditPercent", v)}
           placeholder="33"
           inputMode="decimal"
@@ -423,9 +447,4 @@ function DisclosureBlock({ disclosure }: { disclosure: Disclosure }) {
       <dd className="mt-1 text-sm text-neutral-700">{disclosure.body}</dd>
     </div>
   );
-}
-
-function valueString(n: number): string {
-  if (!Number.isFinite(n)) return "";
-  return String(n);
 }

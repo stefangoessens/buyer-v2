@@ -3,6 +3,7 @@ import {
   calculateSavings,
   defaultCalculatorInput,
   formatUSD,
+  parseRawField,
   type SavingsCalculatorInput,
 } from "@/lib/pricing/savingsCalculator";
 import {
@@ -227,6 +228,58 @@ describe("formatUSD", () => {
 
   it("formats large numbers with group separators", () => {
     expect(formatUSD(1_234_567)).toBe("$1,234,567");
+  });
+});
+
+describe("parseRawField (codex P1 regression)", () => {
+  // Regression guard for the bug codex flagged on PR #45: typing "2.5"
+  // in a percentage field used to lose the trailing decimal because
+  // Number("2.") === 2, so the next keystroke read as "25".
+
+  it("preserves mid-type trailing decimal as NaN (not 2)", () => {
+    // "2." is the user mid-typing → calculator should treat as missing
+    expect(parseRawField("2.")).toBeNaN();
+  });
+
+  it("parses a full decimal value like '2.5' correctly", () => {
+    expect(parseRawField("2.5")).toBe(2.5);
+  });
+
+  it("parses a whole number", () => {
+    expect(parseRawField("500000")).toBe(500_000);
+    expect(parseRawField("6")).toBe(6);
+  });
+
+  it("empty string is NaN (triggers missingInput)", () => {
+    expect(parseRawField("")).toBeNaN();
+    expect(parseRawField("   ")).toBeNaN();
+  });
+
+  it("bare '.' and '-' are NaN (in-progress input)", () => {
+    expect(parseRawField(".")).toBeNaN();
+    expect(parseRawField("-")).toBeNaN();
+  });
+
+  it("gibberish like 'abc' is NaN", () => {
+    expect(parseRawField("abc")).toBeNaN();
+  });
+
+  it("Infinity text is NaN", () => {
+    expect(parseRawField("Infinity")).toBeNaN();
+  });
+
+  it("negative numbers parse correctly (range check catches them later)", () => {
+    expect(parseRawField("-5")).toBe(-5);
+  });
+
+  it("integer typed through decimal progression round-trips", () => {
+    // Simulating a user typing "2.5" keystroke by keystroke:
+    //   "2"   → 2        (valid)
+    //   "2."  → NaN      (mid-type, calculator waits)
+    //   "2.5" → 2.5      (valid)
+    expect(parseRawField("2")).toBe(2);
+    expect(parseRawField("2.")).toBeNaN();
+    expect(parseRawField("2.5")).toBe(2.5);
   });
 });
 
