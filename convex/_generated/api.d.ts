@@ -14,6 +14,7 @@ import type * as aiEngineOutputs from "../aiEngineOutputs.js";
 import type * as availability from "../availability.js";
 import type * as buyerProfiles from "../buyerProfiles.js";
 import type * as buyerUpdateEvents from "../buyerUpdateEvents.js";
+import type * as closeDashboard from "../closeDashboard.js";
 import type * as communicationTemplates from "../communicationTemplates.js";
 import type * as dealRooms from "../dealRooms.js";
 import type * as deviceTokens from "../deviceTokens.js";
@@ -67,6 +68,7 @@ declare const fullApi: ApiFromModules<{
   availability: typeof availability;
   buyerProfiles: typeof buyerProfiles;
   buyerUpdateEvents: typeof buyerUpdateEvents;
+  closeDashboard: typeof closeDashboard;
   communicationTemplates: typeof communicationTemplates;
   dealRooms: typeof dealRooms;
   deviceTokens: typeof deviceTokens;
