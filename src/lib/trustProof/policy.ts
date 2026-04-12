@@ -42,15 +42,44 @@ export type LiveProofValidationError =
   | { kind: "missingVerification"; field: string }
   | { kind: "missingConsent" }
   | { kind: "missingClosingDate" }
-  | { kind: "missingTransactionRef" };
+  | { kind: "missingTransactionRef" }
+  | { kind: "invalidClosingDate"; value: string }
+  | { kind: "futureClosingDate"; closingDate: string; nowIso: string };
+
+/**
+ * ISO-8601 date format guard: strict `YYYY-MM-DD` or full
+ * `YYYY-MM-DDTHH:MM:SSZ`. We parse through `new Date(...)` and
+ * then round-trip to detect "looks like a date but isn't valid"
+ * inputs like `2026-13-40`.
+ */
+function parseIsoDate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z?)?$/.test(value)) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  // Round-trip check — catches 2026-13-40 style "parses but invalid"
+  const roundTrip = parsed.toISOString().slice(0, 10);
+  const inputDateOnly = value.slice(0, 10);
+  if (roundTrip !== inputDateOnly) return null;
+  return parsed;
+}
 
 /**
  * Validate that a live-transaction case study has all the metadata
  * required for public render. Illustrative case studies bypass
  * this — they render under the illustrative label no matter what.
+ *
+ * Closing date is required to be a valid ISO-8601 date AND be in
+ * the past relative to `now` — a future closing date is not yet a
+ * "live transaction" and should not render as verified outcome.
+ *
+ * `now` is injectable so tests can pin the clock deterministically.
+ * Defaults to `new Date()` for production use.
  */
 export function validateLiveTransactionCaseStudy(
-  study: CaseStudy
+  study: CaseStudy,
+  now: Date = new Date()
 ): LiveProofValidationError[] {
   if (study.source !== "liveTransaction") return [];
   const errors: LiveProofValidationError[] = [];
@@ -63,6 +92,22 @@ export function validateLiveTransactionCaseStudy(
   }
   if (!study.verification.closingDate) {
     errors.push({ kind: "missingClosingDate" });
+  } else {
+    // Parse + round-trip — catches malformed + "parses but invalid" dates
+    const parsed = parseIsoDate(study.verification.closingDate);
+    if (!parsed) {
+      errors.push({
+        kind: "invalidClosingDate",
+        value: study.verification.closingDate,
+      });
+    } else if (parsed.getTime() > now.getTime()) {
+      // Future closing dates are not "live transactions" yet — reject
+      errors.push({
+        kind: "futureClosingDate",
+        closingDate: study.verification.closingDate,
+        nowIso: now.toISOString(),
+      });
+    }
   }
   if (!study.verification.transactionRef) {
     errors.push({ kind: "missingTransactionRef" });
@@ -128,19 +173,23 @@ export function labelBlock(
  * Filtering:
  *   1. Drop internal-visibility records (drafts).
  *   2. Drop live-transaction records that fail validation
- *      (missing consent / closing date / transaction ref).
+ *      (missing consent, missing/invalid/future closing date,
+ *      missing transaction ref).
  *   3. Wrap everything that passes through `labelCase`.
  *
  * This is the one function the UI should call to get the case-study
  * list. Anything else would bypass the labeling policy.
+ *
+ * `now` is injectable for deterministic tests.
  */
 export function publicCaseStudies(
   catalog: readonly CaseStudy[],
-  policy: LabelingPolicy = DEFAULT_LABELING_POLICY
+  policy: LabelingPolicy = DEFAULT_LABELING_POLICY,
+  now: Date = new Date()
 ): LabeledCaseStudy[] {
   return catalog
     .filter((c) => c.visibility === "public")
-    .filter((c) => validateLiveTransactionCaseStudy(c).length === 0)
+    .filter((c) => validateLiveTransactionCaseStudy(c, now).length === 0)
     .map((c) => labelCase(c, policy));
 }
 
@@ -211,7 +260,8 @@ export interface TrustProofSummary {
 
 export function summarizeTrustProof(
   cases: readonly CaseStudy[],
-  blocks: readonly ProofBlock[]
+  blocks: readonly ProofBlock[],
+  now: Date = new Date()
 ): TrustProofSummary {
   const publicCases = cases.filter((c) => c.visibility === "public");
   const publicBlocks = blocks.filter((b) => b.visibility === "public");
@@ -219,7 +269,9 @@ export function summarizeTrustProof(
     (c) => c.source === "illustrative"
   ).length;
   const liveCases = publicCases.filter(
-    (c) => c.source === "liveTransaction" && validateLiveTransactionCaseStudy(c).length === 0
+    (c) =>
+      c.source === "liveTransaction" &&
+      validateLiveTransactionCaseStudy(c, now).length === 0
   ).length;
   const illustrativeBlocks = publicBlocks.filter(
     (b) => b.source === "illustrative"

@@ -52,13 +52,18 @@ function makeLive(overrides: Partial<CaseStudy> = {}): CaseStudy {
     buyer: { displayName: "Pilar S.", location: "Miami" },
     visibility: "public",
     verification: {
-      closingDate: "2026-05-15",
+      // Past date — paired with TEST_NOW below so the validation
+      // test doesn't depend on the system clock
+      closingDate: "2026-03-15",
       transactionRef: "txn_abc123",
       buyerConsent: true,
     },
     ...overrides,
   };
 }
+
+// Pinned clock for deterministic validation tests — April 12, 2026
+const TEST_NOW = new Date("2026-04-12T12:00:00.000Z");
 
 function makeBlock(
   overrides: Partial<ProofBlock> = {}
@@ -78,17 +83,20 @@ function makeBlock(
 describe("validateLiveTransactionCaseStudy", () => {
   it("returns no errors for illustrative records", () => {
     expect(
-      validateLiveTransactionCaseStudy(makeIllustrative())
+      validateLiveTransactionCaseStudy(makeIllustrative(), TEST_NOW)
     ).toEqual([]);
   });
 
-  it("returns no errors for fully-verified live record", () => {
-    expect(validateLiveTransactionCaseStudy(makeLive())).toEqual([]);
+  it("returns no errors for fully-verified live record with past closing date", () => {
+    expect(validateLiveTransactionCaseStudy(makeLive(), TEST_NOW)).toEqual(
+      []
+    );
   });
 
   it("reports missing verification block", () => {
     const errs = validateLiveTransactionCaseStudy(
-      makeLive({ verification: undefined })
+      makeLive({ verification: undefined }),
+      TEST_NOW
     );
     expect(errs).toHaveLength(1);
     expect(errs[0].kind).toBe("missingVerification");
@@ -100,7 +108,7 @@ describe("validateLiveTransactionCaseStudy", () => {
     const study: CaseStudy = makeLive();
     // @ts-expect-error — test explicitly sets an invalid consent value
     study.verification = { ...study.verification, buyerConsent: false };
-    const errs = validateLiveTransactionCaseStudy(study);
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
     expect(errs.some((e) => e.kind === "missingConsent")).toBe(true);
   });
 
@@ -110,7 +118,7 @@ describe("validateLiveTransactionCaseStudy", () => {
       ...study.verification!,
       closingDate: "",
     };
-    const errs = validateLiveTransactionCaseStudy(study);
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
     expect(errs.some((e) => e.kind === "missingClosingDate")).toBe(true);
   });
 
@@ -120,10 +128,104 @@ describe("validateLiveTransactionCaseStudy", () => {
       ...study.verification!,
       transactionRef: "",
     };
-    const errs = validateLiveTransactionCaseStudy(study);
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
     expect(
       errs.some((e) => e.kind === "missingTransactionRef")
     ).toBe(true);
+  });
+
+  // Regression tests — codex P1 on PR #58
+
+  it("rejects a future closing date (2099-01-01 vs 2026-04-12)", () => {
+    const study: CaseStudy = makeLive();
+    study.verification = {
+      ...study.verification!,
+      closingDate: "2099-01-01",
+    };
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
+    expect(errs.some((e) => e.kind === "futureClosingDate")).toBe(true);
+  });
+
+  it("rejects a closing date one day in the future", () => {
+    const study: CaseStudy = makeLive();
+    study.verification = {
+      ...study.verification!,
+      closingDate: "2026-04-13",
+    };
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
+    expect(errs.some((e) => e.kind === "futureClosingDate")).toBe(true);
+  });
+
+  it("accepts a closing date equal to today", () => {
+    const study: CaseStudy = makeLive();
+    study.verification = {
+      ...study.verification!,
+      closingDate: "2026-04-12",
+    };
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
+    expect(errs).toEqual([]);
+  });
+
+  it("rejects a malformed closing date string", () => {
+    const study: CaseStudy = makeLive();
+    study.verification = {
+      ...study.verification!,
+      closingDate: "last tuesday",
+    };
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
+    expect(errs.some((e) => e.kind === "invalidClosingDate")).toBe(true);
+  });
+
+  it("rejects 2026-13-40 (parses but represents an invalid calendar date)", () => {
+    const study: CaseStudy = makeLive();
+    study.verification = {
+      ...study.verification!,
+      closingDate: "2026-13-40",
+    };
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
+    expect(errs.some((e) => e.kind === "invalidClosingDate")).toBe(true);
+  });
+
+  it("accepts a full ISO-8601 timestamp in the past", () => {
+    const study: CaseStudy = makeLive();
+    study.verification = {
+      ...study.verification!,
+      closingDate: "2026-03-15T10:00:00Z",
+    };
+    const errs = validateLiveTransactionCaseStudy(study, TEST_NOW);
+    expect(errs).toEqual([]);
+  });
+
+  it("publicCaseStudies filters out future-closing live records", () => {
+    const pastOk = makeLive({ id: "ok" });
+    const futureBad = makeLive({ id: "future" });
+    futureBad.verification = {
+      ...futureBad.verification!,
+      closingDate: "2099-01-01",
+    };
+    const malformed = makeLive({ id: "malformed" });
+    malformed.verification = {
+      ...malformed.verification!,
+      closingDate: "nope",
+    };
+
+    const result = publicCaseStudies(
+      [pastOk, futureBad, malformed],
+      DEFAULT_LABELING_POLICY,
+      TEST_NOW
+    );
+    expect(result.map((l) => l.case.id)).toEqual(["ok"]);
+  });
+
+  it("summarizeTrustProof excludes future-closing live records from the count", () => {
+    const pastOk = makeLive({ id: "ok" });
+    const futureBad = makeLive({ id: "future" });
+    futureBad.verification = {
+      ...futureBad.verification!,
+      closingDate: "2099-01-01",
+    };
+    const summary = summarizeTrustProof([pastOk, futureBad], [], TEST_NOW);
+    expect(summary.liveCaseStudies).toBe(1);
   });
 });
 
