@@ -58,6 +58,17 @@ export function isValidTimezone(tz: string): boolean {
   }
 }
 
+/**
+ * Check if an ISO-8601 datetime string carries an explicit timezone
+ * designator (Z or ±HH:MM / ±HHMM offset). Strings without one are
+ * interpreted in the host's local timezone, which silently drifts across
+ * runtimes (browser vs Convex server vs Node) — so we reject them.
+ */
+export function hasTimezoneDesignator(iso: string): boolean {
+  if (typeof iso !== "string") return false;
+  return /(Z|[+-]\d{2}:?\d{2})$/.test(iso);
+}
+
 /** Convert a local ISO-8601-with-offset string to UTC ISO-8601 (Z suffix). */
 export function toUtc(localIso: string): string {
   const d = new Date(localIso);
@@ -92,6 +103,11 @@ export function normalizeWindow(
       code: "invalid_start",
       message: `Invalid ISO-8601 start: ${start}`,
     });
+  } else if (!hasTimezoneDesignator(start)) {
+    errors.push({
+      code: "invalid_start",
+      message: `Start is missing a timezone designator (Z or ±HH:MM offset): ${start}. Cross-runtime drift risk.`,
+    });
   }
 
   const endDate = new Date(end);
@@ -99,6 +115,11 @@ export function normalizeWindow(
     errors.push({
       code: "invalid_end",
       message: `Invalid ISO-8601 end: ${end}`,
+    });
+  } else if (!hasTimezoneDesignator(end)) {
+    errors.push({
+      code: "invalid_end",
+      message: `End is missing a timezone designator (Z or ±HH:MM offset): ${end}. Cross-runtime drift risk.`,
     });
   }
 
@@ -169,4 +190,63 @@ export function assertValidWindow(
     throw new Error(`Invalid availability window — ${msg}`);
   }
   return result.normalized;
+}
+
+/**
+ * Relaxed validation for range *queries* (not stored windows). Checks
+ * parseability and start < end, but does NOT enforce the 1-week cap — a
+ * range query may legitimately span a month or more when fetching a
+ * calendar view. Returns the normalized UTC pair for overlap filtering.
+ */
+export function assertValidRange(
+  rangeStartUtc: string,
+  rangeEndUtc: string
+): { startUtc: string; endUtc: string } {
+  const errors: ValidationError[] = [];
+
+  const startDate = new Date(rangeStartUtc);
+  if (Number.isNaN(startDate.getTime())) {
+    errors.push({
+      code: "invalid_start",
+      message: `Invalid ISO-8601 range start: ${rangeStartUtc}`,
+    });
+  } else if (!hasTimezoneDesignator(rangeStartUtc)) {
+    errors.push({
+      code: "invalid_start",
+      message: `Range start is missing a timezone designator: ${rangeStartUtc}`,
+    });
+  }
+
+  const endDate = new Date(rangeEndUtc);
+  if (Number.isNaN(endDate.getTime())) {
+    errors.push({
+      code: "invalid_end",
+      message: `Invalid ISO-8601 range end: ${rangeEndUtc}`,
+    });
+  } else if (!hasTimezoneDesignator(rangeEndUtc)) {
+    errors.push({
+      code: "invalid_end",
+      message: `Range end is missing a timezone designator: ${rangeEndUtc}`,
+    });
+  }
+
+  if (errors.length === 0) {
+    const durationMs = endDate.getTime() - startDate.getTime();
+    if (durationMs <= 0) {
+      errors.push({
+        code: "end_before_start",
+        message: `Range end (${rangeEndUtc}) must be strictly after start (${rangeStartUtc})`,
+      });
+    }
+  }
+
+  if (errors.length > 0) {
+    const msg = errors.map((e) => `${e.code}: ${e.message}`).join("; ");
+    throw new Error(`Invalid range query — ${msg}`);
+  }
+
+  return {
+    startUtc: startDate.toISOString(),
+    endUtc: endDate.toISOString(),
+  };
 }

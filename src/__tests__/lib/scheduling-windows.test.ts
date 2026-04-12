@@ -4,6 +4,7 @@ import {
   windowsOverlap,
   toUtc,
   isValidTimezone,
+  hasTimezoneDesignator,
   formatDuration,
   MAX_WINDOW_DURATION_HOURS,
   type NormalizedWindow,
@@ -247,6 +248,73 @@ describe("scheduling/windows", () => {
         expect(codes).not.toContain("end_before_start");
         expect(codes).not.toContain("zero_duration");
       }
+    });
+
+    it("rejects start ISO missing a timezone designator (runtime drift)", () => {
+      // "2026-05-01T14:00:00" parses, but Date interprets it as host-local,
+      // which silently drifts across runtimes. Reject explicitly.
+      const result = normalizeWindow(
+        "2026-05-01T14:00:00",
+        "2026-05-01T15:00:00Z",
+        "UTC"
+      );
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.errors.some((e) => e.code === "invalid_start")).toBe(true);
+      }
+    });
+
+    it("rejects end ISO missing a timezone designator (runtime drift)", () => {
+      const result = normalizeWindow(
+        "2026-05-01T14:00:00Z",
+        "2026-05-01T15:00:00",
+        "UTC"
+      );
+      expect(result.valid).toBe(false);
+      if (!result.valid) {
+        expect(result.errors.some((e) => e.code === "invalid_end")).toBe(true);
+      }
+    });
+
+    it("accepts start/end with explicit Z suffix", () => {
+      const result = normalizeWindow(
+        "2026-05-01T14:00:00Z",
+        "2026-05-01T15:00:00Z",
+        "UTC"
+      );
+      expect(result.valid).toBe(true);
+    });
+
+    it("accepts start/end with explicit ±HH:MM offset", () => {
+      const result = normalizeWindow(
+        "2026-05-01T14:00:00+05:30",
+        "2026-05-01T15:00:00+05:30",
+        "Asia/Kolkata"
+      );
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe("hasTimezoneDesignator", () => {
+    it("detects trailing Z", () => {
+      expect(hasTimezoneDesignator("2026-05-01T14:00:00Z")).toBe(true);
+      expect(hasTimezoneDesignator("2026-05-01T14:00:00.000Z")).toBe(true);
+    });
+
+    it("detects ±HH:MM offsets", () => {
+      expect(hasTimezoneDesignator("2026-05-01T14:00:00+04:00")).toBe(true);
+      expect(hasTimezoneDesignator("2026-05-01T14:00:00-07:00")).toBe(true);
+    });
+
+    it("detects ±HHMM compact offsets", () => {
+      expect(hasTimezoneDesignator("2026-05-01T14:00:00+0400")).toBe(true);
+      expect(hasTimezoneDesignator("2026-05-01T14:00:00-0700")).toBe(true);
+    });
+
+    it("rejects naive datetimes with no offset", () => {
+      expect(hasTimezoneDesignator("2026-05-01T14:00:00")).toBe(false);
+      expect(hasTimezoneDesignator("2026-05-01")).toBe(false);
+      expect(hasTimezoneDesignator("")).toBe(false);
     });
   });
 

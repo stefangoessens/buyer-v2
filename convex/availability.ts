@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { requireAuth } from "./lib/session";
 import { availabilityOwnerType, availabilityStatus } from "./lib/validators";
-import { assertValidWindow, windowsOverlap } from "./lib/scheduling";
+import { assertValidWindow, assertValidRange } from "./lib/scheduling";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // KIN-836 — Availability and scheduling utility model
@@ -110,14 +110,10 @@ export const getByOwnerRange = query({
     const user = await requireAuth(ctx);
     if (!canAccessOwner(user, args.ownerType, args.ownerId)) return [];
 
-    // Validate that the range itself is sane — we only need the UTC strings
-    // here, so pass UTC as the timezone to the validator. This catches
-    // reversed ranges and bad ISO.
-    const rangeNormalized = assertValidWindow(
-      args.rangeStartUtc,
-      args.rangeEndUtc,
-      "UTC"
-    );
+    // Validate the range — relaxed rules (no 1-week cap) since callers
+    // legitimately fetch month-wide calendar views. Still rejects bad ISO,
+    // missing timezone designators, and reversed/zero ranges.
+    const range = assertValidRange(args.rangeStartUtc, args.rangeEndUtc);
 
     const windows = await ctx.db
       .query("availabilityWindows")
@@ -132,18 +128,9 @@ export const getByOwnerRange = query({
       // sufficient to compute UTC strings here.
       const wStartUtc = new Date(w.startAt).toISOString();
       const wEndUtc = new Date(w.endAt).toISOString();
-      return windowsOverlap(
-        {
-          startUtc: wStartUtc,
-          endUtc: wEndUtc,
-          startLocal: w.startAt,
-          endLocal: w.endAt,
-          timezone: w.timezone,
-          durationMs:
-            new Date(w.endAt).getTime() - new Date(w.startAt).getTime(),
-        },
-        rangeNormalized
-      );
+      // Inline strict overlap check against the range (no need to build a
+      // full NormalizedWindow for a simple bounds comparison).
+      return wStartUtc < range.endUtc && range.startUtc < wEndUtc;
     });
   },
 });

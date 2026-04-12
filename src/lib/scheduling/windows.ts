@@ -69,6 +69,17 @@ export function isValidTimezone(tz: string): boolean {
 }
 
 /**
+ * Check if an ISO-8601 datetime string carries an explicit timezone
+ * designator (Z or ±HH:MM / ±HHMM offset). Strings without one are
+ * interpreted in the host's local timezone, which silently drifts across
+ * runtimes (browser vs Convex server vs Node) — so we reject them.
+ */
+export function hasTimezoneDesignator(iso: string): boolean {
+  if (typeof iso !== "string") return false;
+  return /(Z|[+-]\d{2}:?\d{2})$/.test(iso);
+}
+
+/**
  * Convert a local ISO-8601-with-offset string to a UTC ISO-8601 string
  * (Z suffix). Throws if the input is not parseable as a Date.
  */
@@ -105,6 +116,11 @@ export function normalizeWindow(
       code: "invalid_start",
       message: `Invalid ISO-8601 start: ${start}`,
     });
+  } else if (!hasTimezoneDesignator(start)) {
+    errors.push({
+      code: "invalid_start",
+      message: `Start is missing a timezone designator (Z or ±HH:MM offset): ${start}. Cross-runtime drift risk.`,
+    });
   }
 
   const endDate = new Date(end);
@@ -112,6 +128,11 @@ export function normalizeWindow(
     errors.push({
       code: "invalid_end",
       message: `Invalid ISO-8601 end: ${end}`,
+    });
+  } else if (!hasTimezoneDesignator(end)) {
+    errors.push({
+      code: "invalid_end",
+      message: `End is missing a timezone designator (Z or ±HH:MM offset): ${end}. Cross-runtime drift risk.`,
     });
   }
 
