@@ -12,6 +12,9 @@ final class MockAuthProvider: AuthProvider, @unchecked Sendable {
     var refreshResult: Result<AuthTokens, Error> = .failure(AuthError.unauthorized)
     var validateResult: Result<AuthUser, Error> = .failure(AuthError.unauthorized)
 
+    // Queue of validate results — if non-empty, dequeued in order; otherwise falls back to validateResult
+    var validateResultQueue: [Result<AuthUser, Error>] = []
+
     // Call tracking
     var authenticateCallCount = 0
     var refreshCallCount = 0
@@ -31,6 +34,9 @@ final class MockAuthProvider: AuthProvider, @unchecked Sendable {
     func validateToken(_ token: String) async throws -> AuthUser {
         validateCallCount += 1
         lastValidatedToken = token
+        if !validateResultQueue.isEmpty {
+            return try validateResultQueue.removeFirst().get()
+        }
         return try validateResult.get()
     }
 }
@@ -52,7 +58,7 @@ private let testTokens = AuthTokens(
 
 // MARK: - AuthService Tests
 
-@Suite("AuthService session state transitions")
+@Suite("AuthService session state transitions", .serialized)
 @MainActor
 struct AuthServiceTests {
 
@@ -110,26 +116,67 @@ struct AuthServiceTests {
         #expect(provider.validateCallCount == 1)
     }
 
-    @Test("initialize() transitions to .signedOut when token validation fails")
+    @Test("initialize() attempts refresh when token validation fails, then signs out if refresh also fails")
     func testInitializeWithInvalidToken() async {
         let provider = MockAuthProvider()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
         let service = AuthService(provider: provider)
 
-        // Sign in to populate keychain
+        // Sign in to populate keychain with both access + refresh tokens
         try? await service.signIn(email: "buyer@example.com", password: "pass")
 
-        // Now make validation fail for the next service
+        // Make validation fail AND refresh fail for the next service
         provider.validateResult = .failure(AuthError.unauthorized)
+        provider.refreshResult = .failure(AuthError.unauthorized)
+        provider.refreshCallCount = 0
         let freshService = AuthService(provider: provider)
 
         await freshService.initialize()
 
+        // Should have attempted refresh before falling back to signedOut
+        #expect(provider.refreshCallCount == 1)
         guard case .signedOut = freshService.state else {
             Issue.record("Expected .signedOut, got \(freshService.state)")
             return
         }
+    }
+
+    @Test("initialize() refreshes successfully when access token expired but refresh token valid")
+    func testInitializeWithExpiredAccessButValidRefresh() async {
+        let provider = MockAuthProvider()
+        provider.authenticateResult = .success(testTokens)
+        provider.validateResult = .success(testUser)
+        let service = AuthService(provider: provider)
+
+        // Sign in to populate keychain with both tokens
+        try? await service.signIn(email: "buyer@example.com", password: "pass")
+
+        // Configure for fresh service: first validate fails (expired access token),
+        // then refresh succeeds, then second validate succeeds (new token is good)
+        let refreshedTokens = AuthTokens(
+            accessToken: "refreshed-access",
+            refreshToken: "refreshed-refresh",
+            expiresAt: Date(timeIntervalSinceNow: 7200)
+        )
+        provider.refreshResult = .success(refreshedTokens)
+        provider.validateResultQueue = [
+            .failure(AuthError.unauthorized),  // first call: old access token fails
+            .success(testUser),                // second call: new access token succeeds
+        ]
+        provider.validateCallCount = 0
+        provider.refreshCallCount = 0
+
+        let freshService = AuthService(provider: provider)
+        await freshService.initialize()
+
+        guard case .signedIn(let user) = freshService.state else {
+            Issue.record("Expected .signedIn after refresh, got \(freshService.state)")
+            return
+        }
+        #expect(user == testUser)
+        #expect(provider.refreshCallCount == 1)
+        #expect(provider.validateCallCount == 2)
     }
 
     // MARK: - Sign In

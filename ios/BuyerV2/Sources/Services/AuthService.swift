@@ -134,7 +134,8 @@ final class AuthService {
             let user = try await provider.validateToken(token)
             state = .signedIn(user: user)
         } catch {
-            state = .signedOut
+            // Access token invalid/expired — attempt refresh before signing out
+            await restoreSession()
         }
     }
 
