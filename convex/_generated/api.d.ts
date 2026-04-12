@@ -12,6 +12,10 @@ import type * as health from "../health.js";
 import type * as lib_session from "../lib/session.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as properties from "../properties.js";
+import type * as security_dataExport from "../security/dataExport.js";
+import type * as security_dataExportAction from "../security/dataExportAction.js";
+import type * as security_deletionRequest from "../security/deletionRequest.js";
+import type * as security_fileAccess from "../security/fileAccess.js";
 import type * as users from "../users.js";
 
 import type {
@@ -25,6 +29,10 @@ declare const fullApi: ApiFromModules<{
   "lib/session": typeof lib_session;
   "lib/validators": typeof lib_validators;
   properties: typeof properties;
+  "security/dataExport": typeof security_dataExport;
+  "security/dataExportAction": typeof security_dataExportAction;
+  "security/deletionRequest": typeof security_deletionRequest;
+  "security/fileAccess": typeof security_fileAccess;
   users: typeof users;
 }>;
 
