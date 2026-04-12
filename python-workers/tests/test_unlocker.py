@@ -266,6 +266,47 @@ class TestBrightDataUnlockerBudget:
         assert client.monthly_spent_usd == pytest.approx(0.05)
         await client.aclose()
 
+    async def test_cancelled_fetch_releases_reservation(self) -> None:
+        """CancelledError during dispatch must not leak the reservation.
+
+        Regression guard for the race where cancelling a fetch (e.g., from
+        an orchestrator-level `asyncio.wait_for` or task shutdown) during
+        `_rate_limiter.acquire()` or the in-flight HTTP call would skip
+        the release path and permanently grow `monthly_spent_usd`. Repeated
+        cancellations would then exhaust the monthly cap without any
+        successful vendor fetch.
+        """
+        import asyncio
+
+        client = _make_client(monthly_budget_usd=0.10, fallback_cost=0.05)
+
+        async def slow_post(*_args: object, **_kwargs: object) -> httpx.Response:
+            await asyncio.sleep(5.0)  # will be cancelled before completion
+            return httpx.Response(200, text="<html>ok</html>")
+
+        with respx.mock(assert_all_called=False) as mock:
+            mock.post(_BASE_URL).mock(side_effect=slow_post)
+            task = asyncio.create_task(client.fetch(_make_request()))
+            await asyncio.sleep(0.01)  # let the fetch reach the HTTP POST
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            # Give the finally-block's shielded release a loop tick to run.
+            await asyncio.sleep(0)
+
+        # The reservation must have been released — otherwise the next
+        # fetch would immediately hit QuotaExceededError.
+        assert client.monthly_spent_usd == pytest.approx(0.0)
+
+        with respx.mock() as mock:
+            mock.post(_BASE_URL).mock(
+                return_value=success_response("<html>ok</html>", cost_usd=0.05)
+            )
+            result = await client.fetch(_make_request())
+        assert result.cost_usd == pytest.approx(0.05)
+        assert client.monthly_spent_usd == pytest.approx(0.05)
+        await client.aclose()
+
     async def test_missing_token_raises_permanent(self) -> None:
         client = BrightDataUnlockerClient(
             token="",

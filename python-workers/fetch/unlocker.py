@@ -9,6 +9,7 @@ exercised deterministically without network I/O.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from collections import deque
@@ -254,63 +255,77 @@ class BrightDataUnlockerClient:
             )
 
         reserved = await self._reserve_budget(request)
-        await self._rate_limiter.acquire()
-
-        payload: dict[str, Any] = {
-            "zone": self._zone,
-            "url": request.url,
-            "format": "raw",
-            "country": "us",
-            "method": "GET",
-        }
-        headers = {
-            "Authorization": f"Bearer {self._token}",
-            "Content-Type": "application/json",
-        }
-
-        client = await self._get_http_client()
-        started = time.monotonic()
+        # Track whether the reservation has been swapped for the real cost.
+        # If the coroutine raises OR is cancelled (CancelledError propagates
+        # through `finally`) before we reconcile, the finally-block releases
+        # the reservation so repeated cancellations cannot exhaust the cap.
+        reconciled = False
         try:
-            response = await client.post(
-                self._base_url,
-                json=payload,
-                headers=headers,
-                timeout=request.timeout_s,
-            )
-        except httpx.TimeoutException as exc:
-            await self._release_reserved(reserved)
-            raise TimeoutFetchError(
-                f"Bright Data request timed out after {request.timeout_s}s",
-                request_id=request.request_id,
-                portal=request.portal,
-                url=request.url,
-                vendor=_VENDOR,
-            ) from exc
-        except httpx.TransportError as exc:
-            await self._release_reserved(reserved)
-            raise TransientFetchError(
-                f"Bright Data transport error: {type(exc).__name__}",
-                request_id=request.request_id,
-                portal=request.portal,
-                url=request.url,
-                vendor=_VENDOR,
-            ) from exc
+            await self._rate_limiter.acquire()
 
-        latency_ms = int((time.monotonic() - started) * 1000)
-        cost_usd = self._extract_cost(response.headers)
-        await self._reconcile_cost(reserved, cost_usd)
+            payload: dict[str, Any] = {
+                "zone": self._zone,
+                "url": request.url,
+                "format": "raw",
+                "country": "us",
+                "method": "GET",
+            }
+            headers = {
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+            }
 
-        self._raise_for_status(request, response)
+            client = await self._get_http_client()
+            started = time.monotonic()
+            try:
+                response = await client.post(
+                    self._base_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=request.timeout_s,
+                )
+            except httpx.TimeoutException as exc:
+                raise TimeoutFetchError(
+                    f"Bright Data request timed out after {request.timeout_s}s",
+                    request_id=request.request_id,
+                    portal=request.portal,
+                    url=request.url,
+                    vendor=_VENDOR,
+                ) from exc
+            except httpx.TransportError as exc:
+                raise TransientFetchError(
+                    f"Bright Data transport error: {type(exc).__name__}",
+                    request_id=request.request_id,
+                    portal=request.portal,
+                    url=request.url,
+                    vendor=_VENDOR,
+                ) from exc
 
-        body = response.text or ""
-        if self._looks_like_bot_challenge(body):
-            raise AntiBotFetchError(
-                "Bright Data response looks like a bot challenge",
-                request_id=request.request_id,
-                portal=request.portal,
-                url=request.url,
-                vendor=_VENDOR,
-            )
+            latency_ms = int((time.monotonic() - started) * 1000)
+            cost_usd = self._extract_cost(response.headers)
+            await self._reconcile_cost(reserved, cost_usd)
+            reconciled = True
+
+            self._raise_for_status(request, response)
+
+            body = response.text or ""
+            if self._looks_like_bot_challenge(body):
+                raise AntiBotFetchError(
+                    "Bright Data response looks like a bot challenge",
+                    request_id=request.request_id,
+                    portal=request.portal,
+                    url=request.url,
+                    vendor=_VENDOR,
+                )
+        finally:
+            if not reconciled:
+                # Shield the release from the outer cancellation so the
+                # counter is actually decremented even when the task is
+                # being torn down. Any `CancelledError` raised by the
+                # shielded await is intentionally suppressed — the
+                # outer exception is already propagating out of finally.
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.shield(self._release_reserved(reserved))
 
         return FetchResult(
             url=request.url,
