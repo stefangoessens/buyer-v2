@@ -337,6 +337,11 @@ export const recordAnalysisResult = internalMutation({
 /**
  * Record a failure in analysis. Bumps errorCount, stores message, keeps
  * the job queryable for retry. Internal.
+ *
+ * Same guard as recordAnalysisResult: only accepts failure callbacks
+ * for jobs currently in `running` state. Prevents a replayed/duplicate
+ * worker failure callback from reopening a completed/review_required/
+ * resolved job — which would otherwise corrupt already-reviewed work.
  */
 export const recordFailure = internalMutation({
   args: {
@@ -347,6 +352,12 @@ export const recordFailure = internalMutation({
   handler: async (ctx, args) => {
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Job not found");
+
+    if (job.status !== "running") {
+      throw new Error(
+        `Cannot record failure on job in status "${job.status}" — only running jobs accept failure callbacks`,
+      );
+    }
 
     const now = new Date().toISOString();
     await ctx.db.patch(args.jobId, {
