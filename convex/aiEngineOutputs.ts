@@ -1,6 +1,6 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { determineReviewState } from "./lib/engineResult";
+import { determineReviewState, ENGINE_TYPES } from "./lib/engineResult";
 
 // ═══ Queries ═══
 
@@ -48,13 +48,22 @@ export const getLatest = query({
   },
 });
 
-/** List all outputs pending review (for ops review queue) */
+/** List all outputs pending review (for ops review queue — broker/admin only) */
 export const listPendingReview = query({
   args: {
     limit: v.optional(v.number()),
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return [];
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_authSubject", (q) => q.eq("authSubject", identity.subject))
+      .unique();
+    if (!user || (user.role !== "broker" && user.role !== "admin")) return [];
+
     return await ctx.db
       .query("aiEngineOutputs")
       .withIndex("by_reviewState", (q) => q.eq("reviewState", "pending"))
@@ -76,6 +85,9 @@ export const createOutput = internalMutation({
   },
   returns: v.id("aiEngineOutputs"),
   handler: async (ctx, args) => {
+    if (!ENGINE_TYPES.includes(args.engineType as (typeof ENGINE_TYPES)[number])) {
+      throw new Error(`Invalid engine type: ${args.engineType}. Valid: ${ENGINE_TYPES.join(", ")}`);
+    }
     const reviewState = determineReviewState(args.confidence);
     return await ctx.db.insert("aiEngineOutputs", {
       propertyId: args.propertyId,

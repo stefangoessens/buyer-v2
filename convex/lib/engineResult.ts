@@ -28,7 +28,7 @@ export function determineReviewState(
 export function confidenceLevel(
   confidence: number,
 ): "high" | "medium" | "low" {
-  if (confidence >= 0.8) return "high";
+  if (confidence >= AUTO_APPROVE_THRESHOLD) return "high";
   if (confidence >= 0.5) return "medium";
   return "low";
 }
