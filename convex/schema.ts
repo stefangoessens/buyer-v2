@@ -1969,4 +1969,95 @@ export default defineSchema({
     .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
     .index("by_ownerUserId", ["ownerUserId"])
     .index("by_contractId", ["contractId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // POST-TOUR CAPTURE (KIN-805)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Structured post-tour observations captured after a showing. Split
+  // into buyer-visible and internal-only halves — the query layer
+  // enforces the split so buyers never see broker strategy or
+  // negotiation signals. Downstream AI engines (pricing, leverage,
+  // offer, case synthesis) consume structured signals without parsing
+  // freeform text.
+
+  postTourCaptures: defineTable({
+    tourRequestId: v.id("tourRequests"),
+    dealRoomId: v.id("dealRooms"),
+    propertyId: v.id("properties"),
+    buyerId: v.id("users"),
+    submittedBy: v.union(
+      v.literal("buyer"),
+      v.literal("broker"),
+      v.literal("showing_agent"),
+      v.literal("coordinator"),
+    ),
+    submittedById: v.id("users"),
+    tourDate: v.optional(v.string()),
+
+    // ─── Buyer-visible observation ───
+    sentiment: v.union(
+      v.literal("very_positive"),
+      v.literal("positive"),
+      v.literal("neutral"),
+      v.literal("negative"),
+      v.literal("very_negative"),
+    ),
+    offerReadiness: v.union(
+      v.literal("ready_now"),
+      v.literal("ready_soon"),
+      v.literal("needs_time"),
+      v.literal("not_interested"),
+      v.literal("unknown"),
+    ),
+    concerns: v.array(
+      v.object({
+        category: v.union(
+          v.literal("price"),
+          v.literal("condition"),
+          v.literal("location"),
+          v.literal("layout"),
+          v.literal("hoa"),
+          v.literal("financing"),
+          v.literal("inspection_fear"),
+          v.literal("school_zone"),
+          v.literal("other"),
+        ),
+        label: v.string(),
+        severity: v.number(),
+      }),
+    ),
+    highlights: v.array(v.string()),
+    buyerNotes: v.optional(v.string()),
+
+    // ─── Internal-only observation ───
+    // These fields MUST be filtered out of buyer-facing queries.
+    internalNotes: v.optional(v.string()),
+    negotiationSignals: v.optional(v.string()),
+    brokerReadinessAssessment: v.optional(
+      v.union(
+        v.literal("ready_now"),
+        v.literal("ready_soon"),
+        v.literal("needs_time"),
+        v.literal("not_interested"),
+        v.literal("unknown"),
+      ),
+    ),
+    competingInterest: v.optional(
+      v.union(
+        v.literal("none"),
+        v.literal("low"),
+        v.literal("moderate"),
+        v.literal("high"),
+      ),
+    ),
+
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_tourRequestId", ["tourRequestId"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_propertyId", ["propertyId"])
+    .index("by_buyerId", ["buyerId"])
+    .index("by_submittedBy", ["submittedBy"]),
 });
