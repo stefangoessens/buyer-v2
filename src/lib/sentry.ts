@@ -1,14 +1,16 @@
 import * as Sentry from "@sentry/nextjs";
+import { stripPii } from "@/lib/security/pii-guard";
 
-/** Capture an error with optional context, stripping PII */
+/** Capture an error with optional context, stripping PII before sending */
 export function captureError(
   error: Error | string,
   context?: Record<string, unknown>
 ) {
+  const safeContext = context ? stripPii(context) : undefined;
   if (typeof error === "string") {
-    Sentry.captureMessage(error, { extra: context });
+    Sentry.captureMessage(error, { extra: safeContext });
   } else {
-    Sentry.captureException(error, { extra: context });
+    Sentry.captureException(error, { extra: safeContext });
   }
 }
 
