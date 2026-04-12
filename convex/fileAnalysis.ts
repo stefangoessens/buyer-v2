@@ -236,8 +236,18 @@ export const markRunning = internalMutation({
 
 /**
  * Record the analysis result from the engine. Inserts findings fan-out
- * and transitions the job to `completed` or `review_required` based on
- * the requiresBrokerReview flag. Internal — called by the worker.
+ * and transitions the job to `completed` or `review_required`. Internal —
+ * called by the worker.
+ *
+ * Idempotency + safety:
+ *   - REJECTS calls unless the job is in `running` state. Prevents a
+ *     replayed/internal duplicate call from overwriting a
+ *     completed/review_required/resolved job and reopening already-
+ *     reviewed work.
+ *   - The requiresBrokerReview flag is IGNORED — computed from the
+ *     findings payload directly (any finding.requiresReview === true).
+ *     This prevents a mismatched caller from marking a job "completed"
+ *     when findings still need review.
  */
 export const recordAnalysisResult = internalMutation({
   args: {
@@ -246,7 +256,6 @@ export const recordAnalysisResult = internalMutation({
     payload: v.string(),
     overallSeverity: severityValidator,
     overallConfidence: v.number(),
-    requiresBrokerReview: v.boolean(),
     engineVersion: v.string(),
     findings: v.array(
       v.object({
@@ -264,8 +273,22 @@ export const recordAnalysisResult = internalMutation({
     const job = await ctx.db.get(args.jobId);
     if (!job) throw new Error("Job not found");
 
+    // Only accept result writes for jobs currently in `running` state.
+    // This guards against replayed worker calls after the job has
+    // already transitioned to completed/review_required/resolved.
+    if (job.status !== "running") {
+      throw new Error(
+        `Cannot record analysis result on job in status "${job.status}" — only running jobs accept results`,
+      );
+    }
+
+    // Derive requiresBrokerReview from the findings array, NOT from a
+    // caller-supplied flag. If any finding needs review, the job must be
+    // routed to review_required so resolveJob can act on it.
+    const requiresBrokerReview = args.findings.some((f) => f.requiresReview);
+    const nextStatus = requiresBrokerReview ? "review_required" : "completed";
+
     const now = new Date().toISOString();
-    const nextStatus = args.requiresBrokerReview ? "review_required" : "completed";
 
     await ctx.db.patch(args.jobId, {
       docType: args.docType,
@@ -273,7 +296,7 @@ export const recordAnalysisResult = internalMutation({
       payload: args.payload,
       overallSeverity: args.overallSeverity,
       overallConfidence: args.overallConfidence,
-      requiresBrokerReview: args.requiresBrokerReview,
+      requiresBrokerReview,
       engineVersion: args.engineVersion,
       errorMessage: undefined,
       updatedAt: now,
