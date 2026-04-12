@@ -313,6 +313,16 @@ describe("canTransition", () => {
     expect(canTransition("canceled", "created")).toBe(false);
     expect(canTransition("canceled", "converted")).toBe(false);
   });
+
+  it("attended and noShow cannot be canceled (codex PR #55 regression)", () => {
+    // Codex P2 finding: the Convex `cancel` mutation used to allow
+    // attended → canceled and noShow → canceled, diverging from this
+    // pure state machine. Both the mutation and this guard must
+    // reject the retroactive cancel — attended/noShow are attendance
+    // states that can only forward-transition to converted.
+    expect(canTransition("attended", "canceled")).toBe(false);
+    expect(canTransition("noShow", "canceled")).toBe(false);
+  });
 });
 
 // MARK: - applyConversion

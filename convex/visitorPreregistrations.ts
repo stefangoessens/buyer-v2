@@ -1,5 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { requireRole } from "./lib/session";
 
 /**
  * Visitor pre-registration mutations (KIN-824).
@@ -10,6 +11,14 @@ import { v } from "convex/values";
  * state machine is entered. This is a top-of-funnel capture that
  * CAN optionally transition into a deeper representation state via
  * `recordConversion`.
+ *
+ * Auth model:
+ *   - `register` is intentionally public — anyone can RSVP to an
+ *     open house without an account.
+ *   - `markReminded`, `markAttended`, `markNoShow`, `cancel`,
+ *     `recordConversion`, and `listForProperty` are ops-only.
+ *     They call `requireRole(ctx, "broker")` which allows brokers
+ *     and admins, and throws for any other caller.
  *
  * Pure decision logic lives in `src/lib/preregistration/logic.ts`
  * for unit testing. Convex files cannot import from `src/`, so this
@@ -139,16 +148,20 @@ export const register = mutation({
   },
 });
 
-// MARK: - Status transitions (ops only — TODO: auth once ops surface ships)
+// MARK: - Status transitions (ops-only, role-gated)
 
 /**
  * Mark a pre-registration as reminded. Called by the reminder job
  * after a notification is sent to the visitor.
+ *
+ * Auth: ops-only — throws for unauthenticated or buyer callers.
+ * Must be role `broker` or `admin`.
  */
 export const markReminded = mutation({
   args: { id: v.id("visitorPreregistrations") },
   returns: v.null(),
   handler: async (ctx, args) => {
+    await requireRole(ctx, "broker");
     const record = await ctx.db.get(args.id);
     if (!record) return null;
     if (record.status !== "created") return null;
@@ -162,11 +175,14 @@ export const markReminded = mutation({
 
 /**
  * Mark a pre-registration as attended. Called by ops at the event.
+ *
+ * Auth: ops-only.
  */
 export const markAttended = mutation({
   args: { id: v.id("visitorPreregistrations") },
   returns: v.null(),
   handler: async (ctx, args) => {
+    await requireRole(ctx, "broker");
     const record = await ctx.db.get(args.id);
     if (!record) return null;
     if (record.status !== "created" && record.status !== "reminded") {
@@ -182,11 +198,14 @@ export const markAttended = mutation({
 
 /**
  * Mark as no-show after the event.
+ *
+ * Auth: ops-only.
  */
 export const markNoShow = mutation({
   args: { id: v.id("visitorPreregistrations") },
   returns: v.null(),
   handler: async (ctx, args) => {
+    await requireRole(ctx, "broker");
     const record = await ctx.db.get(args.id);
     if (!record) return null;
     if (record.status !== "created" && record.status !== "reminded") {
@@ -201,17 +220,23 @@ export const markNoShow = mutation({
 });
 
 /**
- * Cancel a pre-registration. Called by the visitor (from a
- * confirmation email link) or by ops.
+ * Cancel a pre-registration. Ops-only. Aligns with the shared
+ * state machine in `src/lib/preregistration/logic.ts` —
+ * `canTransition` only allows cancel from `created` or `reminded`,
+ * so `attended`/`noShow` cannot be retroactively canceled (they
+ * can only move to `converted`).
+ *
+ * Auth: ops-only.
  */
 export const cancel = mutation({
   args: { id: v.id("visitorPreregistrations") },
   returns: v.null(),
   handler: async (ctx, args) => {
+    await requireRole(ctx, "broker");
     const record = await ctx.db.get(args.id);
     if (!record) return null;
-    // Only non-terminal states can be canceled
-    if (record.status === "converted" || record.status === "canceled") {
+    // Match canTransition in logic.ts: only created/reminded → canceled
+    if (record.status !== "created" && record.status !== "reminded") {
       return null;
     }
     await ctx.db.patch(args.id, {
@@ -230,6 +255,8 @@ export const cancel = mutation({
  *
  * Allowed source states: created, reminded, attended, noShow.
  * Already-terminal states (canceled, converted) reject the write.
+ *
+ * Auth: ops-only.
  */
 export const recordConversion = mutation({
   args: {
@@ -239,6 +266,7 @@ export const recordConversion = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    await requireRole(ctx, "broker");
     const record = await ctx.db.get(args.id);
     if (!record) return null;
 
@@ -265,6 +293,11 @@ export const recordConversion = mutation({
 
 /**
  * List pre-registrations for a property (ops view).
+ *
+ * Auth: ops-only — this surface returns visitor PII
+ * (name/email/phone) and must never be exposed to buyers or
+ * unauthenticated callers. `requireRole(ctx, "broker")` enforces
+ * broker or admin role.
  */
 export const listForProperty = query({
   args: {
@@ -296,6 +329,7 @@ export const listForProperty = query({
     })
   ),
   handler: async (ctx, args) => {
+    await requireRole(ctx, "broker");
     const rows = await ctx.db
       .query("visitorPreregistrations")
       .withIndex("by_propertyId", (q) => q.eq("propertyId", args.propertyId))
