@@ -11,7 +11,7 @@ interface FeatureCardProps {
 
 export function FeatureCard({ imageSrc, imageAlt, title, description, className }: FeatureCardProps) {
   return (
-    <div className={cn("group overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-lg", className)}>
+    <div className={cn("group overflow-hidden rounded-[24px] border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-lg", className)}>
       {/* Image area — matches PayFit feature card pattern */}
       <div className="relative aspect-[5/3] overflow-hidden bg-neutral-50">
         <Image

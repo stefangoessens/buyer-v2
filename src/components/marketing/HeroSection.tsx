@@ -6,7 +6,7 @@ function PropertyMockup() {
   return (
     <div className="relative mx-auto w-full max-w-[380px]">
       <div className="absolute -inset-8 rounded-[32px] bg-primary-400/15 blur-3xl" />
-      <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white shadow-2xl">
+      <div className="relative overflow-hidden rounded-[24px] border border-white/[0.08] bg-white shadow-2xl">
         <div className="relative h-40 overflow-hidden bg-gradient-to-br from-primary-100 via-accent-50 to-primary-50">
           <svg className="absolute bottom-0 left-1/2 -translate-x-1/2 text-primary-700 opacity-[0.08]" width="220" height="130" viewBox="0 0 220 130" fill="currentColor" aria-hidden="true">
             <path d="M110 10L20 75V130H85V95H135V130H200V75L110 10Z" />
@@ -101,7 +101,7 @@ export function HeroSection({ children }: HeroSectionProps) {
               <span className="inline-block size-1.5 rounded-full bg-accent-400" />
               Florida-exclusive buyer brokerage
             </div>
-            <h1 className="mt-6 text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-[56px] lg:leading-[1.08]">
+            <h1 className="mt-6 text-4xl font-semibold tracking-[-0.006em] text-white sm:text-5xl lg:text-[52px] lg:leading-[1.15]">
               Get the best deal on your{" "}
               <span className="bg-gradient-to-r from-accent-300 to-accent-500 bg-clip-text text-transparent">Florida home</span>
             </h1>

@@ -55,7 +55,7 @@ const checkSvg = <svg className="size-5 shrink-0 text-primary-400" fill="current
 
 function BentoCard({ src, title, className }: { src: string; title: string; className?: string }) {
   return (
-    <div className={`group overflow-hidden rounded-2xl border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg ${className ?? ""}`}>
+    <div className={`group overflow-hidden rounded-[24px] border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg ${className ?? ""}`}>
       <div className="relative aspect-[16/10] overflow-hidden bg-neutral-50">
         <Image src={src} alt={title} fill className="object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]" sizes="(max-width: 640px) 100vw, 60vw" />
       </div>
@@ -92,7 +92,7 @@ export default function Home() {
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Why buyer-v2</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-neutral-800 lg:text-4xl">How buyer-v2 works for you</h2>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">How buyer-v2 works for you</h2>
             <p className="mt-4 text-lg leading-relaxed text-neutral-500">From paste to close, we handle every step of your home buying journey with AI precision and human expertise.</p>
           </div>
           <div className="mt-14 grid grid-cols-1 gap-8 md:grid-cols-3">
@@ -104,7 +104,7 @@ export default function Home() {
       {/* ── Product Screenshot (full-width like PayFit hero) ──────── */}
       <section className="w-full bg-neutral-50 py-16 lg:py-20">
         <div className="mx-auto max-w-[1248px] px-6">
-          <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-xl">
+          <div className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-xl">
             <Image
               src="/images/marketing/hero/product-dashboard.png"
               alt="buyer-v2 property analysis dashboard"
@@ -122,7 +122,7 @@ export default function Home() {
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Everything automated</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-neutral-800 lg:text-4xl">From analysis to closing, every step covered</h2>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">From analysis to closing, every step covered</h2>
             <p className="mt-4 text-lg leading-relaxed text-neutral-500">AI-powered tools that work together to give you an unfair advantage in Florida real estate.</p>
           </div>
           <div className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-12">
@@ -144,13 +144,13 @@ export default function Home() {
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Simple process</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-neutral-800 lg:text-4xl">Three steps to your best deal</h2>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">Three steps to your best deal</h2>
           </div>
           <div className="relative mt-16 grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-12">
             <div className="pointer-events-none absolute left-[16.67%] right-[16.67%] top-8 hidden h-px bg-gradient-to-r from-primary-200 via-primary-300 to-primary-200 md:block" />
             {steps.map((step) => (
               <div key={step.number} className="relative text-center">
-                <div className="relative mx-auto flex size-16 items-center justify-center rounded-2xl bg-primary-50 text-2xl font-bold text-primary-400">{step.number}</div>
+                <div className="relative mx-auto flex size-16 items-center justify-center rounded-[20px] bg-primary-50 text-2xl font-semibold text-primary-400">{step.number}</div>
                 <h3 className="mt-5 text-lg font-semibold text-neutral-800">{step.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-neutral-500">{step.description}</p>
               </div>
@@ -164,7 +164,7 @@ export default function Home() {
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Social proof</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-neutral-800 lg:text-4xl">What buyers are saying</h2>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">What buyers are saying</h2>
           </div>
           <div className="mt-14 grid grid-cols-1 gap-8 md:grid-cols-3">
             {testimonials.map((t) => <TestimonialCard key={t.author} quote={t.quote} author={t.author} role={t.role} />)}
@@ -196,7 +196,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:48px_48px]" />
         </div>
         <div className="relative mx-auto max-w-3xl px-6 text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-white lg:text-4xl">Ready to find your Florida home?</h2>
+          <h2 className="text-3xl font-semibold tracking-[-0.003em] text-white lg:text-[40px] lg:leading-[1.2]">Ready to find your Florida home?</h2>
           <p className="mt-4 text-lg text-primary-100/70">Paste a listing link and get your free AI analysis in seconds. No sign-up required.</p>
           <div className="mt-8">{submitted ? analyzingState : <PasteLinkInput variant="hero" onSubmit={handleSubmit} />}</div>
         </div>

@@ -7,7 +7,7 @@ interface TestimonialCardProps {
 
 export function TestimonialCard({ quote, author, role, rating = 5 }: TestimonialCardProps) {
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-8">
+    <div className="flex h-full flex-col rounded-[24px] border border-neutral-200 bg-white p-8">
       <div className="flex gap-0.5">
         {Array.from({ length: rating }).map((_, i) => (
           <svg key={i} className="size-5 text-warning-500" fill="currentColor" viewBox="0 0 20 20">
