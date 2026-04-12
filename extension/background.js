@@ -44,8 +44,12 @@ function looksLikeListing(url, portal) {
   const path = url.pathname;
   switch (portal) {
     case "zillow":
-      // Zillow listings: /homedetails/<slug>/<zpid>_zpid/
-      return /\/homedetails\//.test(path) && /_zpid/.test(path);
+      // Accept both long-form /homedetails/<slug>/<zpid>_zpid/ and
+      // short-form /homes/<zpid>_zpid/ URLs. The canonical parser in
+      // src/lib/intake/parser.ts treats both as valid listings, so the
+      // badge must match — otherwise valid Zillow links would never
+      // trigger the ✓ badge and users couldn't save them.
+      return /_zpid/.test(path) && /\/(homedetails|homes)\//.test(path);
     case "redfin":
       // Redfin listings: /<state>/<city>/<slug>/home/<id>
       return /\/home\/\d+/.test(path);

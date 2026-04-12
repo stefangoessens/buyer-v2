@@ -33,7 +33,12 @@ function looksLikeListing(url, portal) {
   const path = url.pathname;
   switch (portal) {
     case "zillow":
-      return /\/homedetails\//.test(path) && /_zpid/.test(path);
+      // Accept both /homedetails/<slug>/<zpid>_zpid/ and the shorter
+      // /homes/<zpid>_zpid/ URLs. The canonical parser in
+      // src/lib/intake/parser.ts treats both as valid listings, so the
+      // extension badge and popup must match — otherwise a user can't
+      // save a link the backend would otherwise accept.
+      return /_zpid/.test(path) && /\/(homedetails|homes)\//.test(path);
     case "redfin":
       return /\/home\/\d+/.test(path);
     case "realtor":

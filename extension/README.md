@@ -57,6 +57,6 @@ extension/
 - Background sync / offline queueing
 - Options page (buyerV2BaseUrl is hardcoded; will become configurable in v2)
 - Firefox / Edge parity (Manifest v3 works on Edge; Firefox needs a separate manifest)
-- Icon generation — placeholder slots exist in `manifest.json` but the PNG files are TODO
+- Custom icons — manifest omits `icons` / `default_icon` in v1 so the extension loads with Chrome's default puzzle-piece icon. Branded icons are a design follow-up (need 16/48/128 PNG exports of the buyer-v2 logo).
 
 Follow-ups tracked under the same parent epic (KIN-743 Intake umbrella).

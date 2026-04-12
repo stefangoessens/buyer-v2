@@ -43,7 +43,7 @@ describe("detectListingPage — empty / internal pages", () => {
 });
 
 describe("detectListingPage — supported listings (happy path)", () => {
-  it("detects a Zillow listing URL", () => {
+  it("detects a Zillow listing URL (long form /homedetails/)", () => {
     const result = detectListingPage(
       "https://www.zillow.com/homedetails/123-Main-St-Miami-FL-33131/12345678_zpid/"
     );
@@ -52,6 +52,16 @@ describe("detectListingPage — supported listings (happy path)", () => {
     expect(result.listingId).toBeDefined();
     expect(result.normalizedUrl).toBeDefined();
     expect(result.message).toContain("Zillow");
+  });
+
+  it("detects a Zillow listing URL (short form /homes/<id>_zpid)", () => {
+    // Codex P2 finding on KIN-816 — short-form Zillow URLs are accepted
+    // by the canonical parser and must also trigger the extension badge.
+    const result = detectListingPage(
+      "https://www.zillow.com/homes/12345678_zpid/"
+    );
+    expect(result.status).toBe("supported_listing");
+    expect(result.platform).toBe("zillow");
   });
 
   it("detects a Redfin listing URL", () => {
