@@ -23,7 +23,7 @@ const numberFormatter = new Intl.NumberFormat("en-US");
 export function DealRoomCard({ tile, now }: DealRoomCardProps) {
   return (
     <Link
-      href={`/dealroom/${tile.dealRoomId}/property/${tile.propertyId}`}
+      href={`/dealroom/${tile.dealRoomId}/offer`}
       className="group block"
     >
       <Card className="h-full overflow-hidden p-0 transition-all hover:border-primary-300 hover:shadow-md">

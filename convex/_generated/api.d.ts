@@ -19,6 +19,7 @@ import type * as buyerUpdateEvents from "../buyerUpdateEvents.js";
 import type * as closeDashboard from "../closeDashboard.js";
 import type * as communicationTemplates from "../communicationTemplates.js";
 import type * as copilot from "../copilot.js";
+import type * as dashboard from "../dashboard.js";
 import type * as dealRooms from "../dealRooms.js";
 import type * as deviceTokens from "../deviceTokens.js";
 import type * as engines_comps from "../engines/comps.js";
@@ -77,6 +78,7 @@ declare const fullApi: ApiFromModules<{
   closeDashboard: typeof closeDashboard;
   communicationTemplates: typeof communicationTemplates;
   copilot: typeof copilot;
+  dashboard: typeof dashboard;
   dealRooms: typeof dealRooms;
   deviceTokens: typeof deviceTokens;
   "engines/comps": typeof engines_comps;
