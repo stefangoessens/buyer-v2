@@ -145,11 +145,14 @@ export const createAddressIntake = mutation({
     const sourceUrl = manualSourceUrl(canonical);
     const now = new Date().toISOString();
 
-    // Query candidate properties by zip index.
+    // Query ALL candidate properties in this zip — do not truncate with
+    // .take(N) because index order is not similarity order, and a dense
+    // zip could exclude the true match from consideration entirely.
+    // Zip-scoped collections are bounded enough to scan in full.
     const candidateDocs = await ctx.db
       .query("properties")
       .withIndex("by_zip", (q) => q.eq("zip", canonical.zip.slice(0, 5)))
-      .take(50);
+      .collect();
 
     const candidates: AddressMatchCandidate[] = candidateDocs.map((doc) => ({
       id: doc._id,
@@ -179,12 +182,10 @@ export const createAddressIntake = mutation({
             ambiguous: matchResult.ambiguous,
           },
         }),
-        status: resolveStatus(matchResult.confidence),
-        propertyId:
-          matchResult.confidence === "exact" ||
-          matchResult.confidence === "high"
-            ? (matchResult.bestMatch!.id as Id<"properties">)
-            : undefined,
+        status: resolveStatus(matchResult.confidence, matchResult.ambiguous),
+        propertyId: shouldAutoMerge(matchResult)
+          ? (matchResult.bestMatch!.id as Id<"properties">)
+          : undefined,
       });
     } else {
       intakeId = await ctx.db.insert("sourceListings", {
@@ -200,12 +201,10 @@ export const createAddressIntake = mutation({
           },
         }),
         extractedAt: now,
-        status: resolveStatus(matchResult.confidence),
-        propertyId:
-          matchResult.confidence === "exact" ||
-          matchResult.confidence === "high"
-            ? (matchResult.bestMatch!.id as Id<"properties">)
-            : undefined,
+        status: resolveStatus(matchResult.confidence, matchResult.ambiguous),
+        propertyId: shouldAutoMerge(matchResult)
+          ? (matchResult.bestMatch!.id as Id<"properties">)
+          : undefined,
       });
     }
 
@@ -264,10 +263,27 @@ export const createAddressIntake = mutation({
   },
 });
 
-/** Map a match confidence into the sourceListing.status literal. */
+/** Whether a match result is eligible for auto-merge to an existing property. */
+function shouldAutoMerge(result: {
+  confidence: MatchConfidence;
+  ambiguous: boolean;
+  bestMatch: { id: string } | null;
+}): boolean {
+  if (!result.bestMatch) return false;
+  if (result.ambiguous) return false; // never auto-merge ambiguous results
+  return result.confidence === "exact" || result.confidence === "high";
+}
+
+/**
+ * Map a match confidence into the sourceListing.status literal.
+ * Ambiguous results never transition to "merged" even at high confidence
+ * — they stay "pending" until the buyer or ops disambiguates.
+ */
 function resolveStatus(
   confidence: MatchConfidence,
+  ambiguous: boolean,
 ): "pending" | "extracted" | "failed" | "merged" {
+  if (ambiguous) return "pending";
   if (confidence === "exact" || confidence === "high") return "merged";
   if (confidence === "medium" || confidence === "low") return "pending";
   return "pending";

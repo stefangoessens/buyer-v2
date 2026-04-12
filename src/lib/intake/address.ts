@@ -258,38 +258,69 @@ function parseRawAddress(raw: string): {
     }
   }
 
-  // Fallback: single-string regex over the whole cleaned form.
-  // Look for trailing zip and the two-letter or full-name state directly before it.
-  const tailRegex = /^(.+?)[\s,]+([A-Za-z][A-Za-z.\s]*?)\s+(\d{5}(?:-\d{4})?)$/;
-  const tailMatch = cleaned.match(tailRegex);
-  if (!tailMatch) return null;
+  // Fallback: parse from the right instead of one giant regex. Single
+  // regexes with non-greedy prefixes are unreliable on comma-free input
+  // because the state group can absorb too much of the middle. Right-to-
+  // left extraction is deterministic.
+  //
+  // Step 1: peel the zip off the end.
+  const zipRegex = /(\d{5}(?:-\d{4})?)$/;
+  const zipMatch = cleaned.match(zipRegex);
+  if (!zipMatch) return null;
+  const zip = zipMatch[1];
+  const withoutZip = cleaned.slice(0, cleaned.length - zip.length).trim();
 
-  const beforeState = tailMatch[1].trim();
-  const state = tailMatch[2].trim();
-  const zip = tailMatch[3];
+  // Step 2: peel the state off. Accept either a 2-letter code or a
+  // known full-name state from US_STATES. Try 2-letter first, then
+  // fall back to full name (up to 2 words for "New Hampshire" etc.).
+  let state: string;
+  let withoutState: string;
+  const twoLetterMatch = withoutZip.match(/[\s,]+([A-Za-z]{2})$/);
+  if (twoLetterMatch) {
+    state = twoLetterMatch[1];
+    withoutState = withoutZip.slice(0, twoLetterMatch.index).trim();
+  } else {
+    // Try 1-2 word full-name state. Walk back through the tail and
+    // check if the trailing 1 or 2 words match a known state name.
+    const tailWords = withoutZip.replace(/,/g, " ").split(/\s+/).filter(Boolean);
+    if (tailWords.length < 2) return null;
 
-  // Walk back from beforeState to peel a city off. We expect the city to
-  // be the last 1-3 word chunk before the state; split on comma if present.
-  const beforeParts = beforeState
-    .split(",")
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-  if (beforeParts.length === 0) return null;
+    // Prefer 2-word match ("New Hampshire", "North Carolina", ...).
+    const twoWord = `${tailWords[tailWords.length - 2]} ${tailWords[tailWords.length - 1]}`;
+    const oneWord = tailWords[tailWords.length - 1];
+    if (US_STATES[twoWord.toUpperCase()]) {
+      state = twoWord;
+      withoutState = tailWords.slice(0, -2).join(" ");
+    } else if (US_STATES[oneWord.toUpperCase()]) {
+      state = oneWord;
+      withoutState = tailWords.slice(0, -1).join(" ");
+    } else {
+      return null;
+    }
+  }
+  withoutState = withoutState.replace(/,$/, "").trim();
+  if (!withoutState) return null;
 
+  // Step 3: peel the city off. If there's a comma, the last comma-part
+  // is the city. Otherwise, assume the last word is the city and
+  // everything before it is the street.
   let city: string;
   let streetJoined: string;
-  if (beforeParts.length >= 2) {
-    city = beforeParts[beforeParts.length - 1];
-    streetJoined = beforeParts.slice(0, -1).join(", ");
+  if (withoutState.includes(",")) {
+    const parts = withoutState
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    city = parts[parts.length - 1];
+    streetJoined = parts.slice(0, -1).join(", ");
   } else {
-    // No comma between street and city — split on whitespace and assume
-    // the last 1-2 tokens are the city. This is lossy and covers the
-    // "123 Main St Miami FL 33131" free-form case.
-    const words = beforeParts[0].split(" ");
-    if (words.length < 3) return null;
+    const words = withoutState.split(/\s+/).filter(Boolean);
+    if (words.length < 2) return null;
     city = words[words.length - 1];
     streetJoined = words.slice(0, -1).join(" ");
   }
+
+  if (!streetJoined) return null;
 
   const { street, unit } = extractUnit(streetJoined);
   return { street, unit, city, state, zip };

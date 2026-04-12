@@ -346,6 +346,45 @@ describe("normalizeAddress — raw string input", () => {
     expect(result.valid).toBe(true);
     if (result.valid) expect(result.canonical.state).toBe("FL");
   });
+
+  it("parses comma-free raw address (KIN-775 codex P1 fix)", () => {
+    // Core manual-entry format that must work: no commas at all.
+    const result = normalizeAddress({
+      raw: "123 Main St Miami FL 33131",
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.canonical.street).toBe("123 Main St");
+      expect(result.canonical.city).toBe("Miami");
+      expect(result.canonical.state).toBe("FL");
+      expect(result.canonical.zip).toBe("33131");
+    }
+  });
+
+  it("parses comma-free raw address with zip+4", () => {
+    const result = normalizeAddress({
+      raw: "500 Brickell Ave Miami FL 33131-1234",
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.canonical.street).toBe("500 Brickell Ave");
+      expect(result.canonical.city).toBe("Miami");
+      expect(result.canonical.state).toBe("FL");
+      expect(result.canonical.zip).toBe("33131-1234");
+    }
+  });
+
+  it("parses comma-free raw address with multi-word street", () => {
+    const result = normalizeAddress({
+      raw: "456 North Bayshore Dr Miami FL 33132",
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.canonical.street).toBe("456 North Bayshore Dr");
+      expect(result.canonical.city).toBe("Miami");
+      expect(result.canonical.state).toBe("FL");
+    }
+  });
 });
 
 describe("matchAddress — confidence scoring", () => {
