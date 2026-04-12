@@ -3,15 +3,20 @@ import Foundation
 /// HTTP adapter that speaks to the shared Convex delivery-preference
 /// state defined in `convex/messagePreferences.ts`. Kept deliberately
 /// thin so the `MessagePreferencesService` can stay transport-agnostic.
+///
+/// The token provider is async because production wiring reads from
+/// the keychain (an actor) via `AuthService.loadAccessToken`. Tests can
+/// still pass a trivial closure like `{ "stub" }` — Swift auto-converts
+/// sync returns into the async signature.
 final class ConvexMessagePreferencesBackend: MessagePreferencesBackend, @unchecked Sendable {
 
     private let baseURL: URL
-    private let tokenProvider: @Sendable () -> String?
+    private let tokenProvider: @Sendable () async -> String?
     private let session: URLSession
 
     init(
         baseURL: URL = URL(string: "https://api.buyerv2.com")!,
-        tokenProvider: @escaping @Sendable () -> String? = { nil },
+        tokenProvider: @escaping @Sendable () async -> String? = { nil },
         session: URLSession = .shared
     ) {
         self.baseURL = baseURL
@@ -60,7 +65,7 @@ final class ConvexMessagePreferencesBackend: MessagePreferencesBackend, @uncheck
     // MARK: - Private
 
     private func post<T: Encodable>(path: String, body: T) async throws -> Data {
-        guard let token = tokenProvider(), !token.isEmpty else {
+        guard let token = await tokenProvider(), !token.isEmpty else {
             throw MessagePreferencesError.notAuthenticated
         }
 

@@ -68,6 +68,30 @@ struct PreferencesViewModel {
         }
     }
 
+    /// Compose the display state with rollback-overlay awareness.
+    ///
+    /// Post-load write failures should keep the content view rendered
+    /// (with a save-error banner on top), while pre-load failures
+    /// should still surface the hard error screen. The view passes in
+    /// `hasSuccessfullyLoaded` so the decision is data-driven rather
+    /// than inferred from whether the cached prefs happen to equal
+    /// `.default` — the earlier heuristic missed first-time users whose
+    /// first successful load was `(.default, hasStored: false)` and
+    /// then had an update fail.
+    func displayWithOverlay(
+        lastKnownPreferences: MessagePreferences,
+        lastKnownHasStored: Bool,
+        hasSuccessfullyLoaded: Bool
+    ) -> PreferencesDisplayState {
+        if hasSuccessfullyLoaded {
+            return displayPreservingPreferences(
+                lastKnownPreferences,
+                hasStored: lastKnownHasStored
+            )
+        }
+        return display()
+    }
+
     /// A `.loaded` + save-error composition used after an optimistic
     /// update fails. The service rolls back the values but stays in
     /// `.error`; the view wants to keep showing toggles PLUS a banner.

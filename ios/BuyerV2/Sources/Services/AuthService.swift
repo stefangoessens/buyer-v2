@@ -156,6 +156,25 @@ final class AuthService {
         state = .expired
     }
 
+    /// Async snapshot of the current access token from the keychain.
+    ///
+    /// Intended for authenticated backend adapters (like
+    /// `ConvexMessagePreferencesBackend`) that need a bearer token per
+    /// request without holding a reference to the live `AuthService`.
+    /// Deliberately uses a transient `KeychainStore` so callers can
+    /// read tokens from a non-MainActor context; the keychain itself
+    /// is the source of truth, not any in-memory cache.
+    static func loadAccessToken() async -> String? {
+        let keychain = KeychainStore()
+        guard let data = try? await keychain.load(key: Self.accessTokenKey),
+              let token = String(data: data, encoding: .utf8),
+              !token.isEmpty
+        else {
+            return nil
+        }
+        return token
+    }
+
     func restoreSession() async {
         do {
             guard let refreshData = try await keychain.load(key: Self.refreshTokenKey),

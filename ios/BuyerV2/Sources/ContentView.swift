@@ -15,7 +15,9 @@ struct ContentView: View {
     @State private var timelineService = DealTimelineService()
     @State private var cacheCoordinator = DealCacheCoordinator()
     @State private var preferencesService = MessagePreferencesService(
-        backend: ConvexMessagePreferencesBackend()
+        backend: ConvexMessagePreferencesBackend(
+            tokenProvider: { await AuthService.loadAccessToken() }
+        )
     )
 
     var body: some View {

@@ -13,9 +13,15 @@ struct PreferencesView: View {
 
     // Local snapshots so an optimistic service.update() rolling back
     // keeps the screen in the "content + error banner" shape rather
-    // than jumping straight to the hard error state.
+    // than jumping straight to the hard error state. The boolean gate
+    // is driven by whether we've ever seen a successful `.loaded`,
+    // NOT by comparing the cached prefs to `.default` — otherwise a
+    // first-time user whose first load returned `(.default, false)`
+    // would fall through to the hard error screen on their first
+    // failed write (codex P2 on PR #83).
     @State private var lastKnownPreferences: MessagePreferences = .default
     @State private var lastKnownHasStored: Bool = false
+    @State private var hasSuccessfullyLoaded: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -49,6 +55,7 @@ struct PreferencesView: View {
             if case .loaded(let prefs, let hasStored) = newState {
                 lastKnownPreferences = prefs
                 lastKnownHasStored = hasStored
+                hasSuccessfullyLoaded = true
             }
         }
     }
@@ -60,13 +67,11 @@ struct PreferencesView: View {
             authState: authService.state,
             serviceState: service.state
         )
-        if case .error = service.state, lastKnownHasStored || lastKnownPreferences != .default {
-            return vm.displayPreservingPreferences(
-                lastKnownPreferences,
-                hasStored: lastKnownHasStored
-            )
-        }
-        return vm.display()
+        return vm.displayWithOverlay(
+            lastKnownPreferences: lastKnownPreferences,
+            lastKnownHasStored: lastKnownHasStored,
+            hasSuccessfullyLoaded: hasSuccessfullyLoaded
+        )
     }
 
     // MARK: - Loading

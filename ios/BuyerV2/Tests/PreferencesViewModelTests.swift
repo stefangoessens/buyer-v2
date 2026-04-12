@@ -195,6 +195,79 @@ struct PreferencesViewModelDisplayTests {
         #expect(hasStored == true)
         #expect(saveError == nil)
     }
+
+    // MARK: - displayWithOverlay gate (codex P2)
+
+    @Test("displayWithOverlay: pre-load error keeps the hard error screen")
+    func testOverlayGateBlockedBeforeFirstLoad() {
+        let vm = PreferencesViewModel(
+            authState: .signedIn(user: sampleUser),
+            serviceState: .error("cold start offline")
+        )
+        let display = vm.displayWithOverlay(
+            lastKnownPreferences: .default,
+            lastKnownHasStored: false,
+            hasSuccessfullyLoaded: false
+        )
+        #expect(display == .error("cold start offline"))
+    }
+
+    @Test("displayWithOverlay: first-time user (.default, hasStored=false) still gets the rollback banner after first successful load")
+    func testOverlayGateAllowsFirstTimeUserWithDefaultSnapshot() {
+        // Codex P2 regression: previously the overlay was gated on
+        // `lastKnownHasStored || lastKnownPreferences != .default`, so a
+        // first-time user whose first load was `(.default, false)`
+        // never overlaid the save error — they got dropped to the
+        // hard error screen instead.
+        let vm = PreferencesViewModel(
+            authState: .signedIn(user: sampleUser),
+            serviceState: .error("upstream 500")
+        )
+        let display = vm.displayWithOverlay(
+            lastKnownPreferences: .default,
+            lastKnownHasStored: false,
+            hasSuccessfullyLoaded: true
+        )
+        guard case .content(let shown, let hasStored, let saveError) = display else {
+            Issue.record("Expected .content overlay, got \(display)")
+            return
+        }
+        #expect(shown == .default)
+        #expect(hasStored == false)
+        #expect(saveError == "upstream 500")
+    }
+
+    @Test("displayWithOverlay: loaded state falls through to display() regardless of gate")
+    func testOverlayGateFallsThroughForLoaded() {
+        let vm = PreferencesViewModel(
+            authState: .signedIn(user: sampleUser),
+            serviceState: .loaded(.default, hasStored: true)
+        )
+        let display = vm.displayWithOverlay(
+            lastKnownPreferences: .default,
+            lastKnownHasStored: true,
+            hasSuccessfullyLoaded: true
+        )
+        guard case .content(_, _, let saveError) = display else {
+            Issue.record("Expected .content")
+            return
+        }
+        #expect(saveError == nil)
+    }
+
+    @Test("displayWithOverlay: auth-shaped error routes to signed-out even when gate is open")
+    func testOverlayGateRespectsAuthError() {
+        let vm = PreferencesViewModel(
+            authState: .signedIn(user: sampleUser),
+            serviceState: .error("HTTP 401")
+        )
+        let display = vm.displayWithOverlay(
+            lastKnownPreferences: .default,
+            lastKnownHasStored: true,
+            hasSuccessfullyLoaded: true
+        )
+        #expect(display == .signedOut)
+    }
 }
 
 // MARK: - ConvexMessagePreferencesBackend auth error path
