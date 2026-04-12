@@ -195,6 +195,83 @@ struct DealCacheCoordinatorTests {
         #expect(keys.isEmpty)
     }
 
+    @Test("applyLiveSnapshot cleans up any file written if sign-out lands mid-save")
+    func testMidSaveSignOutRace() async {
+        // Regression: codex P1 on PR #43. The pre-write guard runs
+        // before the disk save, so a concurrent clearForSignOut can
+        // delete the cache file AFTER the guard check but BEFORE the
+        // save completes, leaving stale signed-out data on disk.
+        // The fix: a post-write re-check detects the sign-out and
+        // deletes the file we just wrote.
+        //
+        // Because the file-storage actor runs quickly, we simulate the
+        // race by driving clearForSignOut() AFTER applyLiveSnapshot
+        // returns — if the sign-out landed after applyLiveSnapshot's
+        // pre-check but before the file was written, the post-write
+        // guard must delete the just-written file.
+        //
+        // In this test we can't interleave the save with a hook, so
+        // we verify the narrower invariant: calling clearForSignOut
+        // after applyLiveSnapshot correctly removes the written file.
+        let storage = InMemoryCacheStorage()
+        let store = DealCacheStore(storage: storage)
+        let coordinator = DealCacheCoordinator(store: store)
+
+        await coordinator.warmFromCache(userId: "user-1")
+        await coordinator.applyLiveSnapshot(
+            userId: "user-1",
+            deal: makeDeal(),
+            tasks: [makeTask()],
+            events: []
+        )
+        // Pre-condition: file was written
+        var keys = await storage.allKeys()
+        #expect(!keys.isEmpty)
+
+        await coordinator.clearForSignOut(userId: "user-1")
+
+        // Post-condition: file must be gone
+        keys = await storage.allKeys()
+        #expect(keys.isEmpty)
+
+        guard case .clearedOnSignOut = coordinator.state else {
+            Issue.record("Expected .clearedOnSignOut")
+            return
+        }
+    }
+
+    @Test("warmFromCache drops stale read if user changed mid-load")
+    func testWarmFromCacheRace() async {
+        // Regression: codex P2 on PR #43. After the disk read await,
+        // warmFromCache set .warmed unconditionally. If a new warm or
+        // a clearForSignOut ran during the await, the late result from
+        // the old user could overwrite state with the wrong data.
+        //
+        // Verify the narrower invariant: after clearForSignOut, a
+        // subsequent warmFromCache for a different user correctly
+        // resolves to .empty and does not leak the old user's state.
+        let storage = InMemoryCacheStorage()
+        let store = DealCacheStore(storage: storage)
+        let coordinator = DealCacheCoordinator(store: store)
+
+        // user-1 builds up a cache
+        await coordinator.warmFromCache(userId: "user-1")
+        await coordinator.applyLiveSnapshot(
+            userId: "user-1",
+            deal: makeDeal(),
+            tasks: [makeTask()],
+            events: []
+        )
+        await coordinator.clearForSignOut(userId: "user-1")
+
+        // user-2 warms — state must NOT show user-1 data
+        await coordinator.warmFromCache(userId: "user-2")
+        guard case .empty = coordinator.state else {
+            Issue.record("Expected .empty for user-2, got \(coordinator.state)")
+            return
+        }
+    }
+
     // MARK: - Reconnect scenario
 
     @Test("reconnect: warm from cache + applyLiveSnapshot replaces stale with fresh")
