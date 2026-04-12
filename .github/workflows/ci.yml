@@ -54,6 +54,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Convex typecheck
+        run: npx tsc -p convex/tsconfig.json --noEmit
+
       - name: Unit tests
         run: pnpm test
 
