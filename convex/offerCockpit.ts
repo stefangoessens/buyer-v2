@@ -170,9 +170,29 @@ export const upsertDraft = mutation({
     if (args.closingDays < 7 || args.closingDays > 120) {
       throw new Error("Closing window must be between 7 and 120 days");
     }
+    if (args.buyerCredits < 0)
+      throw new Error("Buyer credits cannot be negative");
+    if (args.sellerCredits < 0)
+      throw new Error("Seller credits cannot be negative");
+    if (args.sellerCredits > args.offerPrice * 0.12) {
+      throw new Error(
+        "Seller credits cannot exceed 12% of the offer price (IPC ceiling)",
+      );
+    }
 
     const now = new Date().toISOString();
     const existing = await loadDraft(ctx, args.dealRoomId, user._id);
+
+    // Guardrail: if the most recent draft is not in an editable state
+    // (pending_review, approved, submitted), refuse to spin up a parallel
+    // draft. This keeps the "one active draft per buyer per deal room"
+    // invariant and prevents shadow edits while a broker is reviewing.
+    if (existing && !EDITABLE_DRAFT_STATUSES.has(existing.status)) {
+      throw new Error(
+        `Cannot edit offer: a prior draft is in status "${existing.status}". ` +
+          `Wait for broker review to complete or discard the pending submission.`,
+      );
+    }
 
     if (existing && EDITABLE_DRAFT_STATUSES.has(existing.status)) {
       await ctx.db.patch(existing._id, {
