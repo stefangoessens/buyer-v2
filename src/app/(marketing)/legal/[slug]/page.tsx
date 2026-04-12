@@ -27,12 +27,17 @@ export async function generateMetadata({
   const { slug } = await params;
   const doc = LEGAL_DOCUMENTS[slug];
   if (!doc) {
+    // Unknown legal slugs must NOT be indexed — mark as gated so
+    // buildMetadata emits noindex,nofollow. The page itself calls
+    // notFound() below which surfaces the 404, but the metadata is
+    // computed before that runs, so we need the explicit guard here
+    // to prevent indexing of stray /legal/<wrong-slug> URLs.
     return buildMetadata({
       title: "Not found",
       description:
         "The legal document you're looking for doesn't exist or has moved.",
       path: "/legal/not-found",
-      visibility: "public",
+      visibility: "gated",
       kind: "system",
     });
   }
