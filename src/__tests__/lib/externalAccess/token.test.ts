@@ -206,6 +206,30 @@ describe("validateToken — expired access", () => {
     });
     expect(result.granted).toBe(true);
   });
+
+  it("fail-closes: denies access when `now` is unparseable (never grants on malformed clock)", () => {
+    const record = recordFixture({ expiresAt: futureIso(24) });
+    const result = validateToken({
+      record,
+      presentedHash: record.hashedToken,
+      intendedAction: "view_offer",
+      now: "not-a-valid-timestamp",
+    });
+    expect(result.granted).toBe(false);
+    if (!result.granted) expect(result.reason).toBe("expired");
+  });
+
+  it("fail-closes: denies access when `expiresAt` is unparseable", () => {
+    const record = recordFixture({ expiresAt: "still-not-a-timestamp" });
+    const result = validateToken({
+      record,
+      presentedHash: record.hashedToken,
+      intendedAction: "view_offer",
+      now: new Date().toISOString(),
+    });
+    expect(result.granted).toBe(false);
+    if (!result.granted) expect(result.reason).toBe("expired");
+  });
 });
 
 describe("validateToken — denied access", () => {
