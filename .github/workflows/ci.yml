@@ -57,6 +57,14 @@ jobs:
       - name: Unit tests
         run: pnpm test
 
+      - name: Install Playwright
+        run: npx playwright install chromium --with-deps
+
+      - name: Run e2e tests
+        run: pnpm test:e2e
+        env:
+          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
+
       - name: Build
         run: pnpm build
         env:
