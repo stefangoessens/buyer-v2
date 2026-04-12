@@ -155,15 +155,24 @@ async function emitCore(
 
   if (existing) {
     // Bump path — coalesce into the existing row.
+    //
+    // Preserve existing payload fields when the caller omits them, so
+    // a lightweight re-emit (e.g. just refreshing the title for a
+    // reminder) doesn't wipe previously stored body/context/linkUrl.
+    // Patched fields are only overwritten when the caller supplies a
+    // non-undefined value.
+    //
+    // Also refresh `emittedAt` so the bumped event sorts back to the
+    // top of buyer queues — display ordering is by emittedAt desc, so
+    // a stale timestamp would bury a re-surfaced update.
     const nextCount = existing.dedupeCount + 1;
 
-    await ctx.db.patch(existing._id, {
+    const patch: Partial<Doc<"buyerUpdateEvents">> = {
       title: args.title,
-      body: args.body,
       priority,
-      context: args.context,
       dedupeCount: nextCount,
       lastDedupedAt: now,
+      emittedAt: now,
       // Resurrect resolved / superseded rows so re-emits re-surface the
       // event. A buyer that dismissed "tour reminder" and then the agent
       // reschedules should see the event again.
@@ -171,7 +180,15 @@ async function emitCore(
       resolvedAt: undefined,
       resolvedBy: undefined,
       updatedAt: now,
-    });
+    };
+    if (args.body !== undefined) {
+      patch.body = args.body;
+    }
+    if (args.context !== undefined) {
+      patch.context = args.context;
+    }
+
+    await ctx.db.patch(existing._id, patch);
 
     await ctx.db.insert("auditLog", {
       userId: args.actorUserId ?? undefined,
