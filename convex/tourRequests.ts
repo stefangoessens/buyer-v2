@@ -18,6 +18,152 @@ import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
 import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
+
+/**
+ * Look up the buyer's current signed agreement state directly from the
+ * `agreements` table. Returns the newest signed tour_pass OR
+ * full_representation for this buyer, or null if none exists.
+ *
+ * This is the source of truth for tour eligibility — never trust a
+ * client-supplied agreement snapshot (security regression: a malicious
+ * buyer could forge `{type: "tour_pass", status: "signed"}` in createDraft
+ * and bypass the tour-pass gate).
+ */
+async function loadCurrentAgreementSnapshot(
+  ctx: MutationCtx,
+  buyerId: Id<"users">,
+): Promise<{
+  type: "none" | "tour_pass" | "full_representation";
+  status: "none" | "draft" | "sent" | "signed" | "replaced" | "canceled";
+  signedAt?: string;
+}> {
+  const agreements = await ctx.db
+    .query("agreements")
+    .withIndex("by_buyerId", (q) => q.eq("buyerId", buyerId))
+    .collect();
+
+  // Prefer full_representation over tour_pass (it grants broader access).
+  // Within each type, pick the most recently signed.
+  const signedFullRep = agreements
+    .filter((a) => a.type === "full_representation" && a.status === "signed")
+    .sort((a, b) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
+    .at(0);
+  if (signedFullRep) {
+    return {
+      type: "full_representation",
+      status: "signed",
+      signedAt: signedFullRep.signedAt,
+    };
+  }
+
+  const signedTourPass = agreements
+    .filter((a) => a.type === "tour_pass" && a.status === "signed")
+    .sort((a, b) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
+    .at(0);
+  if (signedTourPass) {
+    return {
+      type: "tour_pass",
+      status: "signed",
+      signedAt: signedTourPass.signedAt,
+    };
+  }
+
+  return { type: "none", status: "none" };
+}
+
+// ═══ Inline input validation ═══
+//
+// These validation rules mirror the pure helper in
+// src/lib/tours/requestValidation.ts. The src/ version is used by the
+// buyer UI for client-side pre-validation; the Convex version is the
+// authoritative check that runs on every mutation. Any rule change must
+// be made in BOTH places — test coverage for both sides enforces parity.
+
+interface ValidatedDraftInput {
+  preferredWindows: Array<{ start: string; end: string }>;
+  attendeeCount: number;
+  buyerNotes?: string;
+}
+
+function validateInputOrThrow(
+  input: {
+    dealRoomId: string;
+    propertyId: string;
+    preferredWindows: Array<{ start: string; end: string }>;
+    attendeeCount: number;
+    buyerNotes?: string;
+    agreementStateSnapshot: {
+      type: "none" | "tour_pass" | "full_representation";
+      status: "none" | "draft" | "sent" | "signed" | "replaced" | "canceled";
+      signedAt?: string;
+    };
+  },
+  now: string,
+): ValidatedDraftInput {
+  // Agreement check — tour pass or full representation required, signed
+  const agType = input.agreementStateSnapshot.type;
+  const agStatus = input.agreementStateSnapshot.status;
+  if (
+    (agType !== "tour_pass" && agType !== "full_representation") ||
+    agStatus !== "signed"
+  ) {
+    throw new Error(
+      "MISSING_TOUR_PASS: A signed tour pass or full representation agreement is required to request a tour",
+    );
+  }
+
+  // Attendee count
+  if (
+    !Number.isInteger(input.attendeeCount) ||
+    input.attendeeCount < 1 ||
+    input.attendeeCount > 10
+  ) {
+    throw new Error(
+      "INVALID_ATTENDEE_COUNT: Attendee count must be an integer between 1 and 10",
+    );
+  }
+
+  // Date windows — 1 to 5
+  if (input.preferredWindows.length === 0 || input.preferredWindows.length > 5) {
+    throw new Error(
+      "INVALID_DATE_WINDOW: Must provide between 1 and 5 preferred time windows",
+    );
+  }
+
+  const nowMs = Date.parse(now);
+  if (Number.isNaN(nowMs)) {
+    throw new Error(
+      "INVALID_DATE_WINDOW: Server clock is invalid — cannot validate windows",
+    );
+  }
+
+  for (const window of input.preferredWindows) {
+    const startMs = Date.parse(window.start);
+    const endMs = Date.parse(window.end);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+      throw new Error(
+        "INVALID_DATE_WINDOW: Preferred window has unparseable start or end date",
+      );
+    }
+    if (endMs <= startMs) {
+      throw new Error(
+        "INVALID_DATE_WINDOW: Preferred window end must be after start",
+      );
+    }
+    if (startMs <= nowMs) {
+      throw new Error(
+        "INVALID_DATE_WINDOW: Preferred window start must be in the future",
+      );
+    }
+  }
+
+  return {
+    preferredWindows: input.preferredWindows,
+    attendeeCount: input.attendeeCount,
+    buyerNotes: input.buyerNotes?.trim().slice(0, 2000),
+  };
+}
 
 // ═══ Shared validators ═══
 
@@ -123,6 +269,14 @@ export const listForOps = query({
 /**
  * Create a draft tour request. The buyer owns the draft until submission;
  * brokers can also create drafts on behalf of buyers.
+ *
+ * IMPORTANT: `agreementStateSnapshot` is NOT a client input. It is derived
+ * from the live `agreements` table at creation time. A malicious client
+ * cannot forge a signed snapshot.
+ *
+ * Input validation enforces attendee count bounds (1-10), preferred window
+ * count (1-5), window date parseability, ordering (end > start), and
+ * future-only start times. Invalid drafts NEVER hit storage.
  */
 export const createDraft = mutation({
   args: {
@@ -131,7 +285,6 @@ export const createDraft = mutation({
     preferredWindows: v.array(windowValidator),
     attendeeCount: v.number(),
     buyerNotes: v.optional(v.string()),
-    agreementStateSnapshot: agreementSnapshotValidator,
   },
   returns: v.id("tourRequests"),
   handler: async (ctx, args) => {
@@ -153,6 +306,25 @@ export const createDraft = mutation({
       throw new Error("Property does not belong to the specified deal room");
     }
 
+    // Derive agreement snapshot from the live agreements table. NEVER trust
+    // a client-supplied snapshot — see loadCurrentAgreementSnapshot docs.
+    const agreementStateSnapshot = await loadCurrentAgreementSnapshot(
+      ctx,
+      dealRoom.buyerId,
+    );
+
+    // Validate input BEFORE persisting. Invalid drafts never hit storage.
+    // Import the validator dynamically to avoid circular deps with tests.
+    const now = new Date().toISOString();
+    const validation = validateInputOrThrow({
+      dealRoomId: args.dealRoomId,
+      propertyId: args.propertyId,
+      preferredWindows: args.preferredWindows,
+      attendeeCount: args.attendeeCount,
+      buyerNotes: args.buyerNotes,
+      agreementStateSnapshot,
+    }, now);
+
     // Check for existing active request on this property for this buyer
     // (prevents accidental duplicates)
     const existing = await ctx.db
@@ -173,20 +345,19 @@ export const createDraft = mutation({
     );
     if (duplicate) {
       throw new Error(
-        `An active tour request already exists for this property (status: ${duplicate.status})`,
+        `DUPLICATE_REQUEST: An active tour request already exists for this property (status: ${duplicate.status})`,
       );
     }
 
-    const now = new Date().toISOString();
     const id = await ctx.db.insert("tourRequests", {
       dealRoomId: args.dealRoomId,
       propertyId: args.propertyId,
       buyerId: dealRoom.buyerId,
       status: "draft",
-      preferredWindows: args.preferredWindows,
-      attendeeCount: args.attendeeCount,
-      buyerNotes: args.buyerNotes?.trim().slice(0, 2000),
-      agreementStateSnapshot: args.agreementStateSnapshot,
+      preferredWindows: validation.preferredWindows,
+      attendeeCount: validation.attendeeCount,
+      buyerNotes: validation.buyerNotes,
+      agreementStateSnapshot,
       createdAt: now,
       updatedAt: now,
     });
@@ -228,14 +399,21 @@ export const submit = mutation({
       throw new Error(`Cannot submit request in status "${request.status}"`);
     }
 
-    // Re-verify agreement is still signed at submission time
-    const snap = request.agreementStateSnapshot;
+    // Re-derive agreement snapshot from the LIVE agreements table at
+    // submission time. Never trust the stored snapshot — an agreement can
+    // be canceled or replaced between draft creation and submission, and
+    // we must catch that at this gate.
+    const freshSnapshot = await loadCurrentAgreementSnapshot(
+      ctx,
+      request.buyerId,
+    );
     if (
-      (snap.type !== "tour_pass" && snap.type !== "full_representation") ||
-      snap.status !== "signed"
+      (freshSnapshot.type !== "tour_pass" &&
+        freshSnapshot.type !== "full_representation") ||
+      freshSnapshot.status !== "signed"
     ) {
       throw new Error(
-        "MISSING_TOUR_PASS: A signed tour pass or full representation agreement is required",
+        "MISSING_TOUR_PASS: A signed tour pass or full representation agreement is required to submit this request",
       );
     }
 
@@ -244,6 +422,8 @@ export const submit = mutation({
       status: "submitted",
       submittedAt: now,
       updatedAt: now,
+      // Refresh the snapshot to reflect the live state at submission time
+      agreementStateSnapshot: freshSnapshot,
     });
 
     await ctx.db.insert("auditLog", {
@@ -447,7 +627,13 @@ export const cancel = mutation({
   },
 });
 
-/** Broker/admin marks a request failed with a structured reason. */
+/**
+ * Broker/admin marks a request failed with a structured reason. Drafts
+ * cannot fail — the state machine says draft can only transition to
+ * submitted or canceled. A buyer can cancel a draft they no longer want.
+ * Failed is reserved for in-flight requests that hit an unrecoverable
+ * problem after submission.
+ */
 export const markFailed = mutation({
   args: {
     requestId: v.id("tourRequests"),
@@ -462,9 +648,19 @@ export const markFailed = mutation({
     const request = await ctx.db.get(args.requestId);
     if (!request) throw new Error("Tour request not found");
 
-    const terminal = new Set(["completed", "canceled", "failed"]);
-    if (terminal.has(request.status)) {
-      throw new Error(`Cannot fail request in terminal status "${request.status}"`);
+    // Aligned with the client-side state machine in
+    // src/lib/tours/requestValidation.ts: only in-flight post-submission
+    // states can transition to failed.
+    const failable = new Set([
+      "submitted",
+      "blocked",
+      "assigned",
+      "confirmed",
+    ]);
+    if (!failable.has(request.status)) {
+      throw new Error(
+        `ILLEGAL_TRANSITION: Cannot mark request failed from status "${request.status}" (only submitted, blocked, assigned, or confirmed can fail)`,
+      );
     }
 
     const now = new Date().toISOString();

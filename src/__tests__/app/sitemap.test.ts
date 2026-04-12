@@ -7,6 +7,11 @@ import {
   publicCities,
   publicCommunities,
 } from "@/lib/locations/selectors";
+import { NEW_CONSTRUCTION_CATALOG } from "@/content/newConstruction";
+import {
+  publicBuilders,
+  publicCommunities as publicNewConstructionCommunities,
+} from "@/lib/newConstruction/selectors";
 
 let prevSiteUrl: string | undefined;
 
@@ -143,6 +148,86 @@ describe("sitemap — KIN-818 location entries", () => {
     for (const community of publicCommunities(LOCATION_CATALOG)) {
       const entry = entries.find(
         (e) => e.url === `https://buyerv2.com/communities/${community.slug}`
+      );
+      expect(entry).toBeDefined();
+      expect(entry?.lastModified).toBe(community.lastUpdated);
+    }
+  });
+});
+
+/**
+ * KIN-823 — new-construction landing template system adds one
+ * sitemap entry per public builder and new-construction community.
+ * Draft records must stay out of the sitemap.
+ */
+describe("sitemap — KIN-823 new-construction entries", () => {
+  it("includes one entry per public builder", () => {
+    const urls = sitemap().map((e) => e.url);
+    for (const builder of publicBuilders(NEW_CONSTRUCTION_CATALOG)) {
+      expect(urls).toContain(
+        `https://buyerv2.com/new-construction/builders/${builder.slug}`
+      );
+    }
+  });
+
+  it("does NOT include draft builders", () => {
+    const urls = sitemap().map((e) => e.url);
+    const drafts = NEW_CONSTRUCTION_CATALOG.builders.filter(
+      (b) => b.visibility === "draft"
+    );
+    expect(drafts.length).toBeGreaterThan(0);
+    for (const draft of drafts) {
+      expect(urls).not.toContain(
+        `https://buyerv2.com/new-construction/builders/${draft.slug}`
+      );
+    }
+  });
+
+  it("includes one entry per public new-construction community", () => {
+    const urls = sitemap().map((e) => e.url);
+    for (const community of publicNewConstructionCommunities(
+      NEW_CONSTRUCTION_CATALOG
+    )) {
+      expect(urls).toContain(
+        `https://buyerv2.com/new-construction/${community.slug}`
+      );
+    }
+  });
+
+  it("does NOT include draft new-construction communities", () => {
+    const urls = sitemap().map((e) => e.url);
+    const drafts = NEW_CONSTRUCTION_CATALOG.communities.filter(
+      (c) => c.visibility === "draft"
+    );
+    expect(drafts.length).toBeGreaterThan(0);
+    for (const draft of drafts) {
+      expect(urls).not.toContain(
+        `https://buyerv2.com/new-construction/${draft.slug}`
+      );
+    }
+  });
+
+  it("uses builder.lastUpdated for builder entry lastModified", () => {
+    const entries = sitemap();
+    for (const builder of publicBuilders(NEW_CONSTRUCTION_CATALOG)) {
+      const entry = entries.find(
+        (e) =>
+          e.url ===
+          `https://buyerv2.com/new-construction/builders/${builder.slug}`
+      );
+      expect(entry).toBeDefined();
+      expect(entry?.lastModified).toBe(builder.lastUpdated);
+    }
+  });
+
+  it("uses community.lastUpdated for new-construction community entries", () => {
+    const entries = sitemap();
+    for (const community of publicNewConstructionCommunities(
+      NEW_CONSTRUCTION_CATALOG
+    )) {
+      const entry = entries.find(
+        (e) =>
+          e.url === `https://buyerv2.com/new-construction/${community.slug}`
       );
       expect(entry).toBeDefined();
       expect(entry?.lastModified).toBe(community.lastUpdated);
