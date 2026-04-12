@@ -278,7 +278,14 @@ export const patchFields = mutation({
       patch.description = args.description;
     }
     if (args.owner !== undefined) {
-      patch.owner = args.owner;
+      // Reject blank / whitespace-only owners — validateItem treats
+      // missing owner as invalid and the ops workflow needs an
+      // accountable party for every item. Codex P2 from PR #78.
+      const owner = args.owner.trim();
+      if (owner === "") {
+        throw new Error("owner cannot be empty or whitespace");
+      }
+      patch.owner = owner;
     }
     if (args.severity !== undefined) {
       patch.severity = args.severity;
@@ -290,7 +297,17 @@ export const patchFields = mutation({
       patch.targetDate = args.targetDate;
     }
     if (args.evidenceUrl !== undefined) {
-      patch.evidenceUrl = args.evidenceUrl;
+      // A `ready` item that loses its evidence URL would violate
+      // the createItem/transitionStatus invariant. Reject clearing
+      // the URL while the item is still in `ready` status.
+      // Codex P1 from PR #78.
+      const evidence = args.evidenceUrl.trim();
+      if (evidence === "" && record.status === "ready") {
+        throw new Error(
+          "evidenceUrl cannot be cleared while the item is ready — transition the item off ready first"
+        );
+      }
+      patch.evidenceUrl = evidence === "" ? undefined : evidence;
     }
 
     patch.updatedAt = new Date().toISOString();
