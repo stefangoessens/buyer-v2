@@ -9,6 +9,7 @@
  */
 
 import type * as adminShell from "../adminShell.js";
+import type * as opsQueues from "../opsQueues.js";
 import type * as agentCoverage from "../agentCoverage.js";
 import type * as agreements from "../agreements.js";
 import type * as aiEngineOutputs from "../aiEngineOutputs.js";
@@ -63,6 +64,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   adminShell: typeof adminShell;
+  opsQueues: typeof opsQueues;
   agentCoverage: typeof agentCoverage;
   agreements: typeof agreements;
   aiEngineOutputs: typeof aiEngineOutputs;
