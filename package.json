@@ -13,7 +13,6 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest",
     "lint": "next lint"
   },
   "dependencies": {
