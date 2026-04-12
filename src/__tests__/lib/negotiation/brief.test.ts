@@ -399,6 +399,29 @@ describe("buildRecommendedOfferSection", () => {
     expect(section.recommendedScenarioName).toBe("Competitive");
   });
 
+  it("truncates fractional recommendedIndex to integer", () => {
+    const out = offerFixture();
+    out.recommendedIndex = 1.7; // Should become 1, not undefined
+    const section = buildRecommendedOfferSection({ version: "v1", output: out });
+    expect(section.status).toBe("complete");
+    expect(section.recommendedScenarioName).toBe("Balanced");
+  });
+
+  it("coerces NaN recommendedIndex to 0 without crashing", () => {
+    const out = offerFixture();
+    out.recommendedIndex = Number.NaN;
+    const section = buildRecommendedOfferSection({ version: "v1", output: out });
+    expect(section.status).toBe("complete");
+    expect(section.recommendedScenarioName).toBe("Aggressive");
+  });
+
+  it("coerces negative recommendedIndex to 0", () => {
+    const out = offerFixture();
+    out.recommendedIndex = -5;
+    const section = buildRecommendedOfferSection({ version: "v1", output: out });
+    expect(section.recommendedScenarioName).toBe("Aggressive");
+  });
+
   it("returns missing when input absent", () => {
     const section = buildRecommendedOfferSection(undefined);
     expect(section.status).toBe("missing");

@@ -290,7 +290,13 @@ export function buildRecommendedOfferSection(
       summary: "Offer engine returned no scenarios.",
     };
   }
-  const idx = clamp(out.recommendedIndex, 0, out.scenarios.length - 1);
+  // Coerce to a valid array index: truncate to integer first, then clamp.
+  // Guards against NaN, fractional, or out-of-range `recommendedIndex` so
+  // assembly never crashes on malformed (but type-valid) offer output.
+  const rawIdx = Number.isFinite(out.recommendedIndex)
+    ? Math.trunc(out.recommendedIndex)
+    : 0;
+  const idx = clamp(rawIdx, 0, out.scenarios.length - 1);
   const chosen = out.scenarios[idx];
   return {
     status: "complete",

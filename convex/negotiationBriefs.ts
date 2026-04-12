@@ -94,9 +94,17 @@ export const getLatestReady = query({
       .query("negotiationBriefs")
       .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
       .collect();
+    // Sort by completedAt (when the brief became ready), NOT createdAt.
+    // Regeneration reuses the same row so createdAt is stale — ordering by
+    // completedAt ensures a regenerated brief wins over an older one that
+    // happens to have an earlier createdAt.
     const ready = briefs
       .filter((b) => b.status === "ready")
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      .sort((a, b) =>
+        (b.completedAt ?? b.updatedAt).localeCompare(
+          a.completedAt ?? a.updatedAt,
+        ),
+      );
     return ready.at(0) ?? null;
   },
 });
