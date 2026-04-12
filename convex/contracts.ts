@@ -19,9 +19,16 @@ export const createFromOffer = mutation({
     // Verify offer exists and is approved
     const offer = await ctx.db.get(args.offerId);
     if (!offer) throw new Error("Offer not found");
+    if (offer.dealRoomId !== args.dealRoomId) {
+      throw new Error("Offer does not belong to the specified deal room");
+    }
     if (offer.status !== "approved" && offer.status !== "accepted") {
       throw new Error("Offer must be approved or accepted to create a contract");
     }
+
+    // Verify the deal room exists before inserting
+    const dealRoom = await ctx.db.get(args.dealRoomId);
+    if (!dealRoom) throw new Error("Deal room not found");
 
     const id = await ctx.db.insert("contracts", {
       dealRoomId: args.dealRoomId,
@@ -43,11 +50,25 @@ export const createFromOffer = mutation({
   },
 });
 
-/** Get contracts for a deal room */
+/** Get contracts for a deal room — buyer owner or broker/admin only */
 export const getByDealRoom = query({
   args: { dealRoomId: v.id("dealRooms") },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+
+    const dealRoom = await ctx.db.get(args.dealRoomId);
+    if (!dealRoom) return [];
+
+    // Only the buyer who owns the deal room or broker/admin can view contracts
+    if (
+      dealRoom.buyerId !== user._id &&
+      user.role !== "broker" &&
+      user.role !== "admin"
+    ) {
+      return [];
+    }
+
     return await ctx.db
       .query("contracts")
       .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
