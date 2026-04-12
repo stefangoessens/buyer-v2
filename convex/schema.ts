@@ -1,5 +1,13 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  compensationStatus,
+  feeLedgerEntryType,
+  feeLedgerSource,
+  financingType,
+  reconciliationReportType,
+  reconciliationReviewStatus,
+} from "./lib/validators";
 
 // ─── buyer-v2 Convex Schema ─────────────────────────────────────────────────
 // System of record for the AI-native Florida buyer brokerage platform.
@@ -417,4 +425,65 @@ export default defineSchema({
     .index("by_engineType", ["engineType"])
     .index("by_engineType_and_version", ["engineType", "version"])
     .index("by_engineType_and_isActive", ["engineType", "isActive"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FEE LEDGER & COMPENSATION (KIN-814)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  feeLedgerEntries: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    entryType: feeLedgerEntryType,
+    amount: v.number(),
+    description: v.string(),
+    source: feeLedgerSource,
+    provenance: v.object({
+      actorId: v.optional(v.id("users")),
+      triggeredBy: v.optional(v.string()),
+      sourceDocument: v.optional(v.string()),
+      timestamp: v.string(),
+    }),
+    offerId: v.optional(v.id("offers")),
+    contractId: v.optional(v.id("contracts")),
+    financingType: v.optional(financingType),
+    ipcLimitPercent: v.optional(v.number()),
+    createdAt: v.string(),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_dealRoomId_and_entryType", ["dealRoomId", "entryType"])
+    .index("by_createdAt", ["createdAt"]),
+
+  compensationStatus: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    status: compensationStatus,
+    previousStatus: v.optional(compensationStatus),
+    transitionReason: v.optional(v.string()),
+    transitionActorId: v.optional(v.id("users")),
+    lastTransitionAt: v.string(),
+    sellerDisclosedAmount: v.optional(v.number()),
+    negotiatedAmount: v.optional(v.number()),
+    buyerPaidAmount: v.optional(v.number()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_status", ["status"]),
+
+  reconciliationReports: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    reportType: reconciliationReportType,
+    expectedTotal: v.number(),
+    actualTotal: v.optional(v.number()),
+    discrepancyAmount: v.optional(v.number()),
+    discrepancyFlag: v.boolean(),
+    discrepancyDetails: v.optional(v.string()),
+    reviewStatus: reconciliationReviewStatus,
+    reviewedBy: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.string()),
+    reportMonth: v.optional(v.string()),
+    generatedAt: v.string(),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_reportType", ["reportType"])
+    .index("by_reviewStatus", ["reviewStatus"])
+    .index("by_reportMonth", ["reportMonth"]),
 });
