@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { track } from "@/lib/analytics";
 
 interface PasteLinkInputProps {
   onSubmit?: (url: string) => void;
@@ -31,7 +32,14 @@ export function PasteLinkInput({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (canSubmit) {
-      onSubmit?.(value.trim());
+      track("link_pasted", { url: value.trim(), source: variant });
+      try {
+        onSubmit?.(value.trim());
+      } catch (err) {
+        const code =
+          err instanceof Error ? err.message : "unknown_parse_error";
+        track("error_boundary_hit", { error: code, url: value.trim() });
+      }
     }
   }
 
