@@ -128,8 +128,12 @@ export function describeError(error: LaunchEventValidationError): string {
       return `unknown event "${error.name}"`;
     case "missingRequiredProp":
       return `missing required prop "${error.prop}"`;
+    case "undeclaredProp":
+      return `undeclared prop "${error.prop}" not in contract`;
     case "wrongType":
       return `"${error.prop}" expected ${error.expected}, got ${error.actual}`;
+    case "notANumber":
+      return `"${error.prop}" is NaN (not a valid number)`;
     case "outOfRange": {
       const bounds =
         error.min !== undefined && error.max !== undefined

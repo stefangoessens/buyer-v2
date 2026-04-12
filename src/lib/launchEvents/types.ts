@@ -132,11 +132,21 @@ export type LaunchEventValidationError =
   | { kind: "unknownEvent"; name: string }
   | { kind: "missingRequiredProp"; event: string; prop: string }
   | {
+      kind: "undeclaredProp";
+      event: string;
+      prop: string;
+    }
+  | {
       kind: "wrongType";
       event: string;
       prop: string;
       expected: LaunchEventPropType;
       actual: string;
+    }
+  | {
+      kind: "notANumber";
+      event: string;
+      prop: string;
     }
   | {
       kind: "outOfRange";

@@ -4,8 +4,16 @@
  * Called by emitters before a tracked event is dispatched. Enforces:
  *   - Event name is in the contract
  *   - Every `required: true` prop is present and non-null
+ *   - No undeclared props sneak through (codex P2 from PR #73 —
+ *     ignoring unknown keys lets schema drift reach PostHog/BI
+ *     without a contract change, which undermines the whole
+ *     point of a versioned contract)
  *   - Prop values match the declared type (string / number / integer
  *     / boolean / enum)
+ *   - `NaN` is always rejected on numeric props (codex P1 from PR
+ *     #73 — `typeof NaN === "number"` is true so a naive type
+ *     check lets it through; downstream transports coerce NaN to
+ *     null silently)
  *   - Numeric ranges (min/max) are respected when specified
  *   - Integer props reject non-integer numeric values
  *   - Enum props reject values outside the allow-list
@@ -44,6 +52,17 @@ export function validateLaunchEvent(
 
   const errors: LaunchEventValidationError[] = [];
 
+  // Reject undeclared props first so callers see the schema-drift
+  // error at the top of the list. `undefined` values are ignored
+  // (treating them as "not set" matches JS ergonomics — a caller
+  // passing `{ url: "x", source: undefined }` isn't drift).
+  const declaredPropNames = new Set(Object.keys(definition.props));
+  for (const propName of Object.keys(properties)) {
+    if (!declaredPropNames.has(propName) && properties[propName] !== undefined) {
+      errors.push({ kind: "undeclaredProp", event: name, prop: propName });
+    }
+  }
+
   for (const [propName, spec] of Object.entries(definition.props)) {
     const value = properties[propName];
 
@@ -60,21 +79,33 @@ export function validateLaunchEvent(
     }
 
     const typeError = checkType(name, propName, spec, value);
-    if (typeError) errors.push(typeError);
-
-    // Range + integer checks only run when the type matched.
-    if (!typeError) {
-      const numericError = checkNumericConstraints(
-        name,
-        propName,
-        spec,
-        value
-      );
-      if (numericError) errors.push(numericError);
-
-      const enumError = checkEnumConstraint(name, propName, spec, value);
-      if (enumError) errors.push(enumError);
+    if (typeError) {
+      errors.push(typeError);
+      continue;
     }
+
+    // NaN slips through `typeof x === "number"` so we need an
+    // explicit guard here. Handled after the type check so we
+    // don't emit both wrongType AND notANumber for the same prop.
+    if (
+      (spec.type === "number" || spec.type === "integer") &&
+      typeof value === "number" &&
+      Number.isNaN(value)
+    ) {
+      errors.push({ kind: "notANumber", event: name, prop: propName });
+      continue;
+    }
+
+    const numericError = checkNumericConstraints(
+      name,
+      propName,
+      spec,
+      value
+    );
+    if (numericError) errors.push(numericError);
+
+    const enumError = checkEnumConstraint(name, propName, spec, value);
+    if (enumError) errors.push(enumError);
   }
 
   return errors.length === 0 ? { ok: true } : { ok: false, errors };

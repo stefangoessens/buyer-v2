@@ -265,6 +265,120 @@ describe("validateLaunchEvent — type checks", () => {
   });
 });
 
+// MARK: - Codex regressions from PR #73
+
+/**
+ * codex P1 finding: `typeof NaN === "number"` so the original
+ * validator accepted NaN for numeric/integer props, and the
+ * numeric-range helper early-returned on NaN as "skip." Dispatching
+ * NaN to PostHog / BI typically coerces to null and silently breaks
+ * dashboards. The validator now emits `notANumber`.
+ */
+describe("validateLaunchEvent — NaN rejection (codex P1)", () => {
+  it("rejects NaN on a number prop", () => {
+    const result = validateLaunchEvent(
+      "pricing_panel_viewed",
+      {
+        dealRoomId: "dr_1",
+        propertyId: "p_1",
+        overallConfidence: Number.NaN,
+      }
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.errors.some((e) => e.kind === "notANumber")
+      ).toBe(true);
+    }
+  });
+
+  it("rejects NaN on an integer prop", () => {
+    const result = validateLaunchEvent("offer_submitted", {
+      offerId: "o_1",
+      dealRoomId: "dr_1",
+      offerPrice: Number.NaN,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.errors.some((e) => e.kind === "notANumber")
+      ).toBe(true);
+    }
+  });
+
+  it("does not emit both wrongType and notANumber for the same NaN prop", () => {
+    const result = validateLaunchEvent(
+      "pricing_panel_viewed",
+      {
+        dealRoomId: "dr_1",
+        propertyId: "p_1",
+        overallConfidence: Number.NaN,
+      }
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const numericErrors = result.errors.filter(
+        (e) => e.kind === "notANumber" || e.kind === "wrongType"
+      );
+      // Exactly one — notANumber only.
+      expect(numericErrors).toHaveLength(1);
+      expect(numericErrors[0]?.kind).toBe("notANumber");
+    }
+  });
+});
+
+/**
+ * codex P2 finding: the original validator iterated only over
+ * declared props, so undeclared keys in the payload were silently
+ * dispatched. A contract-controlled schema means undeclared keys
+ * are schema drift and must be rejected.
+ */
+describe("validateLaunchEvent — undeclared prop rejection (codex P2)", () => {
+  it("rejects an undeclared property on a contract event", () => {
+    const result = validateLaunchEvent("link_pasted", {
+      url: "https://zillow.com/1",
+      source: "home",
+      userEmail: "alice@example.com", // undeclared — schema drift
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.errors.some(
+          (e) => e.kind === "undeclaredProp" && e.prop === "userEmail"
+        )
+      ).toBe(true);
+    }
+  });
+
+  it("allows undefined values on undeclared keys (JS ergonomics)", () => {
+    // `{ ...spread, extra: undefined }` is a common JS pattern and
+    // should not fire a drift error.
+    const result = validateLaunchEvent("link_pasted", {
+      url: "https://zillow.com/1",
+      source: "home",
+      extra: undefined,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("reports multiple undeclared props in one pass", () => {
+    const result = validateLaunchEvent("link_pasted", {
+      url: "https://zillow.com/1",
+      source: "home",
+      one: 1,
+      two: 2,
+      three: 3,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const undeclared = result.errors.filter(
+        (e) => e.kind === "undeclaredProp"
+      );
+      expect(undeclared).toHaveLength(3);
+    }
+  });
+});
+
 // MARK: - Real contract
 
 describe("validateLaunchEvent — real LAUNCH_EVENT_CONTRACT", () => {

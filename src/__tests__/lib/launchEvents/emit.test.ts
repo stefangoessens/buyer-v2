@@ -213,6 +213,22 @@ describe("describeError", () => {
       })
     ).toContain("integer");
   });
+
+  it("describes notANumber", () => {
+    expect(
+      describeError({ kind: "notANumber", event: "x", prop: "y" })
+    ).toContain("NaN");
+  });
+
+  it("describes undeclaredProp", () => {
+    expect(
+      describeError({
+        kind: "undeclaredProp",
+        event: "x",
+        prop: "y",
+      })
+    ).toContain("undeclared");
+  });
 });
 
 // MARK: - Options shape
