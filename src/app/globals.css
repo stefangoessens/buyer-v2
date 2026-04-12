@@ -63,8 +63,8 @@
   --color-neutral-950: #020617;
 
   /* ── Typography ────────────────────────────────────────────────── */
-  --font-sans: "Inter", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --font-sans: var(--font-inter), "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "Fira Code", monospace;
 
   /* ── Border Radius ─────────────────────────────────────────────── */
   --radius-sm: 6px;
