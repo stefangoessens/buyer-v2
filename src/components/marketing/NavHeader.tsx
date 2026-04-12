@@ -10,7 +10,7 @@ export function NavHeader() {
 
         <nav className="hidden items-center gap-8 md:flex">
           <Link
-            href="#how-it-works"
+            href="/#how-it-works"
             className="text-sm font-medium text-neutral-500 transition-colors duration-[var(--duration-fast)] hover:text-primary-400"
           >
             How it Works

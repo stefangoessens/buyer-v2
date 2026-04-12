@@ -109,7 +109,7 @@ export function HeroSection({ children }: HeroSectionProps) {
               Paste a Zillow, Redfin, or Realtor link. Get instant AI-powered analysis, fair pricing, and expert buyer representation — completely free.
             </p>
             <div className="mt-8 max-w-xl">{children}</div>
-            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-primary-200/60">
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-primary-100/80">
               {["500+ buyers served", "$2.1M total savings", "Analysis in <5s"].map((text) => (
                 <div key={text} className="flex items-center gap-2">
                   <svg className="size-4 shrink-0 text-accent-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>

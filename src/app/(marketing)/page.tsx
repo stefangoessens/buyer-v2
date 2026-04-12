@@ -1,12 +1,9 @@
-"use client";
-
 import Image from "next/image";
-import { useCallback, useState } from "react";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { TrustBar } from "@/components/marketing/TrustBar";
 import { FeatureCard } from "@/components/marketing/FeatureCard";
 import { TestimonialCard } from "@/components/marketing/TestimonialCard";
-import { PasteLinkInput } from "@/components/marketing/PasteLinkInput";
+import { HeroInput } from "@/components/marketing/HeroInput";
 
 /* ─── Data ────────────────────────────────────────────────────────────── */
 
@@ -18,24 +15,9 @@ const trustStats = [
 ];
 
 const features = [
-  {
-    imageSrc: "/images/marketing/features/feature-1.png",
-    imageAlt: "Paste a listing link and instantly get property data",
-    title: "Paste any listing link",
-    description: "Drop a Zillow, Redfin, or Realtor.com URL. We instantly pull the property data and start our AI analysis engine.",
-  },
-  {
-    imageSrc: "/images/marketing/features/feature-2.png",
-    imageAlt: "AI-powered property analysis dashboard",
-    title: "Get AI-powered analysis",
-    description: "Fair pricing, comparable sales, leverage signals, risk assessment, and a competitiveness score — all in seconds.",
-  },
-  {
-    imageSrc: "/images/marketing/features/feature-3.png",
-    imageAlt: "Expert buyer representation saves you money",
-    title: "Save with expert representation",
-    description: "Our licensed Florida brokers negotiate on your behalf using AI insights. Average buyer savings: $12,400.",
-  },
+  { imageSrc: "/images/marketing/features/feature-1.png", imageAlt: "Paste a listing link and instantly get property data", title: "Paste any listing link", description: "Drop a Zillow, Redfin, or Realtor.com URL. We instantly pull the property data and start our AI analysis engine." },
+  { imageSrc: "/images/marketing/features/feature-2.png", imageAlt: "AI-powered property analysis dashboard", title: "Get AI-powered analysis", description: "Fair pricing, comparable sales, leverage signals, risk assessment, and a competitiveness score — all in seconds." },
+  { imageSrc: "/images/marketing/features/feature-3.png", imageAlt: "Expert buyer representation saves you money", title: "Save with expert representation", description: "Our licensed Florida brokers negotiate on your behalf using AI insights. Average buyer savings: $12,400." },
 ];
 
 const steps = [
@@ -50,14 +32,13 @@ const testimonials = [
   { quote: "From paste to close in 23 days. The deal room kept everything organized and our broker was incredible.", author: "Sarah Mitchell", role: "Relocating buyer, Orlando" },
 ];
 
+/* ─── Bento Card ──────────────────────────────────────────────────────── */
 
-const checkSvg = <svg className="size-5 shrink-0 text-primary-400" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" /></svg>;
-
-function BentoCard({ src, title, className }: { src: string; title: string; className?: string }) {
+function BentoCard({ src, title, className, sizes }: { src: string; title: string; className?: string; sizes: string }) {
   return (
     <div className={`group overflow-hidden rounded-[24px] border border-neutral-200 bg-white transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg ${className ?? ""}`}>
       <div className="relative aspect-[16/10] overflow-hidden bg-neutral-50">
-        <Image src={src} alt={title} fill className="object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]" sizes="(max-width: 640px) 100vw, 60vw" />
+        <Image src={src} alt={title} fill className="object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]" sizes={sizes} />
       </div>
       <div className="px-6 py-4">
         <h3 className="text-sm font-semibold text-neutral-800">{title}</h3>
@@ -66,23 +47,13 @@ function BentoCard({ src, title, className }: { src: string; title: string; clas
   );
 }
 
-/* ─── Page ────────────────────────────────────────────────────────────── */
+/* ─── Page (Server Component) ─────────────────────────────────────────── */
 
 export default function Home() {
-  const [submitted, setSubmitted] = useState(false);
-  const handleSubmit = useCallback(async (_url: string) => { setSubmitted(true); }, []);
-
-  const analyzingState = (
-    <div className="flex items-center justify-center gap-3 rounded-2xl bg-white/10 px-6 py-4 text-lg font-medium text-white backdrop-blur">
-      <svg className="size-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-      Analyzing your property...
-    </div>
-  );
-
   return (
     <>
       {/* ── Hero ─────────────────────────────────────────────────────── */}
-      <HeroSection>{submitted ? analyzingState : <PasteLinkInput variant="hero" onSubmit={handleSubmit} />}</HeroSection>
+      <HeroSection><HeroInput /></HeroSection>
 
       {/* ── Trust Bar ────────────────────────────────────────────────── */}
       <TrustBar stats={trustStats} />
@@ -111,7 +82,7 @@ export default function Home() {
               width={1248}
               height={760}
               className="w-full"
-              priority
+              sizes="(max-width: 1280px) 100vw, 1248px"
             />
           </div>
         </div>
@@ -125,22 +96,19 @@ export default function Home() {
             <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">From analysis to closing, every step covered</h2>
             <p className="mt-4 text-lg leading-relaxed text-neutral-500">AI-powered tools that work together to give you an unfair advantage in Florida real estate.</p>
           </div>
-          <div className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-12">
-            {/* Row 1: small + large */}
-            <BentoCard src="/images/marketing/bento/bento-1.png" title="Fair pricing engine" className="sm:col-span-5" />
-            <BentoCard src="/images/marketing/bento/bento-2.png" title="Automated comp analysis" className="sm:col-span-7" />
-            {/* Row 2: large + small */}
-            <BentoCard src="/images/marketing/bento/bento-3.png" title="Negotiation leverage" className="sm:col-span-7" />
-            <BentoCard src="/images/marketing/bento/bento-4.png" title="Market intelligence" className="sm:col-span-5" />
-            {/* Row 3: small + large */}
-            <BentoCard src="/images/marketing/bento/bento-5.png" title="Document management" className="sm:col-span-5" />
-            <BentoCard src="/images/marketing/bento/bento-6.png" title="Deal room timeline" className="sm:col-span-7" />
+          <div className="mt-14 grid grid-cols-1 gap-4 md:grid-cols-12">
+            <BentoCard src="/images/marketing/bento/bento-1.png" title="Fair pricing engine" className="md:col-span-5" sizes="(max-width: 768px) 100vw, 40vw" />
+            <BentoCard src="/images/marketing/bento/bento-2.png" title="Automated comp analysis" className="md:col-span-7" sizes="(max-width: 768px) 100vw, 58vw" />
+            <BentoCard src="/images/marketing/bento/bento-3.png" title="Negotiation leverage" className="md:col-span-7" sizes="(max-width: 768px) 100vw, 58vw" />
+            <BentoCard src="/images/marketing/bento/bento-4.png" title="Market intelligence" className="md:col-span-5" sizes="(max-width: 768px) 100vw, 40vw" />
+            <BentoCard src="/images/marketing/bento/bento-5.png" title="Document management" className="md:col-span-5" sizes="(max-width: 768px) 100vw, 40vw" />
+            <BentoCard src="/images/marketing/bento/bento-6.png" title="Deal room timeline" className="md:col-span-7" sizes="(max-width: 768px) 100vw, 58vw" />
           </div>
         </div>
       </section>
 
       {/* ── How It Works ─────────────────────────────────────────────── */}
-      <section id="how-it-works" className="w-full bg-white py-20 lg:py-28">
+      <section id="how-it-works" className="scroll-mt-[84px] w-full bg-white py-20 lg:py-28">
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Simple process</p>
@@ -182,8 +150,8 @@ export default function Home() {
           <div className="grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-12">
             {[{ value: "$12,400", label: "Avg. buyer savings" }, { value: "23 days", label: "Avg. time to close" }, { value: "98%", label: "Client satisfaction" }, { value: "4.9/5", label: "Average rating" }].map((s) => (
               <div key={s.label} className="text-center">
-                <div className="text-3xl font-bold tracking-tight text-white lg:text-4xl">{s.value}</div>
-                <div className="mt-2 text-sm font-medium text-primary-200/70">{s.label}</div>
+                <div className="text-3xl font-semibold tracking-tight text-white lg:text-4xl">{s.value}</div>
+                <div className="mt-2 text-sm font-medium text-primary-100/80">{s.label}</div>
               </div>
             ))}
           </div>
@@ -197,8 +165,8 @@ export default function Home() {
         </div>
         <div className="relative mx-auto max-w-3xl px-6 text-center">
           <h2 className="text-3xl font-semibold tracking-[-0.003em] text-white lg:text-[40px] lg:leading-[1.2]">Ready to find your Florida home?</h2>
-          <p className="mt-4 text-lg text-primary-100/70">Paste a listing link and get your free AI analysis in seconds. No sign-up required.</p>
-          <div className="mt-8">{submitted ? analyzingState : <PasteLinkInput variant="hero" onSubmit={handleSubmit} />}</div>
+          <p className="mt-4 text-lg text-primary-100/80">Paste a listing link and get your free AI analysis in seconds. No sign-up required.</p>
+          <div className="mt-8"><HeroInput /></div>
         </div>
       </section>
     </>
