@@ -27,12 +27,17 @@ export const getCurrentGoverning = query({
   args: { buyerId: v.id("users") },
   returns: v.any(),
   handler: async (ctx, args) => {
+    // Only the buyer themselves or broker/admin can query governing agreement
+    const user = await requireAuth(ctx);
+    if (user._id !== args.buyerId && user.role !== "broker" && user.role !== "admin") {
+      return null;
+    }
+
     const agreements = await ctx.db
       .query("agreements")
       .withIndex("by_buyerId", (q) => q.eq("buyerId", args.buyerId))
       .collect();
 
-    // Find the most recent signed agreement that hasn't been canceled or replaced
     return agreements
       .filter((a) => a.status === "signed")
       .sort((a, b) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
@@ -189,8 +194,6 @@ export const cancelAgreement = mutation({
 export const replaceAgreement = mutation({
   args: {
     currentAgreementId: v.id("agreements"),
-    dealRoomId: v.id("dealRooms"),
-    buyerId: v.id("users"),
     newType: v.union(v.literal("tour_pass"), v.literal("full_representation")),
     documentStorageId: v.optional(v.id("_storage")),
   },
@@ -211,10 +214,10 @@ export const replaceAgreement = mutation({
       canceledAt: new Date().toISOString(),
     });
 
-    // Create the replacement
+    // Create the replacement — scoped to original buyer/deal room
     const newId = await ctx.db.insert("agreements", {
-      dealRoomId: args.dealRoomId,
-      buyerId: args.buyerId,
+      dealRoomId: current.dealRoomId,
+      buyerId: current.buyerId,
       type: args.newType,
       status: "draft",
       documentStorageId: args.documentStorageId,
