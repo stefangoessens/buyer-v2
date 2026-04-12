@@ -178,14 +178,17 @@ export const createFromExtraction = mutation({
     const contract = await ctx.db.get(args.contractId);
     if (!contract) throw new Error("Contract not found");
 
-    // Delete previously auto_extracted milestones for this contract — keeps
-    // manual ones intact. This makes re-extraction a clean operation.
+    // Delete previously auto_extracted AND amended milestones for this
+    // contract — keeps manual ones intact. Amended rows came from an earlier
+    // auto-extraction that was reviewed and corrected; re-running extraction
+    // replaces them with fresh data from the new contract text. Without this,
+    // amended rows would accumulate and create duplicate milestones over time.
     const existing = await ctx.db
       .query("contractMilestones")
       .withIndex("by_contractId", (q) => q.eq("contractId", args.contractId))
       .collect();
     for (const m of existing) {
-      if (m.source === "auto_extracted") {
+      if (m.source === "auto_extracted" || m.source === "amended") {
         await ctx.db.delete(m._id);
       }
     }
@@ -427,20 +430,36 @@ export const resolveReview = mutation({
  * Scan all pending milestones and flip any whose dueDate is in the past to
  * `overdue`. Intended to be called by a scheduled cron job — keeps the
  * buyer close dashboard accurate without the client re-computing overdue.
+ *
+ * `today` is normalized to YYYY-MM-DD. If a scheduler passes a full ISO
+ * timestamp (e.g. `2026-04-12T18:00:00.000Z`) we slice the date part so
+ * a milestone due `2026-04-12` doesn't get flagged overdue when compared
+ * against the full timestamp (which would lexicographically sort after
+ * the date-only string and cause a false positive).
  */
 export const markOverdueBatch = internalMutation({
   args: { today: v.string() },
   returns: v.number(),
   handler: async (ctx, args) => {
+    // Normalize to YYYY-MM-DD. Accepts either a bare date or a full ISO
+    // timestamp and slices off the time portion if present.
+    const todayDate = args.today.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(todayDate)) {
+      throw new Error(
+        `markOverdueBatch: today must be YYYY-MM-DD or a full ISO timestamp; got "${args.today}"`,
+      );
+    }
+
     const candidates = await ctx.db.query("contractMilestones").collect();
     let updated = 0;
+    const nowIso = new Date().toISOString();
     for (const m of candidates) {
       if (
         m.status === "pending" &&
-        m.dueDate < args.today &&
+        m.dueDate < todayDate &&
         !m.flaggedForReview
       ) {
-        await ctx.db.patch(m._id, { status: "overdue", updatedAt: args.today });
+        await ctx.db.patch(m._id, { status: "overdue", updatedAt: nowIso });
         updated++;
       }
     }

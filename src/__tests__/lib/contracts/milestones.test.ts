@@ -264,6 +264,69 @@ describe("extractMilestones — past dates flag for review", () => {
 });
 
 // ───────────────────────────────────────────────────────────────────────────
+// Month-name closing date format
+// ───────────────────────────────────────────────────────────────────────────
+
+describe("extractMilestones — month-name closing date format", () => {
+  it("extracts closing date from 'May 15, 2028' format", () => {
+    const contract = `
+      Effective Date: 2028-01-15
+      Inspection Period: 10 calendar days.
+      Closing: May 15, 2028
+    `;
+    const result = extractMilestones({
+      contractText: contract,
+      effectiveDate: "2028-01-15",
+    });
+    const closing = result.milestones.find((m) => m.workstream === "closing");
+    expect(closing).toBeDefined();
+    expect(closing?.dueDate).toBe("2028-05-15");
+  });
+
+  it("extracts closing date from abbreviated month 'Jan 2, 2028'", () => {
+    const contract = `
+      Effective Date: 2027-11-01
+      Inspection Period: 10 calendar days.
+      Closing Date: Jan 2, 2028
+    `;
+    const result = extractMilestones({
+      contractText: contract,
+      effectiveDate: "2027-11-01",
+    });
+    const closing = result.milestones.find((m) => m.workstream === "closing");
+    expect(closing?.dueDate).toBe("2028-01-02");
+  });
+
+  it("extracts closing date from M/D/YYYY slash format", () => {
+    const contract = `
+      Effective Date: 2028-01-15
+      Inspection Period: 10 calendar days.
+      Closing: 5/15/2028
+    `;
+    const result = extractMilestones({
+      contractText: contract,
+      effectiveDate: "2028-01-15",
+    });
+    const closing = result.milestones.find((m) => m.workstream === "closing");
+    expect(closing?.dueDate).toBe("2028-05-15");
+  });
+
+  it("rejects impossible dates (Feb 30)", () => {
+    const contract = `
+      Effective Date: 2028-01-15
+      Inspection Period: 10 days.
+      Closing: February 30, 2028
+    `;
+    const result = extractMilestones({
+      contractText: contract,
+      effectiveDate: "2028-01-15",
+    });
+    const closing = result.milestones.find((m) => m.workstream === "closing");
+    expect(closing).toBeUndefined();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
 // Workstream constant
 // ───────────────────────────────────────────────────────────────────────────
 

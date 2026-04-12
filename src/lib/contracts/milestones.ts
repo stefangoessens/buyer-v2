@@ -320,10 +320,58 @@ function extractHoaDocs(
   };
 }
 
+const MONTH_NAMES: Record<string, number> = {
+  january: 1, jan: 1,
+  february: 2, feb: 2,
+  march: 3, mar: 3,
+  april: 4, apr: 4,
+  may: 5,
+  june: 6, jun: 6,
+  july: 7, jul: 7,
+  august: 8, aug: 8,
+  september: 9, sep: 9, sept: 9,
+  october: 10, oct: 10,
+  november: 11, nov: 11,
+  december: 12, dec: 12,
+};
+
 function extractClosingDate(text: string): string | undefined {
-  // "Closing date: 2026-05-15" or "close on 2026-05-15" or "closing: May 15, 2026"
+  // Try ISO format first: "Closing date: 2026-05-15"
   const iso = /closing\s*(?:date)?[^0-9]{0,20}?(\d{4}-\d{2}-\d{2})/i.exec(text);
   if (iso) return iso[1];
+
+  // Try month-name formats: "Closing: May 15, 2028" or "close on May 15 2028"
+  const monthName =
+    /closing\s*(?:date)?[^a-z0-9]{0,20}?(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i.exec(
+      text,
+    );
+  if (monthName) {
+    const month = MONTH_NAMES[monthName[1].toLowerCase()];
+    const day = parseInt(monthName[2], 10);
+    const year = parseInt(monthName[3], 10);
+    if (month && day >= 1 && day <= 31 && year >= 2000 && year <= 2100) {
+      const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      // Round-trip through parseIsoDate to reject invalid dates like Feb 30
+      const parsed = parseIsoDate(iso);
+      if (parsed) return parsed;
+    }
+  }
+
+  // Try M/D/YYYY format: "Closing: 5/15/2028"
+  const slash = /closing\s*(?:date)?[^0-9]{0,20}?(\d{1,2})\/(\d{1,2})\/(\d{4})/i.exec(
+    text,
+  );
+  if (slash) {
+    const month = parseInt(slash[1], 10);
+    const day = parseInt(slash[2], 10);
+    const year = parseInt(slash[3], 10);
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const parsed = parseIsoDate(iso);
+      if (parsed) return parsed;
+    }
+  }
+
   return undefined;
 }
 
