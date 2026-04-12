@@ -43,7 +43,7 @@ export function HeroSection({ children }: HeroSectionProps) {
       </div>
 
       <div className="pointer-events-none absolute right-0 top-[110px] hidden lg:block" aria-hidden="true">
-        <div className="relative h-[640px] w-[640px] translate-x-[24%] overflow-hidden rounded-full bg-primary-700">
+        <div className="relative h-[640px] w-[640px] translate-x-[15%] overflow-hidden rounded-full bg-primary-700">
           <div className="absolute inset-0 p-3">
             <div className="relative h-full w-full overflow-hidden rounded-full bg-white">
               <Image
