@@ -23,6 +23,26 @@ Parser tests load these directly from disk; do NOT inline HTML in test files.
 Currently only `.gitkeep` lives here — the directory will be filled in by the
 portal-parser cards.
 
+## Portal fixture layout
+
+Portal-specific fixtures live under `html/<portal>/*.html`, one file per
+scenario. For example:
+
+```
+html/
+  zillow/
+    zillow_condo_miami.html
+    zillow_sfh_boca_raton.html
+    zillow_townhome_fort_lauderdale.html
+    zillow_new_construction_doral.html
+    zillow_sfh_homestead.html
+```
+
+Each synthetic fixture is structurally different on purpose — some include
+JSON-LD + Apollo preload + HTML fallback, some omit one or more of those so
+tests exercise every extraction strategy. Addresses, MLS numbers, and photo
+URLs are invented; no real homeowner data lives in this tree.
+
 ## `vendor_responses/bright_data.py`
 
 Factory helpers for mocking Bright Data Web Unlocker API responses in tests
