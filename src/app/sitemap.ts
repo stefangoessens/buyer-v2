@@ -8,6 +8,11 @@ import {
   publicCities,
   publicCommunities,
 } from "@/lib/locations/selectors";
+import { NEW_CONSTRUCTION_CATALOG } from "@/content/newConstruction";
+import {
+  publicBuilders,
+  publicCommunities as publicNewConstructionCommunities,
+} from "@/lib/newConstruction/selectors";
 
 /**
  * Next.js sitemap generator (KIN-815 + KIN-812 + KIN-818).
@@ -78,10 +83,33 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.55,
   }));
 
+  // Dynamic: one entry per public new-construction builder page (KIN-823)
+  const builderEntries: MetadataRoute.Sitemap = publicBuilders(
+    NEW_CONSTRUCTION_CATALOG
+  ).map((builder) => ({
+    url: `${origin}/new-construction/builders/${builder.slug}`,
+    lastModified: builder.lastUpdated,
+    changeFrequency: "monthly" as const,
+    priority: 0.6,
+  }));
+
+  // Dynamic: one entry per public new-construction community page (KIN-823)
+  const newConstructionCommunityEntries: MetadataRoute.Sitemap =
+    publicNewConstructionCommunities(NEW_CONSTRUCTION_CATALOG).map(
+      (community) => ({
+        url: `${origin}/new-construction/${community.slug}`,
+        lastModified: community.lastUpdated,
+        changeFrequency: "monthly" as const,
+        priority: 0.55,
+      })
+    );
+
   return [
     ...staticEntries,
     ...articleEntries,
     ...cityEntries,
     ...communityEntries,
+    ...builderEntries,
+    ...newConstructionCommunityEntries,
   ];
 }

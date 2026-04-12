@@ -1219,6 +1219,74 @@ export default defineSchema({
     .index("by_parent", ["parentNoteId"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // CONTRACT MILESTONES (KIN-806)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Extracted closing milestones for a contract — inspection period end,
+  // financing contingency, title review, appraisal, insurance binder, HOA
+  // docs, walkthrough, closing. Stored in a separate table (not embedded in
+  // the contracts row) so individual milestones can be updated, flagged for
+  // review, and queried independently.
+  //
+  // `confidence` + `flaggedForReview` let the ops review queue pick up
+  // unclear extractions without blocking the happy path. `source` tracks
+  // whether the milestone was auto-parsed from contract text or manually
+  // added by an internal user.
+
+  contractMilestones: defineTable({
+    contractId: v.id("contracts"),
+    dealRoomId: v.id("dealRooms"),
+    name: v.string(),
+    workstream: v.union(
+      v.literal("inspection"),
+      v.literal("financing"),
+      v.literal("appraisal"),
+      v.literal("title"),
+      v.literal("insurance"),
+      v.literal("escrow"),
+      v.literal("hoa"),
+      v.literal("walkthrough"),
+      v.literal("closing"),
+      v.literal("other"),
+    ),
+    dueDate: v.string(), // ISO YYYY-MM-DD
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("overdue"),
+      v.literal("needs_review"),
+    ),
+    completedAt: v.optional(v.string()),
+    completedBy: v.optional(v.id("users")),
+    source: v.union(
+      v.literal("auto_extracted"),
+      v.literal("manual"),
+      v.literal("amended"),
+    ),
+    confidence: v.number(), // 0..1
+    flaggedForReview: v.boolean(),
+    reviewReason: v.optional(
+      v.union(
+        v.literal("low_confidence"),
+        v.literal("ambiguous_date"),
+        v.literal("missing_required"),
+        v.literal("date_in_past"),
+        v.literal("manual_flag"),
+      ),
+    ),
+    resolvedAt: v.optional(v.string()),
+    resolvedBy: v.optional(v.id("users")),
+    linkedClauseText: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_contractId", ["contractId"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_contractId_and_status", ["contractId", "status"])
+    .index("by_flaggedForReview", ["flaggedForReview"])
+    .index("by_workstream", ["workstream"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // SMS INTAKE (KIN-776)
   // ═══════════════════════════════════════════════════════════════════════════
   //
@@ -1420,4 +1488,35 @@ export default defineSchema({
     .index("by_tokenId", ["tokenId"])
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_eventType_and_timestamp", ["eventType", "timestamp"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROPERTY CASE SYNTHESIS (KIN-854)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Cached output of the property case synthesizer for a given (property,
+  // inputHash, synthesisVersion) triple. Callers look up by propertyId and
+  // inputHash to reuse a cached synthesis; if no match they run the
+  // synthesizer and upsert the result here.
+  //
+  // The `claims` payload is stored as a JSON string so the synthesizer can
+  // evolve the claim shape without schema migrations. Consumers parse it
+  // via the shared type in `src/lib/ai/engines/caseSynthesis.ts`.
+
+  propertyCases: defineTable({
+    propertyId: v.id("properties"),
+    dealRoomId: v.optional(v.id("dealRooms")),
+    inputHash: v.string(),
+    synthesisVersion: v.string(),
+    // Serialized PropertyCase (claims[], recommendedAction, confidence).
+    payload: v.string(),
+    overallConfidence: v.number(),
+    contributingEngines: v.number(),
+    droppedEngines: v.array(v.string()),
+    generatedAt: v.string(),
+    // Number of times this cache entry has been served — informs eviction.
+    hitCount: v.number(),
+  })
+    .index("by_propertyId", ["propertyId"])
+    .index("by_propertyId_and_inputHash", ["propertyId", "inputHash"])
+    .index("by_dealRoomId", ["dealRoomId"]),
 });
