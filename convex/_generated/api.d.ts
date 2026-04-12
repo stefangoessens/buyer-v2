@@ -8,10 +8,14 @@
  * @module
  */
 
+import type * as aiEngineOutputs from "../aiEngineOutputs.js";
 import type * as health from "../health.js";
 import type * as intake from "../intake.js";
+import type * as lib_engineResult from "../lib/engineResult.js";
+import type * as lib_promptVersion from "../lib/promptVersion.js";
 import type * as lib_session from "../lib/session.js";
 import type * as lib_validators from "../lib/validators.js";
+import type * as promptRegistry from "../promptRegistry.js";
 import type * as properties from "../properties.js";
 import type * as security_dataExport from "../security/dataExport.js";
 import type * as security_dataExportAction from "../security/dataExportAction.js";
@@ -26,10 +30,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  aiEngineOutputs: typeof aiEngineOutputs;
   health: typeof health;
   intake: typeof intake;
+  "lib/engineResult": typeof lib_engineResult;
+  "lib/promptVersion": typeof lib_promptVersion;
   "lib/session": typeof lib_session;
   "lib/validators": typeof lib_validators;
+  promptRegistry: typeof promptRegistry;
   properties: typeof properties;
   "security/dataExport": typeof security_dataExport;
   "security/dataExportAction": typeof security_dataExportAction;

@@ -375,4 +375,23 @@ export default defineSchema({
   })
     .index("by_propertyId_and_engineType", ["propertyId", "engineType"])
     .index("by_reviewState", ["reviewState"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AI PROMPT REGISTRY
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  promptRegistry: defineTable({
+    engineType: v.string(),
+    version: v.string(),
+    prompt: v.string(),
+    systemPrompt: v.optional(v.string()),
+    model: v.string(),
+    isActive: v.boolean(),
+    createdAt: v.string(),
+    author: v.string(),
+    changeNotes: v.optional(v.string()),
+  })
+    .index("by_engineType", ["engineType"])
+    .index("by_engineType_and_version", ["engineType", "version"])
+    .index("by_engineType_and_isActive", ["engineType", "isActive"]),
 });
