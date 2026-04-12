@@ -156,3 +156,20 @@ export const payoutStatus = v.union(
   v.literal("approved"),
   v.literal("paid")
 );
+
+// ─── Availability Windows (KIN-836) ────────────────────────────────────────
+
+// Availability window owner type
+export const availabilityOwnerType = v.union(
+  v.literal("buyer"),
+  v.literal("agent"),
+  v.literal("tour_request")
+);
+
+// Availability window status
+export const availabilityStatus = v.union(
+  v.literal("available"),
+  v.literal("tentative"),
+  v.literal("unavailable"),
+  v.literal("booked")
+);
