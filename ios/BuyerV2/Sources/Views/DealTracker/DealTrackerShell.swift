@@ -10,6 +10,7 @@ struct DealTrackerShell: View {
     @Environment(AuthService.self) private var authService
     @Environment(DealTasksService.self) private var tasksService
     @Environment(DealTimelineService.self) private var timelineService
+    @Environment(DealCacheCoordinator.self) private var cacheCoordinator
 
     var body: some View {
         Group {
@@ -45,8 +46,76 @@ struct DealTrackerShell: View {
         .onChange(of: dealService.state) { _, newState in
             Task {
                 await syncChildServices(with: newState)
+                await persistSnapshotIfReady()
             }
         }
+        // Persist a fresh snapshot to the offline-first cache whenever
+        // the child services settle on live data. The coordinator writes
+        // DealSummary + tasks + events with a lastSyncedAt stamp so a
+        // future cold start can warm the shell from disk.
+        .onChange(of: tasksService.state) { _, _ in
+            Task { await persistSnapshotIfReady() }
+        }
+        .onChange(of: timelineService.state) { _, _ in
+            Task { await persistSnapshotIfReady() }
+        }
+        // Clear the cache when the user signs out or the session expires
+        // so no prior-session data survives into a different sign-in.
+        .onChange(of: authService.state) { _, newState in
+            Task {
+                switch newState {
+                case .signedOut, .expired:
+                    await cacheCoordinator.clearForSignOut(userId: user.id)
+                case .signedIn, .restoring:
+                    break
+                }
+            }
+        }
+    }
+
+    /// Persist a unified snapshot to the cache when all three services
+    /// have settled on live data. We don't cache partial state: loading /
+    /// stale / error states all short-circuit.
+    private func persistSnapshotIfReady() async {
+        // Deal: must be in a terminal active/empty state
+        let dealSnapshot: DealSummary?
+        switch dealService.state {
+        case .activeDeal(let deal):
+            dealSnapshot = deal
+        case .noDeal:
+            dealSnapshot = nil
+        case .loading, .error:
+            return
+        }
+
+        // Tasks: only cache from loaded/empty
+        let tasksSnapshot: [DealTask]
+        switch tasksService.state {
+        case .loaded(let tasks):
+            tasksSnapshot = tasks
+        case .noTasks, .noActiveDeal:
+            tasksSnapshot = []
+        case .idle, .loading, .signedOut, .stale, .error:
+            return
+        }
+
+        // Timeline: same pattern
+        let eventsSnapshot: [MilestoneEvent]
+        switch timelineService.state {
+        case .loaded(let events):
+            eventsSnapshot = events
+        case .noEvents, .noActiveDeal:
+            eventsSnapshot = []
+        case .idle, .loading, .signedOut, .stale, .error:
+            return
+        }
+
+        await cacheCoordinator.applyLiveSnapshot(
+            userId: user.id,
+            deal: dealSnapshot,
+            tasks: tasksSnapshot,
+            events: eventsSnapshot
+        )
     }
 
     private func syncChildServices(with state: DealTrackerState) async {
