@@ -7,6 +7,7 @@ import {
 } from "@/components/marketing/content/ContentPageTemplate";
 import { FAQSection } from "@/components/marketing/content/FAQSection";
 import type { ContentPageMeta } from "@/lib/content/types";
+import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
 
 const META: ContentPageMeta = {
   slug: "faq",
@@ -16,26 +17,53 @@ const META: ContentPageMeta = {
     "How buyer-v2 works, how the buyer credit is calculated, and what happens when you engage us — in plain language.",
 };
 
-export const metadata: Metadata = {
-  title: `FAQ | buyer-v2`,
+export const metadata: Metadata = buildMetadata({
+  title: "FAQ",
   description: META.description,
-  openGraph: {
-    title: META.title,
-    description: META.description,
-    type: "website",
-  },
-};
+  path: "/faq",
+  visibility: "public",
+  kind: "faq",
+});
+
+/**
+ * FAQPage JSON-LD derived from the same filtered FAQ entries the
+ * page renders. Keeps the structured data in sync with the visible
+ * content without duplicating the list.
+ */
+function buildFAQStructuredData() {
+  const entries = filterPublic(FAQ_ENTRIES).map((e) => ({
+    question: e.question,
+    answer: e.answer,
+  }));
+  return buildStructuredData(
+    {
+      title: "FAQ",
+      description: META.description,
+      path: "/faq",
+      visibility: "public",
+      kind: "faq",
+    },
+    { faqEntries: entries }
+  );
+}
 
 export default function FAQPage() {
   const entries = filterPublic(FAQ_ENTRIES);
+  const jsonLd = buildFAQStructuredData();
 
   return (
-    <ContentPageTemplate meta={META}>
-      {entries.length === 0 ? (
-        <ContentValidationError missing={["faqs: no public entries"]} />
-      ) : (
-        <FAQSection entries={entries} />
-      )}
-    </ContentPageTemplate>
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <ContentPageTemplate meta={META}>
+        {entries.length === 0 ? (
+          <ContentValidationError missing={["faqs: no public entries"]} />
+        ) : (
+          <FAQSection entries={entries} />
+        )}
+      </ContentPageTemplate>
+    </>
   );
 }

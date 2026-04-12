@@ -1,17 +1,15 @@
 import type { Metadata } from "next";
 import { SavingsCalculator } from "@/components/marketing/SavingsCalculator";
+import { buildMetadata } from "@/lib/seo/builder";
 
-export const metadata: Metadata = {
-  title: "Savings Calculator | buyer-v2",
+export const metadata: Metadata = buildMetadata({
+  title: "Savings Calculator",
   description:
     "Estimate your buyer credit on a Florida home purchase. See how buyer-v2's commission rebate model works and what you could save at closing.",
-  openGraph: {
-    title: "Savings Calculator | buyer-v2",
-    description:
-      "Estimate your buyer credit on a Florida home purchase. See how buyer-v2's commission rebate model works and what you could save at closing.",
-    type: "website",
-  },
-};
+  path: "/savings",
+  visibility: "public",
+  kind: "marketing",
+});
 
 export default function SavingsPage() {
   return (
