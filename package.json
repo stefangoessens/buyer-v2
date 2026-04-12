@@ -13,5 +13,8 @@
     "typecheck": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0",
     "test": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0",
     "lint": "echo '[buyer-v2] cold-start: no app scaffolded yet.' && exit 0"
+  },
+  "dependencies": {
+    "convex": "^1.35.1"
   }
 }
