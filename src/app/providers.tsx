@@ -1,18 +1,24 @@
 "use client";
 
 import { ConvexProvider } from "convex/react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode } from "react";
 import { convex } from "@/lib/convex";
-import { initPostHog } from "@/lib/posthog";
+import { PostHogProvider, PostHogPageView } from "@/lib/posthog";
 
 export function Providers({ children }: { children: ReactNode }) {
-  useEffect(() => {
-    initPostHog();
-  }, []);
-
   if (!convex) {
-    return <>{children}</>;
+    return (
+      <PostHogProvider>
+        <PostHogPageView />
+        {children}
+      </PostHogProvider>
+    );
   }
 
-  return <ConvexProvider client={convex}>{children}</ConvexProvider>;
+  return (
+    <PostHogProvider>
+      <PostHogPageView />
+      <ConvexProvider client={convex}>{children}</ConvexProvider>
+    </PostHogProvider>
+  );
 }

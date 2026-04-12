@@ -1,12 +1,23 @@
 import * as Sentry from "@sentry/nextjs";
 
-export function initSentry() {
-  if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
-    Sentry.init({
-      dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-      environment: process.env.NODE_ENV,
-      tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 1.0,
-      debug: false,
-    });
+/** Capture an error with optional context, stripping PII */
+export function captureError(
+  error: Error | string,
+  context?: Record<string, unknown>
+) {
+  if (typeof error === "string") {
+    Sentry.captureMessage(error, { extra: context });
+  } else {
+    Sentry.captureException(error, { extra: context });
   }
+}
+
+/** Set user context for Sentry (use only non-PII identifiers) */
+export function setSentryUser(userId: string, role: string) {
+  Sentry.setUser({ id: userId, role });
+}
+
+/** Clear user context on logout */
+export function clearSentryUser() {
+  Sentry.setUser(null);
 }
