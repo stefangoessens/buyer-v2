@@ -216,11 +216,15 @@ final class MessagePreferencesService {
     // MARK: - Update
 
     /// Apply a partial patch locally (optimistic) and persist it. On
-    /// failure, the local state is rolled back to the previous value so
-    /// UI toggles don't drift from backend truth.
+    /// failure, BOTH `preferences` AND `hasStoredPreferences` roll back
+    /// to their pre-optimistic values so UI toggles and onboarding nudges
+    /// don't drift from backend truth — critical for first-time users
+    /// where an optimistic flip to hasStoredPreferences=true must be
+    /// reverted if the backend write fails.
     func update(_ patch: MessagePreferencesPatch) async {
-        let snapshot = preferences
-        let optimistic = applyPatch(patch, to: snapshot)
+        let prefsSnapshot = preferences
+        let hasStoredSnapshot = hasStoredPreferences
+        let optimistic = applyPatch(patch, to: prefsSnapshot)
         preferences = optimistic
         hasStoredPreferences = true
         state = .loaded(optimistic, hasStored: true)
@@ -230,8 +234,11 @@ final class MessagePreferencesService {
             preferences = persisted
             state = .loaded(persisted, hasStored: true)
         } catch {
-            // Roll back optimistic change
-            preferences = snapshot
+            // Roll back BOTH preferences and hasStoredPreferences so a
+            // first-time user's onboarding nudge isn't suppressed by a
+            // failed write.
+            preferences = prefsSnapshot
+            hasStoredPreferences = hasStoredSnapshot
             state = .error(error.localizedDescription)
         }
     }
@@ -239,10 +246,11 @@ final class MessagePreferencesService {
     // MARK: - Opt out / reset
 
     func optOutAll() async {
-        let snapshot = preferences
+        let prefsSnapshot = preferences
+        let hasStoredSnapshot = hasStoredPreferences
         let optimistic = MessagePreferences(
             channels: .optedOut,
-            categories: snapshot.categories
+            categories: prefsSnapshot.categories
         )
         preferences = optimistic
         hasStoredPreferences = true
@@ -253,13 +261,15 @@ final class MessagePreferencesService {
             preferences = persisted
             state = .loaded(persisted, hasStored: true)
         } catch {
-            preferences = snapshot
+            preferences = prefsSnapshot
+            hasStoredPreferences = hasStoredSnapshot
             state = .error(error.localizedDescription)
         }
     }
 
     func resetToDefaults() async {
-        let snapshot = preferences
+        let prefsSnapshot = preferences
+        let hasStoredSnapshot = hasStoredPreferences
         preferences = .default
         hasStoredPreferences = true
         state = .loaded(.default, hasStored: true)
@@ -269,7 +279,8 @@ final class MessagePreferencesService {
             preferences = persisted
             state = .loaded(persisted, hasStored: true)
         } catch {
-            preferences = snapshot
+            preferences = prefsSnapshot
+            hasStoredPreferences = hasStoredSnapshot
             state = .error(error.localizedDescription)
         }
     }

@@ -277,6 +277,60 @@ struct MessagePreferencesServiceTests {
         }
     }
 
+    @Test("update() failure for first-time user restores hasStoredPreferences=false")
+    func testUpdateRollbackFirstTimeUser() async {
+        // Regression: codex P2 on PR #40. A first-time user (no stored
+        // row) optimistically flipped hasStoredPreferences=true before
+        // the backend call. If the call failed, the flag was left true,
+        // suppressing onboarding nudges even though nothing was saved.
+        let backend = MockMessagePreferencesBackend()
+        backend.fetchResult = .success((MessagePreferences.default, false))
+        let service = MessagePreferencesService(backend: backend)
+        await service.load()
+        #expect(service.hasStoredPreferences == false)
+
+        backend.upsertResult = .failure(StubError(message: "boom"))
+
+        await service.update(MessagePreferencesPatch(smsEnabled: true))
+
+        #expect(service.hasStoredPreferences == false)
+        #expect(service.preferences == .default)
+        guard case .error = service.state else {
+            Issue.record("Expected .error")
+            return
+        }
+    }
+
+    @Test("optOutAll() failure for first-time user also rolls back hasStoredPreferences")
+    func testOptOutAllRollbackFirstTimeUser() async {
+        let backend = MockMessagePreferencesBackend()
+        backend.fetchResult = .success((MessagePreferences.default, false))
+        let service = MessagePreferencesService(backend: backend)
+        await service.load()
+        #expect(service.hasStoredPreferences == false)
+
+        backend.optOutAllResult = .failure(StubError(message: "boom"))
+
+        await service.optOutAll()
+
+        #expect(service.hasStoredPreferences == false)
+        #expect(service.preferences == .default)
+    }
+
+    @Test("resetToDefaults() failure for first-time user also rolls back hasStoredPreferences")
+    func testResetRollbackFirstTimeUser() async {
+        let backend = MockMessagePreferencesBackend()
+        backend.fetchResult = .success((MessagePreferences.default, false))
+        let service = MessagePreferencesService(backend: backend)
+        await service.load()
+
+        backend.resetResult = .failure(StubError(message: "boom"))
+
+        await service.resetToDefaults()
+
+        #expect(service.hasStoredPreferences == false)
+    }
+
     // MARK: - Opt-out all
 
     @Test("optOutAll() disables every channel and preserves categories")
