@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as adminShell from "../adminShell.js";
 import type * as aiEngineOutputs from "../aiEngineOutputs.js";
 import type * as buyerProfiles from "../buyerProfiles.js";
 import type * as dealRooms from "../dealRooms.js";
@@ -38,6 +39,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  adminShell: typeof adminShell;
   aiEngineOutputs: typeof aiEngineOutputs;
   buyerProfiles: typeof buyerProfiles;
   dealRooms: typeof dealRooms;
