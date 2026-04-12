@@ -216,8 +216,15 @@ export const getLatest = query({
 /**
  * Get all validation rows currently awaiting broker review. Broker/admin
  * only — surfaces the queue of `review_required` cases that need sign-off.
- * Results that already have a reviewDecision are filtered out in-memory so
- * the surface only shows outstanding work.
+ *
+ * Only returns rows that are BOTH:
+ *   1. The latest validation row for their (dealRoomId, offerId) scope
+ *   2. Still in `review_required` state with no reviewDecision
+ *
+ * Stale historical rows are filtered out so brokers never review a credit
+ * state that has already been superseded by a newer computation. A scope
+ * is identified by `dealRoomId` plus `offerId ?? "__deal_room__"` — offer-
+ * scoped validations are tracked independently from deal-room-scoped ones.
  */
 export const getPendingReview = query({
   args: {},
@@ -228,13 +235,46 @@ export const getPendingReview = query({
       throw new Error("Only brokers and admins can list pending review queue");
     }
 
+    // Walk all review_required rows in descending creation order so the
+    // first row we see per scope is the latest one.
     const rows = await ctx.db
       .query("lenderCreditValidations")
       .withIndex("by_validationOutcome", (q) =>
         q.eq("validationOutcome", "review_required")
       )
       .collect();
-    return rows.filter((r) => r.reviewDecision === undefined);
+
+    // Fetch ALL rows grouped by scope to know which is the latest — a
+    // newer `valid`/`invalid` row for the same scope should suppress any
+    // older `review_required` row from this queue.
+    const latestByScope = new Map<string, Doc<"lenderCreditValidations">>();
+    for (const row of rows) {
+      const scopeKey = `${row.dealRoomId}:${row.offerId ?? "__deal_room__"}`;
+      // Find the latest row for this scope from the full table (not just
+      // review_required rows) — if a newer row with a different outcome
+      // exists, this review_required row is stale.
+      if (!latestByScope.has(scopeKey)) {
+        const latestForScope = await ctx.db
+          .query("lenderCreditValidations")
+          .withIndex("by_dealRoomId_and_createdAt", (q) =>
+            q.eq("dealRoomId", row.dealRoomId)
+          )
+          .order("desc")
+          .collect();
+        const latest = latestForScope.find(
+          (r) => (r.offerId ?? null) === (row.offerId ?? null)
+        );
+        if (latest) latestByScope.set(scopeKey, latest);
+      }
+    }
+
+    return rows.filter((r) => {
+      if (r.reviewDecision !== undefined) return false;
+      const scopeKey = `${r.dealRoomId}:${r.offerId ?? "__deal_room__"}`;
+      const latest = latestByScope.get(scopeKey);
+      // Only include if this row IS the latest for its scope.
+      return latest?._id === r._id;
+    });
   },
 });
 
