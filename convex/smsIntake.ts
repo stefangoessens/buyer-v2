@@ -26,7 +26,7 @@
 //   - URL parser mirror → inlined below (Convex can't import from src/)
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { mutation, query } from "./_generated/server";
+import { internalMutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
@@ -205,16 +205,30 @@ function getAppBaseUrl(): string {
 }
 
 /**
- * HMAC secret used to sign reply links. In production this is read from
- * the environment. In dev / tests we fall back to a stable placeholder so
- * the mutation is testable without extra env setup — the placeholder is
- * NEVER used in any hosted environment.
+ * HMAC secret used to sign reply links. Fails closed when unset in
+ * hosted environments — a hardcoded fallback would make signed links
+ * forgeable because the HMAC key would be predictable. The only
+ * context where a placeholder is acceptable is local dev or Vitest,
+ * which we detect via NODE_ENV / CONVEX_ENVIRONMENT.
  */
 function getSignedLinkSecret(): string {
-  return (
-    process.env.SMS_SIGNED_LINK_SECRET ??
-    process.env.SMS_REPLY_LINK_SECRET ??
-    "buyer-v2-dev-placeholder-secret"
+  const fromEnv =
+    process.env.SMS_SIGNED_LINK_SECRET ?? process.env.SMS_REPLY_LINK_SECRET;
+  if (fromEnv && fromEnv.length >= 16) return fromEnv;
+
+  const isLocal =
+    process.env.NODE_ENV === "test" ||
+    process.env.NODE_ENV === "development" ||
+    process.env.CONVEX_ENVIRONMENT === "dev";
+
+  if (isLocal) {
+    // Explicit dev/test placeholder. Never used in production because
+    // the isLocal guard is false in any hosted runtime.
+    return "buyer-v2-dev-placeholder-secret-do-not-use-in-prod";
+  }
+
+  throw new Error(
+    "SMS_SIGNED_LINK_SECRET is not set. Refusing to sign reply links with a predictable key.",
   );
 }
 
@@ -242,14 +256,18 @@ const REPLY_COPY = {
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Public mutation called by the Twilio webhook handler (convex/http.ts, not
- * part of this task). No auth — the webhook layer is responsible for
- * validating the Twilio signature and rate-limiting the caller.
+ * Internal mutation called ONLY by the Twilio webhook httpAction after
+ * signature validation. Exposed as `internalMutation` (not `mutation`)
+ * so untrusted callers cannot spoof `fromPhone`/`messageSid` via the
+ * public Convex API and trigger consent-state changes or intake rows.
+ *
+ * The Twilio webhook handler in convex/http.ts invokes this via
+ * `ctx.runMutation(internal.smsIntake.processInboundSms, {...})`.
  *
  * Returns a structured outcome so the webhook can build the appropriate
  * TwiML response, and so tests can assert against a stable shape.
  */
-export const processInboundSms = mutation({
+export const processInboundSms = internalMutation({
   args: {
     messageSid: v.string(),
     fromPhone: v.string(),
@@ -269,6 +287,12 @@ export const processInboundSms = mutation({
     const now = new Date().toISOString();
 
     // ── Step 1: idempotency via Twilio Message SID ─────────────────────
+    // On retry (Twilio webhook replay), return the SAME reply payload
+    // that was computed the first time so the webhook can re-emit the
+    // expected TwiML response — e.g. STOP confirmation or HELP guidance
+    // that the user needs to see. `outcome` is still tagged "duplicate"
+    // so caller telemetry can distinguish retries, but the reply body
+    // is preserved from the persisted row.
     const existing = await ctx.db
       .query("smsIntakeMessages")
       .withIndex("by_messageSid", (q) => q.eq("messageSid", args.messageSid))
@@ -277,8 +301,8 @@ export const processInboundSms = mutation({
       return {
         outcome: "duplicate" as const,
         intakeId: existing._id,
-        replyBody: "",
-        replySent: false,
+        replyBody: existing.replyBody ?? "",
+        replySent: existing.replySent,
         dealRoomId: existing.dealRoomId ?? undefined,
         sourceListingId: existing.sourceListingId ?? undefined,
         replyLink: existing.replyLink ?? undefined,
