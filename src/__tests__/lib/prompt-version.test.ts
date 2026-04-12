@@ -33,7 +33,14 @@ describe("buildVersionContent", () => {
 
   it("handles undefined system prompt", () => {
     const content = buildVersionContent("prompt", undefined, "model");
-    expect(content).toBe("model::::prompt");
+    expect(content).toBe("5:model|0:|6:prompt");
+  });
+
+  it("avoids collisions from delimiter in field values", () => {
+    // model="a::b" sys="" vs model="a" sys=":b" should differ
+    const a = buildVersionContent("p", "", "a::b");
+    const b = buildVersionContent("p", ":b", "a");
+    expect(a).not.toBe(b);
   });
 
   it("different models produce different content", () => {

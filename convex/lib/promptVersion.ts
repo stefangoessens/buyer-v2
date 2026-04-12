@@ -20,5 +20,6 @@ export function buildVersionContent(
   systemPrompt: string | undefined,
   model: string
 ): string {
-  return `${model}::${systemPrompt ?? ""}::${prompt}`;
+  const sys = systemPrompt ?? "";
+  return `${model.length}:${model}|${sys.length}:${sys}|${prompt.length}:${prompt}`;
 }
