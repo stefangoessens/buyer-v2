@@ -1519,4 +1519,52 @@ export default defineSchema({
     .index("by_propertyId", ["propertyId"])
     .index("by_propertyId_and_inputHash", ["propertyId", "inputHash"])
     .index("by_dealRoomId", ["dealRoomId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // OFFER COCKPIT DRAFTS (KIN-791)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Buyer-facing draft state for the offer cockpit UI. The canonical `offers`
+  // table only tracks submitted/formal offers; this table captures in-progress
+  // edits with scenario selection, broker review state, and bounded optimistic
+  // state during the edit session. When a buyer submits for broker review, a
+  // row is created in `offers` with status "pending_review" and the draft is
+  // marked as submitted.
+  offerCockpitDrafts: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    buyerId: v.id("users"),
+    propertyId: v.id("properties"),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("pending_review"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("submitted"),
+      v.literal("abandoned")
+    ),
+    selectedScenarioName: v.optional(v.string()),
+    offerPrice: v.number(),
+    earnestMoney: v.number(),
+    closingDays: v.number(),
+    contingencies: v.array(v.string()),
+    buyerCredits: v.number(),
+    sellerCredits: v.number(),
+    brokerReviewState: v.union(
+      v.literal("not_submitted"),
+      v.literal("pending_review"),
+      v.literal("approved"),
+      v.literal("rejected")
+    ),
+    brokerNote: v.optional(v.string()),
+    // Linked offer row — only set once the draft has been materialized into
+    // the canonical `offers` table (post broker approval or on submit).
+    offerId: v.optional(v.id("offers")),
+    version: v.number(),
+    lastSavedAt: v.string(),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_dealRoomId_and_buyerId", ["dealRoomId", "buyerId"])
+    .index("by_buyerId_and_status", ["buyerId", "status"])
+    .index("by_dealRoomId", ["dealRoomId"]),
 });

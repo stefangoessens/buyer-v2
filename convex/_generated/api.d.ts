@@ -40,6 +40,7 @@ import type * as lib_session from "../lib/session.js";
 import type * as lib_templateRender from "../lib/templateRender.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as messagePreferences from "../messagePreferences.js";
+import type * as offerCockpit from "../offerCockpit.js";
 import type * as offerEligibility from "../offerEligibility.js";
 import type * as promptRegistry from "../promptRegistry.js";
 import type * as properties from "../properties.js";
@@ -94,6 +95,7 @@ declare const fullApi: ApiFromModules<{
   "lib/templateRender": typeof lib_templateRender;
   "lib/validators": typeof lib_validators;
   messagePreferences: typeof messagePreferences;
+  offerCockpit: typeof offerCockpit;
   offerEligibility: typeof offerEligibility;
   promptRegistry: typeof promptRegistry;
   properties: typeof properties;
