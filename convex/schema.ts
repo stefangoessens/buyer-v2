@@ -1730,4 +1730,49 @@ export default defineSchema({
     .index("by_conversationId_and_createdAt", ["conversationId", "createdAt"])
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_intent", ["intent"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MANUAL RISKS (KIN-850)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Broker/admin-curated risk entries that complement the risks derived
+  // from property facts and file analysis findings. Stored separately so
+  // the risk-summary composer can aggregate three sources (property,
+  // file-analysis, manual) into one typed summary.
+
+  manualRisks: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    propertyId: v.id("properties"),
+    category: v.union(
+      v.literal("insurance"),
+      v.literal("structural"),
+      v.literal("title"),
+      v.literal("hoa"),
+      v.literal("flood"),
+      v.literal("compliance"),
+      v.literal("financial"),
+      v.literal("other"),
+    ),
+    severity: v.union(
+      v.literal("info"),
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("critical"),
+    ),
+    source: v.union(
+      v.literal("manual_broker"),
+      v.literal("manual_agent"),
+    ),
+    title: v.string(),
+    buyerSummary: v.string(),
+    internalDetail: v.string(),
+    confidence: v.number(),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_propertyId", ["propertyId"])
+    .index("by_createdBy", ["createdBy"]),
 });
