@@ -62,6 +62,19 @@
   --color-neutral-900: #0F172A;
   --color-neutral-950: #020617;
 
+  /* ── Semantic Colors (shadcn compatibility) ─────────────────────── */
+  --color-background: #FFFFFF;
+  --color-foreground: #0F172A;
+  --color-card: #FFFFFF;
+  --color-card-foreground: #0F172A;
+  --color-muted: #F1F5F9;
+  --color-muted-foreground: #64748B;
+  --color-border: #E2E8F0;
+  --color-input: #E2E8F0;
+  --color-ring: #3B4FE4;
+  --color-destructive: #EF4444;
+  --color-destructive-foreground: #FFFFFF;
+
   /* ── Typography ────────────────────────────────────────────────── */
   --font-sans: var(--font-inter), "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-jetbrains-mono), "Fira Code", monospace;
