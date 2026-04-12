@@ -128,12 +128,14 @@ export const checkAndRecord = mutation({
       .withIndex("by_throttleKey", (q) => q.eq("throttleKey", throttleKey))
       .unique();
 
-    // Track whether the previous bucket was blocked so we can emit a
-    // `block_lifted` event when a previously blocked bucket is now
-    // past its blockedUntil.
+    // Track whether the previous bucket HAD a block that has since
+    // expired, so we can emit a `block_lifted` event on the recovery
+    // transition. The predicate must be "had a blockedUntil AND it's
+    // now in the past" — if the block is still active, checkRateLimit
+    // returns allowed:false and we never hit the recovery branch.
     const previouslyBlocked =
-      existing?.blockedUntil &&
-      new Date(existing.blockedUntil).getTime() > now.getTime();
+      existing?.blockedUntil !== undefined &&
+      new Date(existing.blockedUntil).getTime() <= now.getTime();
 
     const bucketBefore: BucketSnapshot = existing
       ? toSnapshot(existing)
@@ -389,11 +391,53 @@ export const getBucketStatus = query({
       };
     }
 
-    // Re-run the pure check against the persisted snapshot. We pass
-    // the bucket through `checkRateLimit` but do NOT write the
-    // `nextBucket` back — this is read-only.
-    const { state } = checkRateLimit(toSnapshot(existing), args.channel, now);
-    return state;
+    // Peek at current state WITHOUT simulating a new request. If we
+    // handed the bucket to checkRateLimit, it would append a hypothetical
+    // request and report `maxRequests - count - 1` — inconsistent with
+    // the `neverSeen` branch above (which reports the full budget). So
+    // we inspect the persisted bucket directly and report the actual
+    // current remaining capacity.
+    const cutoff = now.getTime() - config.windowMs;
+    const activeTimestamps = existing.requestTimestamps.filter(
+      (ts) => new Date(ts).getTime() > cutoff
+    );
+    const currentCount = activeTimestamps.length;
+
+    // Block state takes priority over window state.
+    if (
+      existing.blockedUntil &&
+      new Date(existing.blockedUntil).getTime() > now.getTime()
+    ) {
+      return {
+        allowed: false as const,
+        blockedUntil: existing.blockedUntil,
+        reason: "block_active" as const,
+      };
+    }
+
+    if (currentCount >= config.maxRequests) {
+      // Sliding window is saturated — the next request would be denied
+      // but there's no stamped blockedUntil yet (that happens inside
+      // checkRateLimit on a real write path).
+      return {
+        allowed: false as const,
+        blockedUntil: new Date(
+          now.getTime() + config.baseBlockMs
+        ).toISOString(),
+        reason: "window_exceeded" as const,
+      };
+    }
+
+    // Room in the window — report what's left.
+    const oldestActive = activeTimestamps[0]
+      ? new Date(activeTimestamps[0]).getTime() + config.windowMs
+      : now.getTime() + config.windowMs;
+
+    return {
+      allowed: true as const,
+      remaining: config.maxRequests - currentCount,
+      resetAt: new Date(oldestActive).toISOString(),
+    };
   },
 });
 
