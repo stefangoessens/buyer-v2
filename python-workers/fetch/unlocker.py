@@ -194,10 +194,19 @@ class BrightDataUnlockerClient:
             self._http_client = httpx.AsyncClient()
         return self._http_client
 
-    async def _reserve_budget(self, request: FetchRequest) -> None:
+    async def _reserve_budget(self, request: FetchRequest) -> float:
+        """Pessimistically reserve the fallback cost before dispatch.
+
+        Returns the reserved amount, which must be passed to
+        :meth:`_reconcile_cost` (on success) or :meth:`_release_reserved`
+        (on failure) so the budget counter stays consistent. Reserving
+        inside the lock guarantees that N concurrent callers near the
+        cap cannot all observe the same ``projected`` and dispatch.
+        """
+        reserved = self._fallback_cost
         async with self._budget_lock:
             self._budget.reset_if_new_period()
-            projected = self._budget.monthly_spent_usd + self._fallback_cost
+            projected = self._budget.monthly_spent_usd + reserved
             if projected > self._monthly_budget_usd:
                 raise QuotaExceededError(
                     "Monthly Bright Data budget exhausted",
@@ -206,11 +215,25 @@ class BrightDataUnlockerClient:
                     url=request.url,
                     vendor=_VENDOR,
                 )
+            self._budget.monthly_spent_usd += reserved
+        return reserved
 
-    async def _record_cost(self, cost_usd: float) -> None:
+    async def _reconcile_cost(self, reserved: float, actual: float) -> None:
+        """Swap a prior reservation for the observed cost, inside the lock."""
         async with self._budget_lock:
             self._budget.reset_if_new_period()
-            self._budget.monthly_spent_usd += cost_usd
+            delta = actual - reserved
+            self._budget.monthly_spent_usd += delta
+            if self._budget.monthly_spent_usd < 0:
+                self._budget.monthly_spent_usd = 0.0
+
+    async def _release_reserved(self, reserved: float) -> None:
+        """Release a prior reservation, e.g. when dispatch fails."""
+        async with self._budget_lock:
+            self._budget.reset_if_new_period()
+            self._budget.monthly_spent_usd -= reserved
+            if self._budget.monthly_spent_usd < 0:
+                self._budget.monthly_spent_usd = 0.0
 
     async def fetch(self, request: FetchRequest) -> FetchResult:
         if not self._token:
@@ -230,7 +253,7 @@ class BrightDataUnlockerClient:
                 vendor=_VENDOR,
             )
 
-        await self._reserve_budget(request)
+        reserved = await self._reserve_budget(request)
         await self._rate_limiter.acquire()
 
         payload: dict[str, Any] = {
@@ -255,6 +278,7 @@ class BrightDataUnlockerClient:
                 timeout=request.timeout_s,
             )
         except httpx.TimeoutException as exc:
+            await self._release_reserved(reserved)
             raise TimeoutFetchError(
                 f"Bright Data request timed out after {request.timeout_s}s",
                 request_id=request.request_id,
@@ -263,6 +287,7 @@ class BrightDataUnlockerClient:
                 vendor=_VENDOR,
             ) from exc
         except httpx.TransportError as exc:
+            await self._release_reserved(reserved)
             raise TransientFetchError(
                 f"Bright Data transport error: {type(exc).__name__}",
                 request_id=request.request_id,
@@ -273,7 +298,7 @@ class BrightDataUnlockerClient:
 
         latency_ms = int((time.monotonic() - started) * 1000)
         cost_usd = self._extract_cost(response.headers)
-        await self._record_cost(cost_usd)
+        await self._reconcile_cost(reserved, cost_usd)
 
         self._raise_for_status(request, response)
 

@@ -189,6 +189,83 @@ class TestBrightDataUnlockerBudget:
             assert route.call_count == 0
         await client.aclose()
 
+    async def test_concurrent_reservations_enforce_hard_cap(self) -> None:
+        """Pessimistic reservation must block concurrent fetches past the cap.
+
+        Regression guard for the race where `_reserve_budget` only checked
+        projected spend without bumping the counter under the same lock,
+        letting N concurrent callers each pass the check and then each add
+        cost, blowing past the configured monthly budget.
+        """
+        import asyncio
+
+        fallback = 0.40
+        # Budget allows exactly 2 reservations (0.80), the 3rd/4th must fail.
+        client = _make_client(monthly_budget_usd=0.80, fallback_cost=fallback)
+
+        with respx.mock() as mock:
+            mock.post(_BASE_URL).mock(
+                return_value=success_response("<html>ok</html>", cost_usd=fallback)
+            )
+            results = await asyncio.gather(
+                client.fetch(_make_request()),
+                client.fetch(_make_request()),
+                client.fetch(_make_request()),
+                client.fetch(_make_request()),
+                return_exceptions=True,
+            )
+
+        successes = [r for r in results if isinstance(r, FetchResult)]
+        quota_errors = [r for r in results if isinstance(r, QuotaExceededError)]
+        other_errors = [
+            r
+            for r in results
+            if isinstance(r, BaseException) and not isinstance(r, QuotaExceededError)
+        ]
+
+        assert len(successes) == 2
+        assert len(quota_errors) == 2
+        assert other_errors == []
+        # Hard cap: monthly_spent_usd must never exceed the configured budget.
+        assert client.monthly_spent_usd <= 0.80 + 1e-9
+        assert client.monthly_spent_usd == pytest.approx(0.80)
+        await client.aclose()
+
+    async def test_failed_dispatch_releases_reservation(self) -> None:
+        """Transport errors must release the pre-dispatch reservation."""
+        client = _make_client(monthly_budget_usd=0.10, fallback_cost=0.05)
+
+        with respx.mock() as mock:
+            mock.post(_BASE_URL).mock(
+                side_effect=httpx.TimeoutException("read timeout")
+            )
+            with pytest.raises(TimeoutFetchError):
+                await client.fetch(_make_request())
+
+        # Reservation released → subsequent call can still succeed.
+        assert client.monthly_spent_usd == pytest.approx(0.0)
+        with respx.mock() as mock:
+            mock.post(_BASE_URL).mock(
+                return_value=success_response("<html>ok</html>", cost_usd=0.05)
+            )
+            await client.fetch(_make_request())
+        assert client.monthly_spent_usd == pytest.approx(0.05)
+        await client.aclose()
+
+    async def test_reconcile_swaps_reservation_for_actual_cost(self) -> None:
+        """Actual cost from response header must replace the reserved estimate."""
+        client = _make_client(fallback_cost=0.0015)
+
+        with respx.mock() as mock:
+            mock.post(_BASE_URL).mock(
+                return_value=success_response("<html>ok</html>", cost_usd=0.05)
+            )
+            await client.fetch(_make_request())
+
+        # Not 0.0515 (reservation + actual) — exactly actual.
+        assert client.monthly_spent_usd == pytest.approx(0.05)
+        await client.aclose()
+
     async def test_missing_token_raises_permanent(self) -> None:
         client = BrightDataUnlockerClient(
             token="",
