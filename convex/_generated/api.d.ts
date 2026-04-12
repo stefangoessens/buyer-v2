@@ -8,13 +8,25 @@
  * @module
  */
 
+import type * as health from "../health.js";
+import type * as lib_session from "../lib/session.js";
+import type * as lib_validators from "../lib/validators.js";
+import type * as properties from "../properties.js";
+import type * as users from "../users.js";
+
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 
-declare const fullApi: ApiFromModules<{}>;
+declare const fullApi: ApiFromModules<{
+  health: typeof health;
+  "lib/session": typeof lib_session;
+  "lib/validators": typeof lib_validators;
+  properties: typeof properties;
+  users: typeof users;
+}>;
 
 /**
  * A utility for referencing Convex functions in your app's public API.
