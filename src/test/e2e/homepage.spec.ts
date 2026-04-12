@@ -28,9 +28,7 @@ test.describe("Homepage", () => {
 
     // Features section
     await expect(
-      page
-        .getByText("AI-powered analysis")
-        .or(page.getByText("ai-powered"))
+      page.getByText("AI-powered analysis").first()
     ).toBeVisible();
   });
 
