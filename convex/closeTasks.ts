@@ -14,6 +14,27 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { requireAuth, requireRole } from "./lib/session";
 import { validateTransition } from "./lib/closeTasks";
 
+/**
+ * Strip internal-only fields from a task before returning it to a buyer.
+ * Buyers should never see internalNotes, blockedReason, ownerUserId, or
+ * contractId — even on tasks marked buyer_visible. This is the server-
+ * side choke point; the frontend can further project for display but
+ * must not rely on the client to strip secrets.
+ */
+function toBuyerSafeTask(task: Doc<"closeTasks">): Omit<
+  Doc<"closeTasks">,
+  "internalNotes" | "blockedReason" | "ownerUserId" | "contractId"
+> {
+  const {
+    internalNotes: _internalNotes,
+    blockedReason: _blockedReason,
+    ownerUserId: _ownerUserId,
+    contractId: _contractId,
+    ...rest
+  } = task;
+  return rest;
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Validators
 // ───────────────────────────────────────────────────────────────────────────
@@ -56,10 +77,11 @@ const closeTaskOwnerRoleValidator = v.union(
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * List close tasks for a deal room. Buyers see only buyer_visible rows;
- * broker/admin see everything. Returns rows in their raw shape — the
- * frontend applies projection via the shared pure helper so the same
- * code path runs in both tests and production.
+ * List close tasks for a deal room. Buyers see only buyer_visible rows
+ * AND get the buyer-safe projection (internal fields stripped server-
+ * side). Broker/admin see everything as-is. Stripping happens at the
+ * boundary — not in the frontend — so a buyer calling the Convex
+ * endpoint directly can never read internal notes.
  */
 export const listByDealRoom = query({
   args: {
@@ -96,15 +118,21 @@ export const listByDealRoom = query({
 
     const tasks = await query.collect();
 
-    // Filter buyer-visible only for buyer role.
+    // Buyer: filter to buyer_visible AND strip internal fields at the
+    // server boundary. The frontend never sees internalNotes or
+    // blockedReason on any buyer query, even on rows marked visible.
     if (user.role === "buyer") {
-      return tasks.filter((t) => t.visibility === "buyer_visible");
+      return tasks
+        .filter((t) => t.visibility === "buyer_visible")
+        .map(toBuyerSafeTask);
     }
+
+    // Broker/admin: return raw documents for the full internal view.
     return tasks;
   },
 });
 
-/** Get a single task by id with the same visibility rules. */
+/** Get a single task by id with the same visibility + projection rules. */
 export const getById = query({
   args: { taskId: v.id("closeTasks") },
   returns: v.union(v.null(), v.any()),
@@ -126,6 +154,11 @@ export const getById = query({
 
     if (user.role === "buyer" && task.visibility !== "buyer_visible") {
       return null;
+    }
+
+    // Buyer: strip internal fields before returning.
+    if (user.role === "buyer") {
+      return toBuyerSafeTask(task);
     }
 
     return task;
@@ -223,7 +256,11 @@ export const transitionStatus = mutation({
       status: args.newStatus,
       updatedAt: now,
     };
-    if (args.newStatus === "completed") {
+    // Only stamp completedAt on the FRESH transition from a non-completed
+    // state into completed. Repeated same-state "completed" calls (e.g.
+    // retries, webhook replays) must not overwrite the original
+    // completion time or downstream timeline / reporting logic breaks.
+    if (args.newStatus === "completed" && task.status !== "completed") {
       patch.completedAt = now;
     }
     if (args.newStatus === "blocked") {
