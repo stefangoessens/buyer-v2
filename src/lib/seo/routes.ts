@@ -86,6 +86,13 @@ export const SEO_ROUTES: SeoRoute[] = [
     priority: 0.7,
     changeFrequency: "monthly",
   },
+  {
+    path: "/blog",
+    visibility: "public",
+    kind: "marketing",
+    priority: 0.6,
+    changeFrequency: "weekly",
+  },
 
   // ─── Legal (public, indexable, low churn) ───────────────────────
   {
