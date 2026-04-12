@@ -27,9 +27,15 @@ export const requestTour = mutation({
       throw new Error("A signed Tour Pass agreement is required before requesting a tour");
     }
 
+    // Validate deal room belongs to this buyer
+    const dealRoom = await ctx.db.get(args.dealRoomId);
+    if (!dealRoom || dealRoom.buyerId !== user._id) {
+      throw new Error("Deal room not found or not owned by this buyer");
+    }
+
     const id = await ctx.db.insert("tours", {
       dealRoomId: args.dealRoomId,
-      propertyId: args.propertyId,
+      propertyId: dealRoom.propertyId,
       buyerId: user._id,
       status: "requested",
       scheduledAt: args.scheduledAt,
@@ -74,6 +80,22 @@ export const listByAgent = query({
       .query("tours")
       .withIndex("by_agentId_and_status", (q) => q.eq("agentId", args.agentId))
       .collect();
+  },
+});
+
+/** List unassigned requested tours (broker/admin — for assignment queue) */
+export const listUnassigned = query({
+  args: {},
+  returns: v.array(v.any()),
+  handler: async (ctx) => {
+    const user = await requireAuth(ctx);
+    if (user.role !== "broker" && user.role !== "admin") return [];
+
+    // Get all requested tours and filter for unassigned
+    const requested = await ctx.db
+      .query("tours")
+      .collect();
+    return requested.filter((t) => t.status === "requested" && !t.agentId);
   },
 });
 
