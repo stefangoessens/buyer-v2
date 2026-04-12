@@ -685,6 +685,59 @@ export default defineSchema({
     updatedAt: v.string(),
   }).index("by_userId", ["userId"]),
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VISITOR PRE-REGISTRATIONS (KIN-824)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Lightweight typed state for weekend open-house pre-registration.
+  // Explicitly distinct from the private-tour request flow (KIN-802) —
+  // visitor pre-registrations never create buyer representation
+  // agreements or dispatch showing agents. They're a top-of-funnel
+  // capture that can optionally convert into a deeper representation
+  // state via the `conversion` field.
+
+  visitorPreregistrations: defineTable({
+    propertyId: v.id("properties"),
+    eventStartAt: v.string(), // ISO-8601
+    eventEndAt: v.string(),   // ISO-8601
+
+    visitorName: v.string(),
+    visitorEmail: v.string(), // normalized lowercase
+    visitorPhone: v.optional(v.string()),
+
+    partySize: v.number(),
+    visitorNote: v.optional(v.string()),
+
+    status: v.union(
+      v.literal("created"),
+      v.literal("reminded"),
+      v.literal("attended"),
+      v.literal("noShow"),
+      v.literal("converted"),
+      v.literal("canceled")
+    ),
+
+    // Set only when status === "converted"
+    conversion: v.optional(
+      v.object({
+        kind: v.union(
+          v.literal("buyer_agreement_signed"),
+          v.literal("private_tour_requested"),
+          v.literal("deal_room_created")
+        ),
+        targetRefId: v.string(),
+        convertedAt: v.string(),
+      })
+    ),
+
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_propertyId", ["propertyId"])
+    .index("by_visitorEmail", ["visitorEmail"])
+    .index("by_propertyId_and_visitorEmail", ["propertyId", "visitorEmail"])
+    .index("by_status", ["status"]),
+
   // ═══ OFFER ELIGIBILITY STATE (KIN-822) ═══
   //
   // Denormalized snapshot of whether a buyer can currently make an offer on a
