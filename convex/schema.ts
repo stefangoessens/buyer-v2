@@ -1581,4 +1581,68 @@ export default defineSchema({
     updatedAt: v.string(),
   })
     .index("by_buyerId", ["buyerId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUYER COPILOT (KIN-858)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // The copilot is a thin orchestrator that routes free-form buyer questions
+  // to the right specialized engine via an intent classifier. Conversation
+  // state is scoped per (buyer, deal room). Messages carry their intent,
+  // confidence, routing decision, and citations so the UI can render the
+  // lineage without replaying the classifier.
+
+  copilotConversations: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    buyerId: v.id("users"),
+    messageCount: v.number(),
+    lastMessageAt: v.string(),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_dealRoomId_and_buyerId", ["dealRoomId", "buyerId"])
+    .index("by_buyerId", ["buyerId"]),
+
+  copilotMessages: defineTable({
+    conversationId: v.id("copilotConversations"),
+    dealRoomId: v.id("dealRooms"),
+    role: v.union(
+      v.literal("buyer"),
+      v.literal("copilot"),
+      v.literal("system"),
+    ),
+    content: v.string(),
+    // Intent + confidence that routed this response. Only present on
+    // copilot/system messages (not on the raw buyer input that triggered
+    // the round trip).
+    intent: v.optional(
+      v.union(
+        v.literal("pricing"),
+        v.literal("comps"),
+        v.literal("costs"),
+        v.literal("leverage"),
+        v.literal("risks"),
+        v.literal("documents"),
+        v.literal("offer"),
+        v.literal("scheduling"),
+        v.literal("agreement"),
+        v.literal("other"),
+      ),
+    ),
+    intentConfidence: v.optional(v.number()),
+    intentMethod: v.optional(
+      v.union(v.literal("rule"), v.literal("llm"), v.literal("fallback")),
+    ),
+    engineKey: v.optional(v.string()),
+    engineOutputId: v.optional(v.id("aiEngineOutputs")),
+    citations: v.array(v.string()),
+    promptVersion: v.optional(v.string()),
+    // True when the response is a deterministic stub (engine output missing,
+    // scope refusal, etc.) rather than an LLM-generated answer.
+    stubbed: v.boolean(),
+    createdAt: v.string(),
+  })
+    .index("by_conversationId_and_createdAt", ["conversationId", "createdAt"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_intent", ["intent"]),
 });
