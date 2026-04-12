@@ -40,6 +40,11 @@ export async function generateMetadata({
     path: `/blog/${article.slug}`,
     visibility: "public",
     kind: "article",
+    // publishedAt is the ORIGINAL publication date — never changes
+    // after launch. lastModified is the most recent edit and may
+    // equal publishedAt for unedited articles. Passing both lets
+    // the builder emit distinct OG/JSON-LD fields.
+    publishedAt: article.publishedAt,
     lastModified: article.updatedAt,
     social: article.coverImage
       ? {
@@ -71,6 +76,7 @@ export default async function BlogArticlePage({
       path: `/blog/${article.slug}`,
       visibility: "public",
       kind: "article",
+      publishedAt: article.publishedAt,
       lastModified: article.updatedAt,
     },
     { articleAuthor: article.author.name }

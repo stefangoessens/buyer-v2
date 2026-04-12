@@ -201,8 +201,23 @@ export function buildMetadata(input: SeoInput): Metadata {
           alt: social.imageAlt,
         },
       ],
-      ...(input.lastModified && input.kind === "article"
-        ? { publishedTime: input.lastModified }
+      // Article OG time fields:
+      //   - publishedTime: original publication date (never changes)
+      //   - modifiedTime: most recent update (may equal publishedTime)
+      // Falls back to lastModified when publishedAt isn't supplied so
+      // existing legal/marketing pages keep working — for articles,
+      // routes MUST pass publishedAt explicitly.
+      ...(input.kind === "article"
+        ? {
+            ...(input.publishedAt || input.lastModified
+              ? {
+                  publishedTime: input.publishedAt ?? input.lastModified,
+                }
+              : {}),
+            ...(input.lastModified
+              ? { modifiedTime: input.lastModified }
+              : {}),
+          }
         : {}),
     },
     twitter: {
@@ -255,14 +270,20 @@ export function buildStructuredData(
       };
     }
     case "article": {
+      // Prefer explicit publishedAt for the original publication date
+      // (schema.org `datePublished`); fall back to lastModified only
+      // for legacy callers that haven't migrated yet. `dateModified`
+      // is always the latest edit timestamp.
+      const datePublished = input.publishedAt ?? input.lastModified;
+      const dateModified = input.lastModified ?? input.publishedAt;
       return {
         "@context": "https://schema.org",
         "@type": "Article",
         headline: input.title,
         description: input.description,
         url: canonical,
-        datePublished: input.lastModified,
-        dateModified: input.lastModified,
+        ...(datePublished ? { datePublished } : {}),
+        ...(dateModified ? { dateModified } : {}),
         author: {
           "@type": "Organization",
           name: extras.articleAuthor ?? DEFAULT_SITE_NAME,
