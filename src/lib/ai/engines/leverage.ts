@@ -113,7 +113,7 @@ export function computeLeverageScore(signals: LeverageSignal[]): number {
   for (const signal of signals) {
     const weight = signal.confidence;
     if (signal.direction === "bullish") {
-      score += Math.min(signal.delta * weight * 0.1, 15);
+      score += Math.min(Math.abs(signal.delta) * weight * 0.1, 15);
     } else if (signal.direction === "bearish") {
       score -= Math.min(Math.abs(signal.delta) * weight * 0.1, 15);
     }

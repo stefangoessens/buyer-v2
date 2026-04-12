@@ -21,6 +21,11 @@ export const runLeverageEngine = internalAction({
       daysOnMarket: property.daysOnMarket ?? 0,
       description: property.description,
       sqft: property.sqftLiving ?? 0,
+      neighborhoodMedianDom: property.neighborhoodMedianDom,
+      neighborhoodMedianPsf: property.neighborhoodMedianPsf,
+      wasRelisted: property.wasRelisted,
+      wasWithdrawn: property.wasWithdrawn,
+      wasPendingFellThrough: property.wasPendingFellThrough,
     };
 
     const result = analyzeLeverage(input);
