@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function NavHeader() {
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-neutral-200/60 bg-[#FCFBFF]">
+    <header className="sticky top-0 z-50 w-full border-b border-neutral-200/60 bg-[#EBF4FF]">
       <div className="mx-auto flex h-[84px] max-w-[1248px] items-center justify-between px-6 lg:px-8">
         <Link href="/" className="text-[18px] font-semibold tracking-tight text-primary-700">
           buyer-v2

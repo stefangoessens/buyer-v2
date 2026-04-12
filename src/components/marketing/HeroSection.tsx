@@ -7,7 +7,7 @@ interface HeroSectionProps {
 export function HeroSection({ children }: HeroSectionProps) {
   return (
     <section className="relative w-full bg-[#FCFBFF]">
-      <div className="mx-auto max-w-[1248px] px-6 pb-16 pt-10 lg:px-8 lg:pb-20 lg:pt-14">
+      <div className="mx-auto max-w-[1248px] px-6 pb-16 pt-4 lg:px-8 lg:pb-20 lg:pt-6">
         <div className="relative overflow-hidden rounded-[40px] shadow-sm ring-1 ring-neutral-200/40">
           <div className="pointer-events-none absolute inset-0" aria-hidden="true">
             <div className="absolute inset-0 bg-[linear-gradient(180deg,#EBF4FF_0%,#FFFFFF_100%)]" />
