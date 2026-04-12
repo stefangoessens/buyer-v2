@@ -72,11 +72,11 @@ export const submitUrl = mutation({
         };
       }
 
-      // Check for existing listing with this URL
+      // Check for existing listing with this URL (use .first() since duplicates possible)
       const existing = await ctx.db
         .query("sourceListings")
         .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", trimmed))
-        .unique();
+        .first();
 
       if (existing) {
         return {

@@ -18,9 +18,14 @@ function matchZillow(url: URL): PatternMatch | null {
   const zpidMatch = url.pathname.match(/(\d+)_zpid/);
   if (zpidMatch) {
     const addressMatch = url.pathname.match(/\/homedetails\/([^/]+)\//);
-    const addressHint = addressMatch
-      ? decodeURIComponent(addressMatch[1]).replace(/-/g, " ")
-      : null;
+    let addressHint: string | null = null;
+    if (addressMatch) {
+      try {
+        addressHint = decodeURIComponent(addressMatch[1]).replace(/-/g, " ");
+      } catch {
+        addressHint = addressMatch[1].replace(/-/g, " ");
+      }
+    }
     return { listingId: zpidMatch[1], addressHint };
   }
   return null;
