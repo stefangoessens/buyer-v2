@@ -59,8 +59,12 @@ function BentoCard({
           {description}
         </p>
       </div>
-      <div className={`relative w-full overflow-hidden rounded-b-[28px] bg-white ${imageAspectClassName}`}>
-        <Image src={src} alt={title} fill className="object-fill" sizes={sizes} />
+      <div className={`relative w-full overflow-hidden rounded-b-[28px] ${imageAspectClassName}`}>
+        <div className="absolute inset-0 p-8 md:p-10">
+          <div className="relative h-full w-full">
+            <Image src={src} alt={title} fill className="object-contain object-bottom" sizes={sizes} />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -82,7 +86,7 @@ export default function Home() {
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Why buyer-v2</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">How buyer-v2 works for you</h2>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">How buyer-v2 works for you</h2>
             <p className="mt-4 text-lg leading-relaxed text-neutral-500">From paste to close, we handle every step of your home buying journey with AI precision and human expertise.</p>
           </div>
           <div className="mt-14 grid grid-cols-1 gap-8 md:grid-cols-3">
@@ -94,7 +98,7 @@ export default function Home() {
       {/* ── Product Screenshot (full-width like PayFit hero) ──────── */}
       <section className="w-full bg-neutral-50 py-16 lg:py-20">
         <div className="mx-auto max-w-[1248px] px-6">
-          <div className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white shadow-xl">
+          <div className="overflow-hidden rounded-[24px] border border-neutral-200/80 bg-white shadow-lg">
             <Image
               src="/images/marketing/hero/product-dashboard.png"
               alt="buyer-v2 property analysis dashboard"
@@ -111,7 +115,7 @@ export default function Home() {
       <section className="w-full bg-white py-20 lg:py-28">
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">From analysis to closing, every step covered</h2>
+            <h2 className="text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">From analysis to closing, every step covered</h2>
           </div>
           <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-12">
             <BentoCard
@@ -171,7 +175,7 @@ export default function Home() {
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Simple process</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">Three steps to your best deal</h2>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">Three steps to your best deal</h2>
           </div>
           <div className="mt-16 grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-6">
             {steps.map((step) => (
@@ -197,7 +201,7 @@ export default function Home() {
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
             <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Social proof</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[40px] lg:leading-[1.2]">What buyers are saying</h2>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">What buyers are saying</h2>
           </div>
           <div className="mt-14 grid grid-cols-1 gap-8 md:grid-cols-3">
             {testimonials.map((t) => <TestimonialCard key={t.author} quote={t.quote} author={t.author} role={t.role} avatarSrc={t.avatarSrc} />)}
@@ -229,7 +233,7 @@ export default function Home() {
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:48px_48px]" />
         </div>
         <div className="relative mx-auto max-w-3xl px-6 text-center">
-          <h2 className="text-3xl font-semibold tracking-[-0.003em] text-white lg:text-[40px] lg:leading-[1.2]">Ready to find your Florida home?</h2>
+          <h2 className="text-3xl font-semibold tracking-[-0.003em] text-white lg:text-[41px] lg:leading-[1.2]">Ready to find your Florida home?</h2>
           <p className="mt-4 text-lg text-primary-100/80">Paste a listing link and get your free AI analysis in seconds. No sign-up required.</p>
           <div className="mt-8"><HeroInput /></div>
         </div>

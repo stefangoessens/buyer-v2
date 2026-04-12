@@ -15,7 +15,7 @@ function StarIcon({ className }: { className?: string }) {
 
 export function TrustBar({ stats }: TrustBarProps) {
   return (
-    <section className="w-full bg-neutral-50 py-8 lg:py-10">
+    <section className="w-full bg-white py-8 lg:py-10">
       <div className="mx-auto max-w-[1248px] px-6">
         {/* Stats row */}
         <div className="flex flex-wrap items-center justify-center gap-y-4 divide-neutral-200 sm:divide-x">
