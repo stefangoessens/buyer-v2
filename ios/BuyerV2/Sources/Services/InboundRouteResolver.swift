@@ -112,6 +112,27 @@ final class InboundRouteResolver {
         return .failure(.unsupportedScheme)
     }
 
+    /// Split a URL path into its segments, preserving empty subsequences
+    /// so `//tk_1` parses as `["", "tk_1"]` rather than `["tk_1"]`. This
+    /// is critical for safe parsing — collapsing empty segments would
+    /// make `buyerv2://task//tk_1` misparse as `dealRoomId == "tk_1"`,
+    /// sending users to the wrong destination instead of failing safely.
+    ///
+    /// The leading empty segment from the path's leading "/" is trimmed
+    /// so `/deal-room/abc` returns `["deal-room", "abc"]` and
+    /// `/task//tk_1` returns `["task", "", "tk_1"]`.
+    private static func splitPathSegments(_ path: String) -> [String] {
+        var segments = path
+            .split(separator: "/", omittingEmptySubsequences: false)
+            .map(String.init)
+        // Drop the leading empty created by a leading "/" — but keep
+        // interior empties as placeholders for missing segments.
+        if segments.first == "" {
+            segments.removeFirst()
+        }
+        return segments
+    }
+
     /// Parse `buyerv2://deal-room/<id>` style URLs.
     /// The host segment is the route kind, the first path segment is the ID.
     private static func parseCustomSchemeURL(
@@ -121,9 +142,7 @@ final class InboundRouteResolver {
             return .failure(.unsupportedScheme)
         }
 
-        let pathSegments = components.path
-            .split(separator: "/")
-            .map(String.init)
+        let pathSegments = splitPathSegments(components.path)
         let firstSegment = pathSegments.first
 
         switch host {
@@ -137,7 +156,10 @@ final class InboundRouteResolver {
                   !dealRoomId.isEmpty else {
                 return .failure(.missingField(name: "dealRoomId"))
             }
-            let taskId = pathSegments.dropFirst().first
+            // taskId is optional — but an explicit empty segment
+            // (e.g. `task/dr_1/`) still counts as "no taskId".
+            let rawTaskId = pathSegments.dropFirst().first
+            let taskId = rawTaskId?.isEmpty == true ? nil : rawTaskId
             return .success(.task(dealRoomId: dealRoomId, taskId: taskId))
         case "timeline":
             guard let dealRoomId = firstSegment, !dealRoomId.isEmpty else {
@@ -157,15 +179,14 @@ final class InboundRouteResolver {
     }
 
     /// Parse `https://buyerv2.com/deal-room/<id>` style paths.
-    /// Path is split by `/` and processed identically to the custom scheme.
+    /// Path is split by `/` preserving empty segments and processed
+    /// identically to the custom scheme.
     private static func parseHTTPSPath(
         _ path: String
     ) -> Result<InboundRoute, InvalidTargetReason> {
-        let segments = path
-            .split(separator: "/")
-            .map(String.init)
+        let segments = splitPathSegments(path)
 
-        guard let first = segments.first else {
+        guard let first = segments.first, !first.isEmpty else {
             return .success(.home)
         }
 
@@ -180,7 +201,8 @@ final class InboundRouteResolver {
                   !dealRoomId.isEmpty else {
                 return .failure(.missingField(name: "dealRoomId"))
             }
-            let taskId = segments.dropFirst(2).first
+            let rawTaskId = segments.dropFirst(2).first
+            let taskId = rawTaskId?.isEmpty == true ? nil : rawTaskId
             return .success(.task(dealRoomId: dealRoomId, taskId: taskId))
         case "timeline":
             guard let dealRoomId = segments.dropFirst().first,

@@ -155,6 +155,62 @@ struct InboundRouteResolverTests {
         #expect(name == "dealRoomId")
     }
 
+    // MARK: - Empty segment safety (codex P2 fix)
+
+    @Test("buyerv2://task//tk_1 with empty dealRoomId segment fails with .missingField — not misparsed as dealRoomId=tk_1")
+    func testCustomSchemeTaskEmptyDealRoomSegment() {
+        // Regression guard: previously, split(separator:) collapsed empty
+        // subsequences, so `//tk_1` was misparsed as `tk_1` being the
+        // dealRoomId. Now we preserve empties and fail safely.
+        let payload = InboundRoutePayload(url: "buyerv2://task//tk_1")
+        guard case .failure(.missingField(let name)) = InboundRouteResolver.parseRoute(
+            from: payload
+        ) else {
+            Issue.record("Expected .missingField for empty dealRoomId")
+            return
+        }
+        #expect(name == "dealRoomId")
+    }
+
+    @Test("https://buyerv2.com/task//tk_1 also fails safely")
+    func testHTTPSTaskEmptyDealRoomSegment() {
+        let payload = InboundRoutePayload(
+            url: "https://buyerv2.com/task//tk_1"
+        )
+        guard case .failure(.missingField(let name)) = InboundRouteResolver.parseRoute(
+            from: payload
+        ) else {
+            Issue.record("Expected .missingField for empty dealRoomId")
+            return
+        }
+        #expect(name == "dealRoomId")
+    }
+
+    @Test("buyerv2://deal-room// with empty id fails with .missingField")
+    func testCustomSchemeDealRoomEmptySegment() {
+        let payload = InboundRoutePayload(url: "buyerv2://deal-room/")
+        guard case .failure(.missingField(let name)) = InboundRouteResolver.parseRoute(
+            from: payload
+        ) else {
+            Issue.record("Expected .missingField")
+            return
+        }
+        #expect(name == "dealRoomId")
+    }
+
+    @Test("buyerv2://task/dr_123/ with trailing slash still parses as taskId=nil")
+    func testCustomSchemeTaskTrailingSlash() {
+        // A trailing slash after dealRoomId should not poison the parse.
+        // The interior empty segment means "no taskId", not a broken route.
+        let payload = InboundRoutePayload(url: "buyerv2://task/dr_123/")
+        guard case .success(let route) = InboundRouteResolver.parseRoute(from: payload)
+        else {
+            Issue.record("Expected success for trailing-slash task URL")
+            return
+        }
+        #expect(route == .task(dealRoomId: "dr_123", taskId: nil))
+    }
+
     // MARK: - HTTPS universal links
 
     @Test("parses https://buyerv2.com/deal-room/<id> as .dealRoom")
