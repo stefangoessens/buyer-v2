@@ -1059,6 +1059,74 @@ export default defineSchema({
     .index("by_status", ["status"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // CONTRACT MILESTONES (KIN-806)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Extracted closing milestones for a contract — inspection period end,
+  // financing contingency, title review, appraisal, insurance binder, HOA
+  // docs, walkthrough, closing. Stored in a separate table (not embedded in
+  // the contracts row) so individual milestones can be updated, flagged for
+  // review, and queried independently.
+  //
+  // `confidence` + `flaggedForReview` let the ops review queue pick up
+  // unclear extractions without blocking the happy path. `source` tracks
+  // whether the milestone was auto-parsed from contract text or manually
+  // added by an internal user.
+
+  contractMilestones: defineTable({
+    contractId: v.id("contracts"),
+    dealRoomId: v.id("dealRooms"),
+    name: v.string(),
+    workstream: v.union(
+      v.literal("inspection"),
+      v.literal("financing"),
+      v.literal("appraisal"),
+      v.literal("title"),
+      v.literal("insurance"),
+      v.literal("escrow"),
+      v.literal("hoa"),
+      v.literal("walkthrough"),
+      v.literal("closing"),
+      v.literal("other"),
+    ),
+    dueDate: v.string(), // ISO YYYY-MM-DD
+    status: v.union(
+      v.literal("pending"),
+      v.literal("completed"),
+      v.literal("overdue"),
+      v.literal("needs_review"),
+    ),
+    completedAt: v.optional(v.string()),
+    completedBy: v.optional(v.id("users")),
+    source: v.union(
+      v.literal("auto_extracted"),
+      v.literal("manual"),
+      v.literal("amended"),
+    ),
+    confidence: v.number(), // 0..1
+    flaggedForReview: v.boolean(),
+    reviewReason: v.optional(
+      v.union(
+        v.literal("low_confidence"),
+        v.literal("ambiguous_date"),
+        v.literal("missing_required"),
+        v.literal("date_in_past"),
+        v.literal("manual_flag"),
+      ),
+    ),
+    resolvedAt: v.optional(v.string()),
+    resolvedBy: v.optional(v.id("users")),
+    linkedClauseText: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_contractId", ["contractId"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_contractId_and_status", ["contractId", "status"])
+    .index("by_flaggedForReview", ["flaggedForReview"])
+    .index("by_workstream", ["workstream"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // SMS INTAKE (KIN-776)
   // ═══════════════════════════════════════════════════════════════════════════
   //
