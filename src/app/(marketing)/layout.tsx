@@ -1,3 +1,6 @@
+import { NavHeader } from "@/components/marketing/NavHeader";
+import { Footer } from "@/components/marketing/Footer";
+
 export default function MarketingLayout({
   children,
 }: {
@@ -5,9 +8,9 @@ export default function MarketingLayout({
 }) {
   return (
     <div className="min-h-screen">
-      {/* Marketing header/nav will be added by KIN-771 */}
+      <NavHeader />
       <main>{children}</main>
-      {/* Marketing footer will be added by KIN-771 */}
+      <Footer />
     </div>
   );
 }
