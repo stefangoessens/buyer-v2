@@ -294,6 +294,112 @@ export const buyerEventResolvedBy = v.union(
   v.literal("broker")
 );
 
+// Typed buyer update event state. This is the backend source of truth;
+// channel-specific rendering consumes read models derived from this union.
+export const buyerEventState = v.union(
+  v.object({
+    kind: v.literal("tour_confirmed"),
+    referenceId: v.string(),
+    scheduledStartAt: v.optional(v.string()),
+  }),
+  v.object({
+    kind: v.literal("tour_canceled"),
+    referenceId: v.string(),
+    canceledAt: v.optional(v.string()),
+    reasonCode: v.optional(v.string()),
+  }),
+  v.object({
+    kind: v.literal("tour_reminder"),
+    referenceId: v.string(),
+    scheduledStartAt: v.optional(v.string()),
+  }),
+  v.object({
+    kind: v.literal("agent_assigned"),
+    referenceId: v.string(),
+    agentName: v.optional(v.string()),
+  }),
+  v.object({
+    kind: v.literal("offer_countered"),
+    referenceId: v.string(),
+    amountCents: v.optional(v.number()),
+  }),
+  v.object({
+    kind: v.literal("offer_accepted"),
+    referenceId: v.string(),
+    amountCents: v.optional(v.number()),
+  }),
+  v.object({
+    kind: v.literal("offer_rejected"),
+    referenceId: v.string(),
+    amountCents: v.optional(v.number()),
+  }),
+  v.object({
+    kind: v.literal("agreement_received"),
+    referenceId: v.string(),
+    agreementType: v.optional(
+      v.union(v.literal("tour_pass"), v.literal("full_representation")),
+    ),
+  }),
+  v.object({
+    kind: v.literal("agreement_signed_reminder"),
+    referenceId: v.string(),
+    agreementType: v.optional(
+      v.union(v.literal("tour_pass"), v.literal("full_representation")),
+    ),
+    dueAt: v.optional(v.string()),
+  }),
+  v.object({
+    kind: v.literal("document_ready"),
+    referenceId: v.string(),
+    documentType: v.optional(
+      v.union(
+        v.literal("agreement"),
+        v.literal("disclosure"),
+        v.literal("closing"),
+        v.literal("other"),
+      ),
+    ),
+  }),
+  v.object({
+    kind: v.literal("milestone_upcoming"),
+    referenceId: v.string(),
+    milestoneName: v.optional(v.string()),
+    dueAt: v.optional(v.string()),
+  }),
+  v.object({
+    kind: v.literal("price_changed"),
+    referenceId: v.string(),
+    previousPriceCents: v.optional(v.number()),
+    currentPriceCents: v.optional(v.number()),
+  }),
+  v.object({
+    kind: v.literal("new_comp_arrived"),
+    referenceId: v.string(),
+    compCount: v.optional(v.number()),
+  }),
+  v.object({
+    kind: v.literal("ai_analysis_ready"),
+    referenceId: v.string(),
+    analysisType: v.optional(
+      v.union(
+        v.literal("pricing"),
+        v.literal("leverage"),
+        v.literal("offer"),
+        v.literal("cost"),
+        v.literal("case_synthesis"),
+        v.literal("other"),
+      ),
+    ),
+  }),
+  v.object({
+    kind: v.literal("broker_message"),
+    referenceId: v.string(),
+    senderRole: v.optional(
+      v.union(v.literal("broker"), v.literal("agent"), v.literal("system")),
+    ),
+  }),
+);
+
 // ─── Lender Credit Validation (KIN-838) ────────────────────────────────────
 
 // Lender credit validation outcome — tri-state so review_required cases are

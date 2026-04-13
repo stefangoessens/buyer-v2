@@ -7,6 +7,7 @@ import {
   availabilityStatus,
   buyerEventPriority,
   buyerEventResolvedBy,
+  buyerEventState,
   buyerEventStatus,
   buyerEventType,
   communicationChannel,
@@ -954,9 +955,13 @@ export default defineSchema({
     dealRoomId: v.id("dealRooms"),
     // Machine-readable event type — see convex/lib/validators.ts.
     eventType: buyerEventType,
-    // Human-readable title rendered to the buyer.
+    // Canonical typed state. New writes persist this and derive any
+    // channel-specific or UI-specific summaries from it.
+    state: v.optional(buyerEventState),
+    // Legacy denormalized summary label. New writes still populate it so
+    // older readers keep working during the transition to shared read models.
     title: v.string(),
-    // Optional body / context string.
+    // Legacy denormalized detail string for backward compatibility.
     body: v.optional(v.string()),
     // Deduplication key — events with the same key for the same (buyer,
     // dealRoom) are coalesced. Example: "tour_confirmed:tour_123".

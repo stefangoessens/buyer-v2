@@ -1,91 +1,29 @@
-import { query, mutation, internalMutation } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
 import {
   buyerEventPriority,
   buyerEventResolvedBy,
+  buyerEventState,
   buyerEventStatus,
   buyerEventType,
 } from "./lib/validators";
 import {
-  compareEventsForDisplay,
+  applyBuyerEventEmission,
+  applyBuyerEventResolution,
+  composeBuyerEventFeed,
   defaultPriorityFor,
   makeDedupeKey,
+  summarizeBuyerEventState,
+  type BuyerEventResolvedBy,
+  type BuyerEventState,
+  type BuyerEventFeedReadModel,
+  type BuyerEventStorageRecord,
   type BuyerEventType,
 } from "./lib/buyerEvents";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Buyer Update Events (KIN-837)
-//
-// Typed event records used to surface updates to buyers — tour confirmed,
-// offer countered, new comp arrived, etc. Events are kept separate from
-// channel-specific rendering (email / push / SMS) so any delivery surface
-// can consume them without coupling to the decision logic that emits them.
-//
-// Public surface:
-//   QUERIES
-//     - getPendingForBuyer: live events for the current buyer (or any buyer,
-//       if a broker/admin calls it on behalf of someone)
-//     - getForDealRoom: events for a specific deal room, optionally filtered
-//       by status
-//     - getByBuyerId: broker/admin helper — all events for a buyer across
-//       all deal rooms
-//   MUTATIONS
-//     - emit: broker/admin path to emit a new event with dedupe
-//     - markSeen: buyer marks their own event as seen
-//     - resolve: buyer or broker marks an event resolved
-//   INTERNAL
-//     - emitInternal: same as emit but no auth check, for use by other
-//       Convex functions (agreements, tours, offers, comps emitters)
-//
-// Every mutation writes an auditLog entry. Dedupe behavior is driven by the
-// pure helper in `convex/lib/buyerEvents.ts` so the same decision runs from
-// every call site.
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ─── Shared validators ─────────────────────────────────────────────────────
-
-/**
- * Full buyer update event row validator — shared between query returns
- * and mutation returns so callers can rely on a single shape. Includes
- * the Convex system fields.
- */
-const buyerEventDocValidator = v.object({
-  _id: v.id("buyerUpdateEvents"),
-  _creationTime: v.number(),
-  buyerId: v.id("users"),
-  dealRoomId: v.id("dealRooms"),
-  eventType: buyerEventType,
-  title: v.string(),
-  body: v.optional(v.string()),
-  dedupeKey: v.string(),
-  status: buyerEventStatus,
-  priority: buyerEventPriority,
-  context: v.optional(
-    v.object({
-      tourId: v.optional(v.id("tours")),
-      offerId: v.optional(v.id("offers")),
-      contractId: v.optional(v.id("contracts")),
-      propertyId: v.optional(v.id("properties")),
-      linkUrl: v.optional(v.string()),
-      extra: v.optional(v.string()),
-    })
-  ),
-  emittedAt: v.string(),
-  resolvedAt: v.optional(v.string()),
-  resolvedBy: v.optional(buyerEventResolvedBy),
-  dedupeCount: v.number(),
-  lastDedupedAt: v.optional(v.string()),
-  createdAt: v.string(),
-  updatedAt: v.string(),
-});
-
-/**
- * Optional context argument validator for emit-style mutations. Matches
- * the shape of the stored `context` field.
- */
 const emitContextValidator = v.optional(
   v.object({
     tourId: v.optional(v.id("tours")),
@@ -94,18 +32,53 @@ const emitContextValidator = v.optional(
     propertyId: v.optional(v.id("properties")),
     linkUrl: v.optional(v.string()),
     extra: v.optional(v.string()),
-  })
+  }),
 );
 
-// ─── Internal emit core ────────────────────────────────────────────────────
+const buyerEventReadModelValidator = v.object({
+  id: v.id("buyerUpdateEvents"),
+  buyerId: v.id("users"),
+  dealRoomId: v.id("dealRooms"),
+  eventType: buyerEventType,
+  state: buyerEventState,
+  summary: v.object({
+    label: v.string(),
+    detailItems: v.array(
+      v.object({
+        key: v.string(),
+        value: v.string(),
+      }),
+    ),
+  }),
+  lifecycle: v.object({
+    status: buyerEventStatus,
+    isLive: v.boolean(),
+    emittedAt: v.string(),
+    resolvedAt: v.optional(v.string()),
+    resolvedBy: v.optional(buyerEventResolvedBy),
+  }),
+  delivery: v.object({
+    priority: buyerEventPriority,
+    dedupeKey: v.string(),
+    dedupeCount: v.number(),
+    lastDedupedAt: v.optional(v.string()),
+  }),
+});
+
+const buyerEventFeedValidator = v.object({
+  items: v.array(buyerEventReadModelValidator),
+  counts: v.object({
+    total: v.number(),
+    live: v.number(),
+    resolved: v.number(),
+    superseded: v.number(),
+  }),
+});
 
 interface EmitInternalArgs {
   buyerId: Id<"users">;
   dealRoomId: Id<"dealRooms">;
-  eventType: BuyerEventType;
-  title: string;
-  body?: string;
-  referenceId: string;
+  state: BuyerEventState;
   priority?: "low" | "normal" | "high";
   context?: {
     tourId?: Id<"tours">;
@@ -118,21 +91,12 @@ interface EmitInternalArgs {
   actorUserId: Id<"users"> | null;
 }
 
-/**
- * Emit core — used by both the public `emit` mutation and the internal
- * `emitInternal` variant. Returns the event id (either fresh-inserted
- * or bumped existing) plus a flag for auditing.
- */
 async function emitCore(
   ctx: MutationCtx,
-  args: EmitInternalArgs
+  args: EmitInternalArgs,
 ): Promise<{ id: Id<"buyerUpdateEvents">; bumped: boolean }> {
   const now = new Date().toISOString();
-  const dedupeKey = makeDedupeKey(args.eventType, args.referenceId);
-  const priority = args.priority ?? defaultPriorityFor(args.eventType);
 
-  // Validate the deal room exists and matches the buyer — guards against
-  // callers emitting events into mismatched pairs.
   const dealRoom = await ctx.db.get(args.dealRoomId);
   if (!dealRoom) {
     throw new Error("Deal room not found");
@@ -141,49 +105,52 @@ async function emitCore(
     throw new Error("Deal room does not belong to this buyer");
   }
 
-  // Look for an existing record with the same dedupe key for this buyer
-  // and deal room. The compound index makes this an O(1) lookup.
+  const dedupeKey = makeDedupeKey(args.state.kind, args.state.referenceId);
   const existing = await ctx.db
     .query("buyerUpdateEvents")
     .withIndex("by_buyerId_and_dealRoomId_and_dedupeKey", (q) =>
       q
         .eq("buyerId", args.buyerId)
         .eq("dealRoomId", args.dealRoomId)
-        .eq("dedupeKey", dedupeKey)
+        .eq("dedupeKey", dedupeKey),
     )
     .unique();
 
-  if (existing) {
-    // Bump path — coalesce into the existing row.
-    //
-    // Preserve existing payload fields when the caller omits them, so
-    // a lightweight re-emit (e.g. just refreshing the title for a
-    // reminder) doesn't wipe previously stored body/context/linkUrl.
-    // Patched fields are only overwritten when the caller supplies a
-    // non-undefined value.
-    //
-    // Also refresh `emittedAt` so the bumped event sorts back to the
-    // top of buyer queues — display ordering is by emittedAt desc, so
-    // a stale timestamp would bury a re-surfaced update.
-    const nextCount = existing.dedupeCount + 1;
+  const decision = applyBuyerEventEmission(
+    existing ? toStorageRecord(existing) : null,
+    {
+      buyerId: args.buyerId,
+      dealRoomId: args.dealRoomId,
+      state: args.state,
+      priority: args.priority,
+      now,
+    },
+  );
 
+  if (decision.action === "ignore") {
+    return { id: existing!._id, bumped: false };
+  }
+
+  const summary = summarizeBuyerEventState(decision.record.state);
+  const legacyBody = summarizeLegacyBody(summary.detailItems);
+
+  if (decision.action === "bump" && existing) {
     const patch: Partial<Doc<"buyerUpdateEvents">> = {
-      title: args.title,
-      priority,
-      dedupeCount: nextCount,
-      lastDedupedAt: now,
-      emittedAt: now,
-      // Resurrect resolved / superseded rows so re-emits re-surface the
-      // event. A buyer that dismissed "tour reminder" and then the agent
-      // reschedules should see the event again.
-      status: "pending" as const,
-      resolvedAt: undefined,
-      resolvedBy: undefined,
-      updatedAt: now,
+      eventType: decision.record.eventType,
+      state: decision.record.state,
+      title: summary.label,
+      body: legacyBody,
+      dedupeKey: decision.record.dedupeKey,
+      status: decision.record.status,
+      priority: decision.record.priority,
+      emittedAt: decision.record.emittedAt,
+      resolvedAt: decision.record.resolvedAt,
+      resolvedBy: decision.record.resolvedBy,
+      dedupeCount: decision.record.dedupeCount,
+      lastDedupedAt: decision.record.lastDedupedAt,
+      updatedAt: decision.record.updatedAt,
     };
-    if (args.body !== undefined) {
-      patch.body = args.body;
-    }
+
     if (args.context !== undefined) {
       patch.context = args.context;
     }
@@ -198,9 +165,9 @@ async function emitCore(
       details: JSON.stringify({
         buyerId: args.buyerId,
         dealRoomId: args.dealRoomId,
-        eventType: args.eventType,
-        dedupeKey,
-        dedupeCount: nextCount,
+        eventType: decision.record.eventType,
+        dedupeKey: decision.record.dedupeKey,
+        dedupeCount: decision.record.dedupeCount,
       }),
       timestamp: now,
     });
@@ -208,21 +175,22 @@ async function emitCore(
     return { id: existing._id, bumped: true };
   }
 
-  // Fresh insert path.
   const id = await ctx.db.insert("buyerUpdateEvents", {
     buyerId: args.buyerId,
     dealRoomId: args.dealRoomId,
-    eventType: args.eventType,
-    title: args.title,
-    body: args.body,
-    dedupeKey,
-    status: "pending" as const,
-    priority,
+    eventType: decision.record.eventType,
+    state: decision.record.state,
+    title: summary.label,
+    body: legacyBody,
+    dedupeKey: decision.record.dedupeKey,
+    status: decision.record.status,
+    priority:
+      decision.record.priority ?? defaultPriorityFor(decision.record.eventType),
     context: args.context,
-    emittedAt: now,
-    dedupeCount: 1,
-    createdAt: now,
-    updatedAt: now,
+    emittedAt: decision.record.emittedAt,
+    dedupeCount: decision.record.dedupeCount,
+    createdAt: decision.record.createdAt,
+    updatedAt: decision.record.updatedAt,
   });
 
   await ctx.db.insert("auditLog", {
@@ -233,9 +201,9 @@ async function emitCore(
     details: JSON.stringify({
       buyerId: args.buyerId,
       dealRoomId: args.dealRoomId,
-      eventType: args.eventType,
-      dedupeKey,
-      priority,
+      eventType: decision.record.eventType,
+      dedupeKey: decision.record.dedupeKey,
+      priority: decision.record.priority,
     }),
     timestamp: now,
   });
@@ -243,26 +211,15 @@ async function emitCore(
   return { id, bumped: false };
 }
 
-// ═══ QUERIES ═══
-
-/**
- * Get all pending (or pending + seen) events for a buyer. Buyers may read
- * their own; broker/admin may read any. When `buyerId` is omitted we
- * resolve it from the authenticated session.
- *
- * Returns events ordered by priority (high → low) then by most recent
- * `emittedAt` first, using the shared compare helper.
- */
 export const getPendingForBuyer = query({
   args: {
     buyerId: v.optional(v.id("users")),
   },
-  returns: v.array(buyerEventDocValidator),
+  returns: buyerEventFeedValidator,
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     const targetBuyerId = args.buyerId ?? user._id;
 
-    // Only buyers-reading-themselves or staff can access.
     const isSelf = user._id === targetBuyerId;
     const isStaff = user.role === "broker" || user.role === "admin";
     if (!isSelf && !isStaff) {
@@ -272,40 +229,27 @@ export const getPendingForBuyer = query({
     const pending = await ctx.db
       .query("buyerUpdateEvents")
       .withIndex("by_buyerId_and_status", (q) =>
-        q.eq("buyerId", targetBuyerId).eq("status", "pending")
+        q.eq("buyerId", targetBuyerId).eq("status", "pending"),
       )
       .collect();
 
     const seen = await ctx.db
       .query("buyerUpdateEvents")
       .withIndex("by_buyerId_and_status", (q) =>
-        q.eq("buyerId", targetBuyerId).eq("status", "seen")
+        q.eq("buyerId", targetBuyerId).eq("status", "seen"),
       )
       .collect();
 
-    // Merge both live statuses and sort with the shared comparator so
-    // the UI and backend agree on ordering.
-    const live: Doc<"buyerUpdateEvents">[] = [...pending, ...seen];
-    live.sort((a, b) =>
-      compareEventsForDisplay(
-        { priority: a.priority, emittedAt: a.emittedAt },
-        { priority: b.priority, emittedAt: b.emittedAt }
-      )
-    );
-    return live;
+    return toFeedResult([...pending, ...seen]);
   },
 });
 
-/**
- * Get events for a specific deal room, optionally filtered by status.
- * Buyers may only read rooms that belong to them.
- */
 export const getForDealRoom = query({
   args: {
     dealRoomId: v.id("dealRooms"),
     status: v.optional(buyerEventStatus),
   },
-  returns: v.array(buyerEventDocValidator),
+  returns: buyerEventFeedValidator,
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
 
@@ -320,43 +264,29 @@ export const getForDealRoom = query({
       throw new Error("Not authorized to read events for this deal room");
     }
 
-    let rows: Doc<"buyerUpdateEvents">[];
-    if (args.status) {
-      rows = await ctx.db
-        .query("buyerUpdateEvents")
-        .withIndex("by_dealRoomId_and_status", (q) =>
-          q.eq("dealRoomId", args.dealRoomId).eq("status", args.status!)
-        )
-        .collect();
-    } else {
-      rows = await ctx.db
-        .query("buyerUpdateEvents")
-        .withIndex("by_dealRoomId_and_status", (q) =>
-          q.eq("dealRoomId", args.dealRoomId)
-        )
-        .collect();
-    }
+    const rows = args.status
+      ? await ctx.db
+          .query("buyerUpdateEvents")
+          .withIndex("by_dealRoomId_and_status", (q) =>
+            q.eq("dealRoomId", args.dealRoomId).eq("status", args.status!),
+          )
+          .collect()
+      : await ctx.db
+          .query("buyerUpdateEvents")
+          .withIndex("by_dealRoomId_and_status", (q) =>
+            q.eq("dealRoomId", args.dealRoomId),
+          )
+          .collect();
 
-    rows.sort((a, b) =>
-      compareEventsForDisplay(
-        { priority: a.priority, emittedAt: a.emittedAt },
-        { priority: b.priority, emittedAt: b.emittedAt }
-      )
-    );
-    return rows;
+    return toFeedResult(rows);
   },
 });
 
-/**
- * Broker/admin helper — all events for a buyer across every deal room,
- * ordered by most recent first. Used by the broker console for a
- * per-buyer inbox view. Buyers may read their own history.
- */
 export const getByBuyerId = query({
   args: {
     buyerId: v.id("users"),
   },
-  returns: v.array(buyerEventDocValidator),
+  returns: buyerEventFeedValidator,
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     const isSelf = user._id === args.buyerId;
@@ -367,30 +297,19 @@ export const getByBuyerId = query({
 
     const rows = await ctx.db
       .query("buyerUpdateEvents")
-      .withIndex("by_buyerId_and_emittedAt", (q) =>
-        q.eq("buyerId", args.buyerId)
-      )
+      .withIndex("by_buyerId_and_emittedAt", (q) => q.eq("buyerId", args.buyerId))
       .order("desc")
       .collect();
-    return rows;
+
+    return toFeedResult(rows);
   },
 });
 
-// ═══ MUTATIONS ═══
-
-/**
- * Public emit path — broker/admin only. Computes the dedupe key from
- * eventType + referenceId, then either bumps the existing row or inserts
- * a fresh one. Returns the event id in both cases.
- */
 export const emit = mutation({
   args: {
     buyerId: v.id("users"),
     dealRoomId: v.id("dealRooms"),
-    eventType: buyerEventType,
-    title: v.string(),
-    body: v.optional(v.string()),
-    referenceId: v.string(),
+    state: buyerEventState,
     priority: v.optional(buyerEventPriority),
     context: emitContextValidator,
   },
@@ -409,11 +328,6 @@ export const emit = mutation({
   },
 });
 
-/**
- * Buyer marks an event as seen. Buyers can only mark their own events;
- * staff can mark on behalf of a buyer. Does nothing if the event is
- * already seen / resolved / superseded (idempotent).
- */
 export const markSeen = mutation({
   args: {
     eventId: v.id("buyerUpdateEvents"),
@@ -432,7 +346,6 @@ export const markSeen = mutation({
       throw new Error("Not authorized to mark this event seen");
     }
 
-    // Idempotent — already past "pending" stays where it is.
     if (event.status !== "pending") {
       return null;
     }
@@ -460,12 +373,6 @@ export const markSeen = mutation({
   },
 });
 
-/**
- * Mark an event resolved. `resolvedBy` distinguishes between self-dismissal
- * ("buyer"), an auto-resolver ("system"), and a broker clearing the event
- * on behalf of the buyer ("broker"). Idempotent: resolving an already
- * resolved event is a no-op.
- */
 export const resolve = mutation({
   args: {
     eventId: v.id("buyerUpdateEvents"),
@@ -483,29 +390,33 @@ export const resolve = mutation({
     const isStaff = user.role === "broker" || user.role === "admin";
 
     if (args.resolvedBy === "buyer") {
-      // A buyer resolution must come from the buyer themselves or from
-      // staff acting on their behalf.
       if (!isOwner && !isStaff) {
         throw new Error("Not authorized to resolve this event");
       }
-    } else {
-      // A broker resolution can only be recorded by staff.
-      if (!isStaff) {
-        throw new Error("Only brokers and admins can resolve as 'broker'");
-      }
-    }
-
-    // Idempotent.
-    if (event.status === "resolved" || event.status === "superseded") {
-      return null;
+    } else if (!isStaff) {
+      throw new Error("Only brokers and admins can resolve as 'broker'");
     }
 
     const now = new Date().toISOString();
+    const next = applyBuyerEventResolution(
+      toStorageRecord(event),
+      args.resolvedBy as BuyerEventResolvedBy,
+      now,
+    );
+
+    if (
+      next.status === event.status &&
+      next.resolvedAt === event.resolvedAt &&
+      next.resolvedBy === event.resolvedBy
+    ) {
+      return null;
+    }
+
     await ctx.db.patch(event._id, {
-      status: "resolved" as const,
-      resolvedAt: now,
-      resolvedBy: args.resolvedBy,
-      updatedAt: now,
+      status: next.status,
+      resolvedAt: next.resolvedAt,
+      resolvedBy: next.resolvedBy,
+      updatedAt: next.updatedAt,
     });
 
     await ctx.db.insert("auditLog", {
@@ -526,23 +437,11 @@ export const resolve = mutation({
   },
 });
 
-// ═══ INTERNAL MUTATIONS ═══
-
-/**
- * Internal emit — no auth check. Called by other Convex modules (the
- * agreements lifecycle, tour coordination, offer engine, comp emitter)
- * when they need to surface a buyer-facing event as part of their own
- * already-authorized mutation. `actorUserId` is recorded in the audit
- * log for provenance.
- */
 export const emitInternal = internalMutation({
   args: {
     buyerId: v.id("users"),
     dealRoomId: v.id("dealRooms"),
-    eventType: buyerEventType,
-    title: v.string(),
-    body: v.optional(v.string()),
-    referenceId: v.string(),
+    state: buyerEventState,
     priority: v.optional(buyerEventPriority),
     context: emitContextValidator,
     actorUserId: v.optional(v.id("users")),
@@ -557,3 +456,82 @@ export const emitInternal = internalMutation({
     return result.id;
   },
 });
+
+function toStorageRecord(
+  row: Doc<"buyerUpdateEvents">,
+): BuyerEventStorageRecord {
+  return {
+    id: row._id,
+    buyerId: row.buyerId,
+    dealRoomId: row.dealRoomId,
+    eventType: row.eventType,
+    state: row.state ?? {
+      kind: row.eventType,
+      referenceId: referenceIdFromDedupeKey(row.dedupeKey),
+    },
+    dedupeKey: row.dedupeKey,
+    status: row.status,
+    priority: row.priority,
+    emittedAt: row.emittedAt,
+    resolvedAt: row.resolvedAt,
+    resolvedBy: row.resolvedBy,
+    dedupeCount: row.dedupeCount,
+    lastDedupedAt: row.lastDedupedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function referenceIdFromDedupeKey(dedupeKey: string): string {
+  const separator = dedupeKey.indexOf(":");
+  if (separator < 0) return "";
+  return dedupeKey.slice(separator + 1);
+}
+
+function summarizeLegacyBody(
+  items: Array<{ key: string; value: string }>,
+): string | undefined {
+  if (items.length === 0) return undefined;
+  return items.map((item) => `${item.key}=${item.value}`).join(" | ");
+}
+
+function toFeedResult(
+  rows: Array<Doc<"buyerUpdateEvents">>,
+): {
+  items: Array<{
+    id: Id<"buyerUpdateEvents">;
+    buyerId: Id<"users">;
+    dealRoomId: Id<"dealRooms">;
+    eventType: BuyerEventType;
+    state: BuyerEventState;
+    summary: {
+      label: string;
+      detailItems: Array<{ key: string; value: string }>;
+    };
+    lifecycle: {
+      status: "pending" | "seen" | "resolved" | "superseded";
+      isLive: boolean;
+      emittedAt: string;
+      resolvedAt?: string;
+      resolvedBy?: BuyerEventResolvedBy;
+    };
+    delivery: {
+      priority: "low" | "normal" | "high";
+      dedupeKey: string;
+      dedupeCount: number;
+      lastDedupedAt?: string;
+    };
+  }>;
+  counts: BuyerEventFeedReadModel["counts"];
+} {
+  const feed = composeBuyerEventFeed(rows.map((row) => toStorageRecord(row)));
+  return {
+    items: feed.items.map((item) => ({
+      ...item,
+      id: item.id as Id<"buyerUpdateEvents">,
+      buyerId: item.buyerId as Id<"users">,
+      dealRoomId: item.dealRoomId as Id<"dealRooms">,
+    })),
+    counts: feed.counts,
+  };
+}
