@@ -49,3 +49,77 @@ export const getByCanonicalId = query({
       .unique();
   },
 });
+
+export const getPublic = query({
+  args: { propertyId: v.id("properties") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("properties"),
+      address: v.object({
+        street: v.string(),
+        unit: v.optional(v.string()),
+        city: v.string(),
+        state: v.string(),
+        zip: v.string(),
+        formatted: v.optional(v.string()),
+      }),
+      listPrice: v.optional(v.number()),
+      propertyType: v.optional(v.string()),
+      beds: v.optional(v.number()),
+      bathsFull: v.optional(v.number()),
+      bathsHalf: v.optional(v.number()),
+      sqftLiving: v.optional(v.number()),
+      lotSize: v.optional(v.number()),
+      yearBuilt: v.optional(v.number()),
+      description: v.optional(v.string()),
+      photoUrls: v.optional(v.array(v.string())),
+      photoCount: v.optional(v.number()),
+      daysOnMarket: v.optional(v.number()),
+      sourcePlatform: v.union(
+        v.literal("zillow"),
+        v.literal("redfin"),
+        v.literal("realtor"),
+        v.literal("manual")
+      ),
+      status: v.union(
+        v.literal("active"),
+        v.literal("pending"),
+        v.literal("contingent"),
+        v.literal("sold"),
+        v.literal("withdrawn")
+      ),
+      updatedAt: v.string(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const property = await ctx.db.get(args.propertyId);
+    if (!property) return null;
+    return {
+      _id: property._id,
+      address: {
+        street: property.address.street,
+        unit: property.address.unit,
+        city: property.address.city,
+        state: property.address.state,
+        zip: property.address.zip,
+        formatted: property.address.formatted,
+      },
+      listPrice: property.listPrice,
+      propertyType: property.propertyType,
+      beds: property.beds,
+      bathsFull: property.bathsFull,
+      bathsHalf: property.bathsHalf,
+      sqftLiving: property.sqftLiving,
+      lotSize: property.lotSize,
+      yearBuilt: property.yearBuilt,
+      description: property.description,
+      photoUrls: property.photoUrls,
+      photoCount: property.photoCount,
+      daysOnMarket: property.daysOnMarket,
+      sourcePlatform: property.sourcePlatform,
+      status: property.status,
+      updatedAt: property.updatedAt,
+    };
+  },
+});
