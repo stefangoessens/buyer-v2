@@ -12,6 +12,12 @@ import {
   buyerEventType,
   communicationChannel,
   compensationStatus,
+  contractAdapterRunStatus,
+  contractFormKey,
+  contractHandoffStatus,
+  contractProvider,
+  contractSignatureEventType,
+  contractSignatureProvider,
   eligibilityAgreementType,
   eligibilityBlockingReason,
   eligibilityRequiredAction,
@@ -398,6 +404,15 @@ export default defineSchema({
   contracts: defineTable({
     dealRoomId: v.id("dealRooms"),
     offerId: v.id("offers"),
+    adapterRunId: v.optional(v.id("contractAdapterRuns")),
+    provider: contractProvider,
+    signatureProvider: contractSignatureProvider,
+    templateKey: v.string(),
+    templateVersion: v.string(),
+    selectedForms: v.array(contractFormKey),
+    handoffStatus: contractHandoffStatus,
+    providerTransactionId: v.optional(v.string()),
+    signatureEnvelopeId: v.optional(v.string()),
     documentStorageId: v.optional(v.id("_storage")),
     status: v.union(
       v.literal("pending_signatures"),
@@ -405,6 +420,10 @@ export default defineSchema({
       v.literal("amended"),
       v.literal("terminated")
     ),
+    generatedAt: v.optional(v.string()),
+    signedAt: v.optional(v.string()),
+    signatureDeclinedAt: v.optional(v.string()),
+    lastSignatureEventAt: v.optional(v.string()),
     milestones: v.optional(
       v.array(
         v.object({
@@ -415,9 +434,71 @@ export default defineSchema({
       )
     ),
     createdAt: v.string(),
+    updatedAt: v.string(),
   })
     .index("by_dealRoomId", ["dealRoomId"])
-    .index("by_offerId", ["offerId"]),
+    .index("by_offerId", ["offerId"])
+    .index("by_adapterRunId", ["adapterRunId"])
+    .index("by_signatureEnvelopeId", ["signatureEnvelopeId"])
+    .index("by_providerTransactionId", ["providerTransactionId"]),
+
+  contractAdapterRuns: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    offerId: v.id("offers"),
+    contractId: v.optional(v.id("contracts")),
+    provider: contractProvider,
+    signatureProvider: contractSignatureProvider,
+    templateKey: v.string(),
+    templateVersion: v.string(),
+    selectedForms: v.array(contractFormKey),
+    status: contractAdapterRunStatus,
+    handoffStatus: contractHandoffStatus,
+    fieldMap: v.record(
+      v.string(),
+      v.union(v.string(), v.number(), v.boolean())
+    ),
+    missingFields: v.array(
+      v.object({
+        field: v.string(),
+        label: v.string(),
+        reason: v.string(),
+      })
+    ),
+    warnings: v.array(
+      v.object({
+        code: v.string(),
+        message: v.string(),
+      })
+    ),
+    providerTransactionId: v.optional(v.string()),
+    signatureEnvelopeId: v.optional(v.string()),
+    errorCode: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    completedAt: v.optional(v.string()),
+  })
+    .index("by_offerId", ["offerId"])
+    .index("by_contractId", ["contractId"])
+    .index("by_dealRoomId_and_createdAt", ["dealRoomId", "createdAt"])
+    .index("by_signatureEnvelopeId", ["signatureEnvelopeId"]),
+
+  contractSignatureEvents: defineTable({
+    contractId: v.id("contracts"),
+    dealRoomId: v.id("dealRooms"),
+    offerId: v.id("offers"),
+    provider: contractSignatureProvider,
+    envelopeId: v.optional(v.string()),
+    providerEventId: v.optional(v.string()),
+    event: contractSignatureEventType,
+    signerEmail: v.optional(v.string()),
+    documentStorageId: v.optional(v.id("_storage")),
+    payloadJson: v.optional(v.string()),
+    receivedAt: v.string(),
+  })
+    .index("by_contractId_and_receivedAt", ["contractId", "receivedAt"])
+    .index("by_envelopeId", ["envelopeId"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // AUDIT LOG

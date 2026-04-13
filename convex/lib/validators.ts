@@ -103,6 +103,46 @@ export const financingType = v.union(
   v.literal("other")
 );
 
+// Contract generation providers and handoff state
+export const contractProvider = v.literal("form_simplicity");
+
+export const contractSignatureProvider = v.literal("sabal_sign");
+
+export const contractFormKey = v.union(
+  v.literal("fl_far_bar_residential_contract"),
+  v.literal("fl_condominium_rider"),
+  v.literal("fl_homeowners_association_addendum"),
+  v.literal("fl_lead_based_paint_disclosure")
+);
+
+export const contractHandoffStatus = v.union(
+  v.literal("validation_blocked"),
+  v.literal("ready"),
+  v.literal("form_submitted"),
+  v.literal("signature_requested"),
+  v.literal("signature_sent"),
+  v.literal("signed"),
+  v.literal("declined"),
+  v.literal("failed")
+);
+
+export const contractAdapterRunStatus = v.union(
+  v.literal("validation_blocked"),
+  v.literal("mapped"),
+  v.literal("form_submitted"),
+  v.literal("signature_sent"),
+  v.literal("signed"),
+  v.literal("declined"),
+  v.literal("failed")
+);
+
+export const contractSignatureEventType = v.union(
+  v.literal("sent"),
+  v.literal("viewed"),
+  v.literal("signed"),
+  v.literal("declined")
+);
+
 // ─── Fee Ledger & Compensation (KIN-814) ────────────────────────────────────
 
 // Compensation status state machine

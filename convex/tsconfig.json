@@ -7,10 +7,15 @@
     /* These settings are not required by Convex and can be modified. */
     "allowJs": true,
     "strict": true,
+    "baseUrl": "..",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
+    "paths": {
+      "@buyer-v2/shared": ["packages/shared/src/index.ts"],
+      "@buyer-v2/shared/*": ["packages/shared/src/*"]
+    },
 
     /* These compiler options are required by Convex */
     "target": "ESNext",
