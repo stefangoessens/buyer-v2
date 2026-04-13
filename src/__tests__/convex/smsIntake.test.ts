@@ -232,4 +232,57 @@ describe("convex/smsIntake.processInboundSms", () => {
     expect(result.sourceListingId).toBe("sourceListings-existing");
     expect(tables.sourceListings).toHaveLength(1);
   });
+
+  it("reuses a legacy raw-url source listing before inserting a normalized SMS row", async () => {
+    const { ctx, tables } = createTestCtx({
+      sourceListings: [
+        {
+          _id: "sourceListings-legacy",
+          sourcePlatform: "zillow",
+          sourceUrl:
+            "https://www.zillow.com/homedetails/Test-Home/12345_zpid/?utm_source=sms",
+          rawData: JSON.stringify({ source: "homepage" }),
+          extractedAt: "2026-04-01T00:00:00.000Z",
+          status: "pending",
+        },
+      ],
+    });
+
+    const result = await processInboundSmsInternal(ctx as any, {
+      messageSid: "SM-legacy-source-url",
+      fromPhone: "+13055551234",
+      toPhone: "+14155550000",
+      body: "https://www.zillow.com/homedetails/Test-Home/12345_zpid/?utm_source=sms",
+    });
+
+    expect(result.outcome).toBe("url_processed");
+    expect(result.sourceListingId).toBe("sourceListings-legacy");
+    expect(tables.sourceListings).toHaveLength(1);
+  });
+
+  it("returns the persisted reply payload when Twilio retries the same message sid", async () => {
+    const { ctx, tables } = createTestCtx();
+
+    const first = await processInboundSmsInternal(ctx as any, {
+      messageSid: "SM-retry",
+      fromPhone: "+13055551234",
+      toPhone: "+14155550000",
+      body: "https://www.zillow.com/homedetails/Test-Home/12345_zpid/",
+    });
+
+    const replay = await processInboundSmsInternal(ctx as any, {
+      messageSid: "SM-retry",
+      fromPhone: "+13055551234",
+      toPhone: "+14155550000",
+      body: "https://www.zillow.com/homedetails/Test-Home/12345_zpid/",
+    });
+
+    expect(first.outcome).toBe("url_processed");
+    expect(replay.outcome).toBe("duplicate");
+    expect(replay.intakeId).toBe(first.intakeId);
+    expect(replay.replyBody).toBe(first.replyBody);
+    expect(replay.replyLink).toBe(first.replyLink);
+    expect(tables.smsIntakeMessages).toHaveLength(1);
+    expect(tables.sourceListings).toHaveLength(1);
+  });
 });

@@ -361,15 +361,28 @@ export async function processInboundSmsInternal(
         // Happy path — reuse an existing sourceListings row for the
         // same URL if we already have one (prevents duplicate rows
         // when the same link is texted in multiple times).
-        const existingListing = await ctx.db
+        const existingCanonicalListing = await ctx.db
           .query("sourceListings")
           .withIndex("by_sourceUrl", (q) =>
             q.eq("sourceUrl", parsed.data.normalizedUrl),
           )
           .first();
+        let legacyListing: Doc<"sourceListings"> | null = null;
+        if (
+          !existingCanonicalListing &&
+          parsed.data.rawUrl !== parsed.data.normalizedUrl
+        ) {
+          legacyListing = await ctx.db
+            .query("sourceListings")
+            .withIndex("by_sourceUrl", (q) =>
+              q.eq("sourceUrl", parsed.data.rawUrl),
+            )
+            .first();
+        }
 
         const sourceListingId =
-          existingListing?._id ??
+          existingCanonicalListing?._id ??
+          legacyListing?._id ??
           (await ctx.db.insert("sourceListings", {
             sourcePlatform: parsed.data.platform,
             sourceUrl: parsed.data.normalizedUrl,
