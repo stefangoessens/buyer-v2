@@ -9,6 +9,7 @@ import {
   parsePricingResponse,
   computeConsensus,
 } from "../../src/lib/ai/engines/pricing";
+import { DEFAULT_PRICING_PROMPT } from "../../src/lib/ai/engines/enginePromptDefaults";
 import { gateway } from "../../src/lib/ai/gateway";
 
 export const runPricingEngine = internalAction({
@@ -24,12 +25,14 @@ export const runPricingEngine = internalAction({
     );
     if (!property) return null;
 
-    // 2. Get active pricing prompt
-    const prompt: any = await ctx.runQuery(
+    // 2. Get active pricing prompt from registry; fall back to the
+    //    bundled default if the registry is empty so the engine never
+    //    silently returns null on a fresh deployment.
+    const registryPrompt: any = await ctx.runQuery(
       internal.promptRegistry.getActivePrompt,
       { engineType: "pricing" },
     );
-    if (!prompt) return null;
+    const prompt = registryPrompt ?? DEFAULT_PRICING_PROMPT;
 
     const enrichment: any = await ctx.runQuery(
       internal.enrichment.getForPropertyInternal,
