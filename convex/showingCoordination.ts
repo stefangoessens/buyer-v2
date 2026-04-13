@@ -41,7 +41,11 @@ function isStaleInternal(request: TourRequest, nowIso: string): boolean {
     return nowMs - refMs > threshold(STALE_THRESHOLDS_HOURS.submitted);
   }
   if (request.status === "blocked") {
-    const refMs = Date.parse(request.submittedAt ?? request.createdAt);
+    // Anchor to updatedAt (written by markBlocked) so a long-submitted
+    // request that was only recently blocked gets a fresh 48h window.
+    const anchor =
+      request.updatedAt ?? request.submittedAt ?? request.createdAt;
+    const refMs = Date.parse(anchor);
     if (Number.isNaN(refMs)) return false;
     return nowMs - refMs > threshold(STALE_THRESHOLDS_HOURS.blocked);
   }
@@ -53,15 +57,64 @@ function isStaleInternal(request: TourRequest, nowIso: string): boolean {
   return false;
 }
 
+/**
+ * Load the live agreement state for a buyer — the authoritative
+ * current status (signed, canceled, replaced, etc.) derived from the
+ * `agreements` table. Used by the prereq detector to catch agreements
+ * that were canceled or replaced AFTER the tour request was submitted.
+ */
+async function loadLiveAgreementState(
+  ctx: { db: { query: (t: "agreements") => unknown } } & { db: { query: typeof import("./_generated/server").query extends never ? never : (t: "agreements") => unknown } },
+  buyerId: TourRequest["buyerId"],
+): Promise<{
+  type: "none" | "tour_pass" | "full_representation";
+  status: "none" | "draft" | "sent" | "signed" | "replaced" | "canceled";
+}> {
+  // Use a looser type for ctx.db since this runs from both query + mutation contexts.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db: any = (ctx as any).db;
+  const agreements = await db
+    .query("agreements")
+    .withIndex("by_buyerId", (q: { eq: (field: string, value: unknown) => unknown }) =>
+      q.eq("buyerId", buyerId),
+    )
+    .collect();
+
+  // Prefer full_representation over tour_pass (stronger grant)
+  const signedFullRep = agreements
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((a: any) => a.type === "full_representation" && a.status === "signed")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .sort((a: any, b: any) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
+    .at(0);
+  if (signedFullRep) return { type: "full_representation", status: "signed" };
+
+  const signedTourPass = agreements
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((a: any) => a.type === "tour_pass" && a.status === "signed")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .sort((a: any, b: any) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
+    .at(0);
+  if (signedTourPass) return { type: "tour_pass", status: "signed" };
+
+  return { type: "none", status: "none" };
+}
+
 function detectPrereqFailuresInternal(
   request: TourRequest,
   nowIso: string,
+  liveAgreement?: {
+    type: "none" | "tour_pass" | "full_representation";
+    status: "none" | "draft" | "sent" | "signed" | "replaced" | "canceled";
+  },
 ): string[] {
   const failures: string[] = [];
-  const snap = request.agreementStateSnapshot;
+  // Prefer live agreement state over the frozen snapshot.
+  const effectiveAgreement = liveAgreement ?? request.agreementStateSnapshot;
   if (
-    (snap.type !== "tour_pass" && snap.type !== "full_representation") ||
-    snap.status !== "signed"
+    (effectiveAgreement.type !== "tour_pass" &&
+      effectiveAgreement.type !== "full_representation") ||
+    effectiveAgreement.status !== "signed"
   ) {
     failures.push("missing_agreement");
   }
@@ -195,29 +248,45 @@ export const listFiltered = query({
         ? new Set(args.statuses)
         : new Set(ACTIVE_STATUSES);
 
-    const filtered = all.filter((r) => {
-      if (!statusSet.has(r.status)) return false;
-      if (args.unassignedOnly && r.agentId) return false;
-      if (args.agentId && r.agentId !== args.agentId) return false;
+    // For hasPrerequisiteFailure filtering, we need live agreement state
+    // per buyer. Build a cache so we only query agreements once per buyer.
+    const liveAgreementCache = new Map<
+      string,
+      Awaited<ReturnType<typeof loadLiveAgreementState>>
+    >();
+    const getLiveFor = async (buyerId: TourRequest["buyerId"]) => {
+      const key = buyerId as unknown as string;
+      if (!liveAgreementCache.has(key)) {
+        liveAgreementCache.set(key, await loadLiveAgreementState(ctx, buyerId));
+      }
+      return liveAgreementCache.get(key)!;
+    };
+
+    const filtered: TourRequest[] = [];
+    for (const r of all) {
+      if (!statusSet.has(r.status)) continue;
+      if (args.unassignedOnly && r.agentId) continue;
+      if (args.agentId && r.agentId !== args.agentId) continue;
 
       if (typeof args.minAgeHours === "number") {
         const createdMs = Date.parse(r.createdAt);
-        if (Number.isNaN(createdMs)) return false;
-        if (nowMs - createdMs < args.minAgeHours * 60 * 60 * 1000) return false;
+        if (Number.isNaN(createdMs)) continue;
+        if (nowMs - createdMs < args.minAgeHours * 60 * 60 * 1000) continue;
       }
       if (typeof args.maxAgeHours === "number") {
         const createdMs = Date.parse(r.createdAt);
-        if (Number.isNaN(createdMs)) return false;
-        if (nowMs - createdMs > args.maxAgeHours * 60 * 60 * 1000) return false;
+        if (Number.isNaN(createdMs)) continue;
+        if (nowMs - createdMs > args.maxAgeHours * 60 * 60 * 1000) continue;
       }
 
       if (args.hasPrerequisiteFailure) {
-        const failures = detectPrereqFailuresInternal(r, nowIso);
-        if (failures.length === 0) return false;
+        const live = await getLiveFor(r.buyerId);
+        const failures = detectPrereqFailuresInternal(r, nowIso, live);
+        if (failures.length === 0) continue;
       }
 
-      return true;
-    });
+      filtered.push(r);
+    }
 
     // Sort: stale first, then oldest createdAt first
     const sorted = filtered.sort((a, b) => {
@@ -246,9 +315,17 @@ export const getWithPrereqAnalysis = query({
     if (!request) return null;
 
     const nowIso = new Date().toISOString();
+    // Load the live agreement state so the prereq analysis reflects
+    // the current agreement, not just the frozen submission snapshot.
+    const liveAgreement = await loadLiveAgreementState(ctx, request.buyerId);
     return {
       request,
-      prerequisiteFailures: detectPrereqFailuresInternal(request, nowIso),
+      liveAgreement,
+      prerequisiteFailures: detectPrereqFailuresInternal(
+        request,
+        nowIso,
+        liveAgreement,
+      ),
       isStale: isStaleInternal(request, nowIso),
       analyzedAt: nowIso,
     };

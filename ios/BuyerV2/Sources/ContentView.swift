@@ -14,6 +14,11 @@ struct ContentView: View {
     @State private var tasksService = DealTasksService()
     @State private var timelineService = DealTimelineService()
     @State private var cacheCoordinator = DealCacheCoordinator()
+    @State private var preferencesService = MessagePreferencesService(
+        backend: ConvexMessagePreferencesBackend(
+            tokenProvider: { await AuthService.loadAccessToken() }
+        )
+    )
 
     var body: some View {
         DealTrackerShell(user: user)
@@ -21,6 +26,7 @@ struct ContentView: View {
             .environment(tasksService)
             .environment(timelineService)
             .environment(cacheCoordinator)
+            .environment(preferencesService)
             .task {
                 // Warm from disk cache immediately — the deal tracker
                 // shell can render stale-but-usable data while the live

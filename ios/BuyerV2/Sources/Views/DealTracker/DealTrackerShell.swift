@@ -12,6 +12,8 @@ struct DealTrackerShell: View {
     @Environment(DealTimelineService.self) private var timelineService
     @Environment(DealCacheCoordinator.self) private var cacheCoordinator
 
+    @State private var isShowingPreferences = false
+
     var body: some View {
         Group {
             switch dealService.state {
@@ -36,6 +38,9 @@ struct DealTrackerShell: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: dealService.state)
+        .sheet(isPresented: $isShowingPreferences) {
+            PreferencesView()
+        }
         .task {
             await dealService.loadDeals(for: user.id)
         }
@@ -137,6 +142,14 @@ struct DealTrackerShell: View {
     private var accountMenuToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
+                Button {
+                    isShowingPreferences = true
+                } label: {
+                    Label("Preferences", systemImage: "slider.horizontal.3")
+                }
+
+                Divider()
+
                 Button(role: .destructive) {
                     Task { await authService.signOut() }
                 } label: {

@@ -42,8 +42,12 @@ describe("enrichment/sources", () => {
       }
     });
 
-    it("puts cross_portal_match first (highest priority)", () => {
-      expect(sortedSources()[0]).toBe("cross_portal_match");
+    it("puts browser_use_fallback first (highest priority after KIN-784)", () => {
+      expect(sortedSources()[0]).toBe("browser_use_fallback");
+    });
+
+    it("orders cross_portal_match right after browser_use_fallback", () => {
+      expect(sortedSources()[1]).toBe("cross_portal_match");
     });
   });
 

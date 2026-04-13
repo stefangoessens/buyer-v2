@@ -62,10 +62,41 @@ describe("isStale", () => {
     ).toBe(false);
   });
 
-  it("returns true for a blocked request past 48h", () => {
+  it("returns true for a blocked request with updatedAt > 48h ago", () => {
     expect(
       isStale(
-        request({ status: "blocked", submittedAt: hoursBefore(50) }),
+        request({
+          status: "blocked",
+          submittedAt: hoursBefore(100),
+          updatedAt: hoursBefore(50),
+        }),
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("anchors blocked staleness to updatedAt, not submittedAt (old submit + recent block)", () => {
+    // Submitted 100h ago but only blocked 1h ago — should NOT be stale
+    expect(
+      isStale(
+        request({
+          status: "blocked",
+          submittedAt: hoursBefore(100),
+          updatedAt: hoursBefore(1),
+        }),
+        NOW,
+      ),
+    ).toBe(false);
+  });
+
+  it("falls back to submittedAt when updatedAt is absent (blocked)", () => {
+    expect(
+      isStale(
+        request({
+          status: "blocked",
+          submittedAt: hoursBefore(50),
+          updatedAt: undefined,
+        }),
         NOW,
       ),
     ).toBe(true);
@@ -187,6 +218,43 @@ describe("detectPrerequisiteFailures", () => {
       NOW,
     );
     expect(failures).toEqual([]);
+  });
+
+  it("live agreement overrides the snapshot — canceled after submission", () => {
+    // Snapshot shows signed but the live state is canceled — must flag
+    const failures = detectPrerequisiteFailures(
+      request({
+        submittedAt: hoursBefore(2),
+        agreementStateSnapshot: { type: "tour_pass", status: "signed" },
+      }),
+      NOW,
+      { type: "tour_pass", status: "canceled" },
+    );
+    expect(failures).toContain("missing_agreement");
+  });
+
+  it("live agreement overrides the snapshot — replaced with unsigned successor", () => {
+    const failures = detectPrerequisiteFailures(
+      request({
+        submittedAt: hoursBefore(2),
+        agreementStateSnapshot: { type: "tour_pass", status: "signed" },
+      }),
+      NOW,
+      { type: "none", status: "none" },
+    );
+    expect(failures).toContain("missing_agreement");
+  });
+
+  it("live agreement that is still signed clears the flag", () => {
+    const failures = detectPrerequisiteFailures(
+      request({
+        submittedAt: hoursBefore(2),
+        agreementStateSnapshot: { type: "none", status: "none" },
+      }),
+      NOW,
+      { type: "full_representation", status: "signed" },
+    );
+    expect(failures).not.toContain("missing_agreement");
   });
 });
 

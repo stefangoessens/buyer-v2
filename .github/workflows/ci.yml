@@ -95,7 +95,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Test Swift package
-        run: cd ios/BuyerV2 && swift test
+        # `swift test` defaults to the macOS host target, but
+        # `BuyerV2/Package.swift` only declares `.iOS(.v17)` as a
+        # supported platform, so SwiftUI code referencing iOS-only
+        # APIs fails to compile on the macOS host. Run against an
+        # iOS Simulator via xcodebuild instead — matches how the
+        # package is actually consumed by the app target.
+        run: |
+          cd ios/BuyerV2
+          xcodebuild test \
+            -scheme BuyerV2 \
+            -destination "platform=iOS Simulator,name=iPhone 16"
 
   python:
     name: Python (${{ matrix.workspace }})

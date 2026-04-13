@@ -35,12 +35,30 @@ export interface CoordinationTourRequest {
     | "failed";
   submittedAt?: string;
   assignedAt?: string;
+  /**
+   * When the request was last patched. For blocked requests, this
+   * approximates the block-transition time since `markBlocked` writes
+   * updatedAt. Used as a proxy anchor for blocked-staleness in the
+   * absence of a dedicated `blockedAt` field.
+   */
+  updatedAt?: string;
   createdAt: string;
   blockingReason?: string;
   agreementStateSnapshot: {
     type: "none" | "tour_pass" | "full_representation";
     status: "none" | "draft" | "sent" | "signed" | "replaced" | "canceled";
   };
+}
+
+/**
+ * Live agreement state for a buyer — what the `agreements` table
+ * currently says, NOT the snapshot captured at submission. Used by the
+ * prerequisite detector so we catch agreements that were canceled or
+ * replaced AFTER submission.
+ */
+export interface LiveAgreementState {
+  type: "none" | "tour_pass" | "full_representation";
+  status: "none" | "draft" | "sent" | "signed" | "replaced" | "canceled";
 }
 
 /** Reasons a request might be flagged as missing a prerequisite. */
@@ -122,9 +140,14 @@ export function isStale(
     return nowMs - refMs > threshold(STALE_THRESHOLDS_HOURS.submitted);
   }
   if (request.status === "blocked") {
-    // Blocked requests don't have a dedicated timestamp; use submittedAt
-    // as the anchor since blocking follows submission.
-    const refMs = Date.parse(request.submittedAt ?? request.createdAt);
+    // Anchor blocked-staleness to the block-transition time, NOT to
+    // the submission time. Otherwise an old submission that just got
+    // blocked would look immediately stale. We use `updatedAt` as the
+    // proxy since `markBlocked` writes it when flipping the status;
+    // fall back to submittedAt then createdAt if updatedAt is absent
+    // (e.g., test fixtures).
+    const anchor = request.updatedAt ?? request.submittedAt ?? request.createdAt;
+    const refMs = Date.parse(anchor);
     if (Number.isNaN(refMs)) return false;
     return nowMs - refMs > threshold(STALE_THRESHOLDS_HOURS.blocked);
   }
@@ -145,21 +168,29 @@ export function isStale(
  * A request can have multiple failures simultaneously — e.g., missing
  * agreement AND stale blocked. Each failure is a stable code the UI
  * can map to localized messaging.
+ *
+ * When `liveAgreement` is provided, it takes precedence over the
+ * snapshot. This is how the coordinator workspace catches agreements
+ * that were canceled or replaced AFTER submission — the snapshot is
+ * frozen at submission time while the live state is authoritative
+ * for coordination decisions. Callers should ALWAYS pass the live
+ * state when available.
  */
 export function detectPrerequisiteFailures(
   request: CoordinationTourRequest,
   nowIso: string,
+  liveAgreement?: LiveAgreementState,
 ): PrerequisiteFailure[] {
   const failures: PrerequisiteFailure[] = [];
 
-  // Agreement failure — snapshot doesn't show a signed tour pass or
-  // full representation. Note: the submit mutation re-derives at
-  // submission time, so this should only trigger if the agreement was
-  // canceled AFTER submission but BEFORE triage.
-  const snap = request.agreementStateSnapshot;
+  // Agreement failure — prefer live state over the frozen snapshot.
+  // The snapshot can mislead triage when an agreement was canceled
+  // between submission and coordinator review.
+  const effectiveAgreement = liveAgreement ?? request.agreementStateSnapshot;
   if (
-    (snap.type !== "tour_pass" && snap.type !== "full_representation") ||
-    snap.status !== "signed"
+    (effectiveAgreement.type !== "tour_pass" &&
+      effectiveAgreement.type !== "full_representation") ||
+    effectiveAgreement.status !== "signed"
   ) {
     failures.push("missing_agreement");
   }
