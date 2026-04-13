@@ -72,7 +72,7 @@ enum RouteResolutionResult: Sendable, Equatable {
 
 // MARK: - InvalidTargetReason
 
-enum InvalidTargetReason: Sendable, Equatable {
+enum InvalidTargetReason: Error, Sendable, Equatable {
     /// No URL or push payload was provided.
     case emptyPayload
 

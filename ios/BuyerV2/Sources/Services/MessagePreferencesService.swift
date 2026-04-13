@@ -176,10 +176,25 @@ protocol MessagePreferencesBackend: Sendable {
 
 // MARK: - Errors
 
-enum MessagePreferencesError: Error {
+enum MessagePreferencesError: LocalizedError {
     case notAuthenticated
     case invalidResponse
     case httpError(statusCode: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .notAuthenticated:
+            // The PreferencesViewModel matches on "not authenticated"
+            // (case-insensitive) to route the screen into its signed-out
+            // branch when the backend signals an expired/missing token
+            // before AuthService has caught up. Keep the text stable.
+            return "You're not authenticated. Sign in again to manage preferences."
+        case .invalidResponse:
+            return "The preference service returned an unexpected response."
+        case .httpError(let statusCode):
+            return "The preference service returned HTTP \(statusCode)."
+        }
+    }
 }
 
 // MARK: - Service

@@ -9,6 +9,8 @@ struct DealStatusView: View {
     @Environment(DealService.self) private var dealService
     @Environment(AuthService.self) private var authService
 
+    @State private var isShowingPreferences = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -28,6 +30,14 @@ struct DealStatusView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button {
+                        isShowingPreferences = true
+                    } label: {
+                        Label("Preferences", systemImage: "slider.horizontal.3")
+                    }
+
+                    Divider()
+
                     Button(role: .destructive) {
                         Task { await authService.signOut() }
                     } label: {
@@ -40,6 +50,9 @@ struct DealStatusView: View {
                 }
                 .accessibilityLabel("Account menu")
             }
+        }
+        .sheet(isPresented: $isShowingPreferences) {
+            PreferencesView()
         }
     }
 
