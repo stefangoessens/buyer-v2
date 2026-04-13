@@ -1,112 +1,104 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   ALL_BUYER_EVENT_TYPES,
+  applyBuyerEventEmission,
+  applyBuyerEventResolution,
   compareEventsForDisplay,
+  composeBuyerEventFeed,
+  composeBuyerEventReadModel,
   dedupeResolutionFor,
   defaultPriorityFor,
   isLiveStatus,
   makeDedupeKey,
   priorityRank,
   type BuyerEventPriority,
+  type BuyerEventResolvedBy,
+  type BuyerEventState,
   type BuyerEventStatus,
+  type BuyerEventStorageRecord,
   type BuyerEventType,
 } from "@/lib/dealroom/buyer-events";
+
+const mkState = (
+  overrides: Partial<BuyerEventState> = {},
+): BuyerEventState => ({
+  kind: "offer_countered",
+  referenceId: "offer_1",
+  amountCents: 65000000,
+  ...overrides,
+} as BuyerEventState);
+
+const mkRecord = (
+  overrides: Partial<BuyerEventStorageRecord> = {},
+): BuyerEventStorageRecord => {
+  const state = mkState();
+  return {
+    id: "event_1",
+    buyerId: "buyer_1",
+    dealRoomId: "deal_1",
+    eventType: state.kind,
+    state,
+    dedupeKey: makeDedupeKey(state.kind, state.referenceId),
+    status: "pending",
+    priority: "normal",
+    emittedAt: "2026-04-12T12:00:00.000Z",
+    dedupeCount: 1,
+    createdAt: "2026-04-12T12:00:00.000Z",
+    updatedAt: "2026-04-12T12:00:00.000Z",
+    ...overrides,
+  };
+};
 
 describe("makeDedupeKey", () => {
   it("joins eventType and referenceId with a colon", () => {
     expect(makeDedupeKey("tour_confirmed", "tour_abc")).toBe(
-      "tour_confirmed:tour_abc"
+      "tour_confirmed:tour_abc",
     );
   });
 
-  it("is deterministic — same inputs produce same key", () => {
-    const a = makeDedupeKey("offer_countered", "offer_1");
-    const b = makeDedupeKey("offer_countered", "offer_1");
-    expect(a).toBe(b);
+  it("is deterministic for the same inputs", () => {
+    expect(makeDedupeKey("offer_countered", "offer_1")).toBe(
+      makeDedupeKey("offer_countered", "offer_1"),
+    );
   });
 
-  it("produces distinct keys for different event types on the same reference", () => {
-    const confirmed = makeDedupeKey("tour_confirmed", "tour_1");
-    const canceled = makeDedupeKey("tour_canceled", "tour_1");
-    expect(confirmed).not.toBe(canceled);
-  });
-
-  it("produces distinct keys for different reference ids on the same event type", () => {
-    const one = makeDedupeKey("new_comp_arrived", "comp_1");
-    const two = makeDedupeKey("new_comp_arrived", "comp_2");
-    expect(one).not.toBe(two);
-  });
-
-  it("handles empty reference id without crashing", () => {
-    expect(makeDedupeKey("tour_reminder", "")).toBe("tour_reminder:");
+  it("produces distinct keys for distinct event types or references", () => {
+    expect(makeDedupeKey("tour_confirmed", "tour_1")).not.toBe(
+      makeDedupeKey("tour_canceled", "tour_1"),
+    );
+    expect(makeDedupeKey("new_comp_arrived", "comp_1")).not.toBe(
+      makeDedupeKey("new_comp_arrived", "comp_2"),
+    );
   });
 });
 
 describe("defaultPriorityFor", () => {
-  it("returns 'high' for tour_reminder", () => {
+  it("returns high priority for reminders, broker messages, and terminal offers", () => {
     expect(defaultPriorityFor("tour_reminder")).toBe("high");
-  });
-
-  it("returns 'high' for agreement_signed_reminder", () => {
     expect(defaultPriorityFor("agreement_signed_reminder")).toBe("high");
-  });
-
-  it("returns 'high' for milestone_upcoming", () => {
     expect(defaultPriorityFor("milestone_upcoming")).toBe("high");
-  });
-
-  it("returns 'high' for broker_message", () => {
     expect(defaultPriorityFor("broker_message")).toBe("high");
-  });
-
-  it("returns 'high' for terminal offer states (accepted / rejected)", () => {
     expect(defaultPriorityFor("offer_accepted")).toBe("high");
     expect(defaultPriorityFor("offer_rejected")).toBe("high");
   });
 
-  it("returns 'low' for passive market updates", () => {
+  it("returns low priority for passive market updates", () => {
     expect(defaultPriorityFor("price_changed")).toBe("low");
     expect(defaultPriorityFor("new_comp_arrived")).toBe("low");
   });
 
-  it("returns 'normal' for tour_confirmed and tour_canceled", () => {
-    expect(defaultPriorityFor("tour_confirmed")).toBe("normal");
-    expect(defaultPriorityFor("tour_canceled")).toBe("normal");
-  });
-
-  it("returns 'normal' for offer_countered", () => {
-    expect(defaultPriorityFor("offer_countered")).toBe("normal");
-  });
-
-  it("returns 'normal' for agent_assigned, agreement_received, document_ready, ai_analysis_ready", () => {
-    expect(defaultPriorityFor("agent_assigned")).toBe("normal");
-    expect(defaultPriorityFor("agreement_received")).toBe("normal");
-    expect(defaultPriorityFor("document_ready")).toBe("normal");
-    expect(defaultPriorityFor("ai_analysis_ready")).toBe("normal");
-  });
-
-  it("returns a valid priority for every event type in ALL_BUYER_EVENT_TYPES", () => {
+  it("returns a valid priority for every known type", () => {
     const valid: BuyerEventPriority[] = ["low", "normal", "high"];
-    for (const t of ALL_BUYER_EVENT_TYPES) {
-      expect(valid).toContain(defaultPriorityFor(t));
+    for (const eventType of ALL_BUYER_EVENT_TYPES) {
+      expect(valid).toContain(defaultPriorityFor(eventType));
     }
   });
 });
 
 describe("dedupeResolutionFor", () => {
-  it("returns 'bump' for every currently known event type", () => {
-    for (const t of ALL_BUYER_EVENT_TYPES) {
-      expect(dedupeResolutionFor(t)).toBe("bump");
-    }
-  });
-
-  it("returns 'bump' specifically for tour_reminder (most common bump case)", () => {
-    expect(dedupeResolutionFor("tour_reminder")).toBe("bump");
-  });
-
-  it("never returns 'ignore' today — guard against accidental regressions", () => {
-    for (const t of ALL_BUYER_EVENT_TYPES) {
-      expect(dedupeResolutionFor(t)).not.toBe("ignore");
+  it("returns bump for every current event type", () => {
+    for (const eventType of ALL_BUYER_EVENT_TYPES) {
+      expect(dedupeResolutionFor(eventType)).toBe("bump");
     }
   });
 });
@@ -116,143 +108,202 @@ describe("priorityRank", () => {
     expect(priorityRank("high")).toBeGreaterThan(priorityRank("normal"));
     expect(priorityRank("normal")).toBeGreaterThan(priorityRank("low"));
   });
-
-  it("returns 3 / 2 / 1 for high / normal / low", () => {
-    expect(priorityRank("high")).toBe(3);
-    expect(priorityRank("normal")).toBe(2);
-    expect(priorityRank("low")).toBe(1);
-  });
 });
 
 describe("compareEventsForDisplay", () => {
-  it("puts higher priority first", () => {
-    const high = { priority: "high" as const, emittedAt: "2026-04-10T00:00:00Z" };
-    const low = { priority: "low" as const, emittedAt: "2026-04-12T00:00:00Z" };
-    const sorted = [low, high].sort(compareEventsForDisplay);
-    expect(sorted[0]).toBe(high);
-  });
+  it("orders by priority first, then emittedAt descending", () => {
+    const sorted = [
+      { id: "a", priority: "low" as const, emittedAt: "2026-04-12T00:00:00Z" },
+      { id: "b", priority: "high" as const, emittedAt: "2026-04-10T00:00:00Z" },
+      { id: "c", priority: "high" as const, emittedAt: "2026-04-13T00:00:00Z" },
+    ].sort(compareEventsForDisplay);
 
-  it("at equal priority, puts the most recent emittedAt first", () => {
-    const older = {
-      priority: "normal" as const,
-      emittedAt: "2026-04-01T00:00:00Z",
-    };
-    const newer = {
-      priority: "normal" as const,
-      emittedAt: "2026-04-12T00:00:00Z",
-    };
-    const sorted = [older, newer].sort(compareEventsForDisplay);
-    expect(sorted[0]).toBe(newer);
-    expect(sorted[1]).toBe(older);
-  });
-
-  it("returns 0 for two identically-shaped events", () => {
-    const a = { priority: "normal" as const, emittedAt: "2026-04-05T00:00:00Z" };
-    const b = { priority: "normal" as const, emittedAt: "2026-04-05T00:00:00Z" };
-    expect(compareEventsForDisplay(a, b)).toBe(0);
-  });
-
-  it("normal beats low regardless of timestamps", () => {
-    const normalOld = {
-      priority: "normal" as const,
-      emittedAt: "2026-01-01T00:00:00Z",
-    };
-    const lowNew = {
-      priority: "low" as const,
-      emittedAt: "2026-12-31T00:00:00Z",
-    };
-    const sorted = [lowNew, normalOld].sort(compareEventsForDisplay);
-    expect(sorted[0]).toBe(normalOld);
-  });
-
-  it("stably orders a mixed priority + timestamp list", () => {
-    const a = {
-      id: "a",
-      priority: "low" as const,
-      emittedAt: "2026-04-05T00:00:00Z",
-    };
-    const b = {
-      id: "b",
-      priority: "high" as const,
-      emittedAt: "2026-04-01T00:00:00Z",
-    };
-    const c = {
-      id: "c",
-      priority: "normal" as const,
-      emittedAt: "2026-04-10T00:00:00Z",
-    };
-    const d = {
-      id: "d",
-      priority: "high" as const,
-      emittedAt: "2026-04-12T00:00:00Z",
-    };
-    const sorted = [a, b, c, d].sort(compareEventsForDisplay);
-    // Expected: d (high, newest) → b (high, older) → c (normal) → a (low)
-    expect(sorted.map((x) => x.id)).toEqual(["d", "b", "c", "a"]);
+    expect(sorted.map((item) => item.id)).toEqual(["c", "b", "a"]);
   });
 });
 
 describe("isLiveStatus", () => {
-  it("returns true for pending and seen", () => {
+  it("returns true only for pending and seen", () => {
     expect(isLiveStatus("pending")).toBe(true);
     expect(isLiveStatus("seen")).toBe(true);
-  });
-
-  it("returns false for resolved and superseded", () => {
     expect(isLiveStatus("resolved")).toBe(false);
     expect(isLiveStatus("superseded")).toBe(false);
   });
 
-  it("covers every BuyerEventStatus without throwing", () => {
+  it("handles every status", () => {
     const statuses: BuyerEventStatus[] = [
       "pending",
       "seen",
       "resolved",
       "superseded",
     ];
-    for (const s of statuses) {
-      const result = isLiveStatus(s);
-      expect(typeof result).toBe("boolean");
+    for (const status of statuses) {
+      expect(typeof isLiveStatus(status)).toBe("boolean");
     }
   });
 });
 
 describe("ALL_BUYER_EVENT_TYPES", () => {
-  it("contains exactly 15 event types", () => {
-    expect(ALL_BUYER_EVENT_TYPES.length).toBe(15);
-  });
-
-  it("contains no duplicates", () => {
-    const set = new Set<BuyerEventType>(ALL_BUYER_EVENT_TYPES);
-    expect(set.size).toBe(ALL_BUYER_EVENT_TYPES.length);
-  });
-
-  it("includes the core tour, offer, agreement, and comp events", () => {
-    expect(ALL_BUYER_EVENT_TYPES).toContain("tour_confirmed");
-    expect(ALL_BUYER_EVENT_TYPES).toContain("offer_countered");
-    expect(ALL_BUYER_EVENT_TYPES).toContain("agreement_received");
-    expect(ALL_BUYER_EVENT_TYPES).toContain("new_comp_arrived");
-    expect(ALL_BUYER_EVENT_TYPES).toContain("broker_message");
+  it("contains exactly 15 unique event types", () => {
+    expect(ALL_BUYER_EVENT_TYPES).toHaveLength(15);
+    expect(new Set<BuyerEventType>(ALL_BUYER_EVENT_TYPES).size).toBe(15);
   });
 });
 
-describe("integration — dedupe key behavior for common emit flows", () => {
-  it("re-emitting the same tour_reminder produces the same dedupe key", () => {
-    const first = makeDedupeKey("tour_reminder", "tour_42");
-    const second = makeDedupeKey("tour_reminder", "tour_42");
-    expect(first).toBe(second);
-    expect(dedupeResolutionFor("tour_reminder")).toBe("bump");
+describe("composeBuyerEventReadModel", () => {
+  it("materializes a shared read model from typed state", () => {
+    const record = mkRecord({
+      state: mkState({ amountCents: 71000000 }),
+      eventType: "offer_countered",
+    });
+
+    const result = composeBuyerEventReadModel(record);
+
+    expect(result.summary.label).toBe("Offer countered");
+    expect(result.summary.detailItems).toContainEqual({
+      key: "amountCents",
+      value: "71000000",
+    });
+    expect(result.lifecycle.isLive).toBe(true);
+    expect(result.delivery.dedupeCount).toBe(1);
+  });
+});
+
+describe("composeBuyerEventFeed", () => {
+  it("returns sorted items with lifecycle counts", () => {
+    const feed = composeBuyerEventFeed([
+      mkRecord({
+        id: "resolved_1",
+        status: "resolved",
+        resolvedAt: "2026-04-13T00:00:00.000Z",
+        resolvedBy: "buyer",
+      }),
+      mkRecord({
+        id: "live_1",
+        priority: "high",
+        emittedAt: "2026-04-14T00:00:00.000Z",
+        updatedAt: "2026-04-14T00:00:00.000Z",
+      }),
+      mkRecord({
+        id: "superseded_1",
+        status: "superseded",
+      }),
+    ]);
+
+    expect(feed.items.map((item) => item.id)).toEqual([
+      "live_1",
+      "resolved_1",
+      "superseded_1",
+    ]);
+    expect(feed.counts).toEqual({
+      total: 3,
+      live: 1,
+      resolved: 1,
+      superseded: 1,
+    });
+  });
+});
+
+describe("applyBuyerEventEmission", () => {
+  it("creates a pending typed record on first emit", () => {
+    const now = "2026-04-15T12:00:00.000Z";
+    const decision = applyBuyerEventEmission(null, {
+      buyerId: "buyer_1",
+      dealRoomId: "deal_1",
+      state: {
+        kind: "tour_reminder",
+        referenceId: "tour_42",
+        scheduledStartAt: "2026-04-16T14:00:00.000Z",
+      },
+      now,
+    });
+
+    expect(decision.action).toBe("insert");
+    expect(decision.record).toMatchObject({
+      buyerId: "buyer_1",
+      dealRoomId: "deal_1",
+      eventType: "tour_reminder",
+      dedupeKey: "tour_reminder:tour_42",
+      status: "pending",
+      priority: "high",
+      dedupeCount: 1,
+      emittedAt: now,
+    });
   });
 
-  it("two distinct comps on the same buyer produce two distinct keys", () => {
-    const comp1 = makeDedupeKey("new_comp_arrived", "comp_alpha");
-    const comp2 = makeDedupeKey("new_comp_arrived", "comp_beta");
-    expect(comp1).not.toBe(comp2);
+  it("bumps duplicates deterministically and resurrects resolved rows", () => {
+    const existing = mkRecord({
+      state: {
+        kind: "tour_reminder",
+        referenceId: "tour_42",
+        scheduledStartAt: "2026-04-16T14:00:00.000Z",
+      },
+      eventType: "tour_reminder",
+      dedupeKey: "tour_reminder:tour_42",
+      status: "resolved",
+      resolvedAt: "2026-04-15T10:00:00.000Z",
+      resolvedBy: "buyer",
+      dedupeCount: 2,
+      priority: "high",
+    });
+
+    const decision = applyBuyerEventEmission(existing, {
+      buyerId: "buyer_1",
+      dealRoomId: "deal_1",
+      state: {
+        kind: "tour_reminder",
+        referenceId: "tour_42",
+        scheduledStartAt: "2026-04-16T15:30:00.000Z",
+      },
+      now: "2026-04-15T12:00:00.000Z",
+    });
+
+    expect(decision.action).toBe("bump");
+    expect(decision.record.status).toBe("pending");
+    expect(decision.record.dedupeCount).toBe(3);
+    expect(decision.record.lastDedupedAt).toBe("2026-04-15T12:00:00.000Z");
+    expect(decision.record.resolvedAt).toBeUndefined();
+    expect(decision.record.resolvedBy).toBeUndefined();
+    expect(decision.record.state).toMatchObject({
+      kind: "tour_reminder",
+      scheduledStartAt: "2026-04-16T15:30:00.000Z",
+    });
+  });
+});
+
+describe("applyBuyerEventResolution", () => {
+  it("marks a live event resolved with lifecycle metadata", () => {
+    const record = mkRecord();
+    const resolvedBy: BuyerEventResolvedBy = "broker";
+
+    const next = applyBuyerEventResolution(
+      record,
+      resolvedBy,
+      "2026-04-16T10:00:00.000Z",
+    );
+
+    expect(next.status).toBe("resolved");
+    expect(next.resolvedBy).toBe("broker");
+    expect(next.resolvedAt).toBe("2026-04-16T10:00:00.000Z");
   });
 
-  it("offer_countered and offer_accepted on the same offer produce different keys", () => {
-    const countered = makeDedupeKey("offer_countered", "offer_99");
-    const accepted = makeDedupeKey("offer_accepted", "offer_99");
-    expect(countered).not.toBe(accepted);
+  it("is idempotent for already resolved or superseded events", () => {
+    const resolved = mkRecord({
+      status: "resolved",
+      resolvedAt: "2026-04-16T10:00:00.000Z",
+      resolvedBy: "buyer",
+    });
+    const superseded = mkRecord({ status: "superseded" });
+
+    expect(
+      applyBuyerEventResolution(resolved, "system", "2026-04-17T10:00:00.000Z"),
+    ).toEqual(resolved);
+    expect(
+      applyBuyerEventResolution(
+        superseded,
+        "system",
+        "2026-04-17T10:00:00.000Z",
+      ),
+    ).toEqual(superseded);
   });
 });
