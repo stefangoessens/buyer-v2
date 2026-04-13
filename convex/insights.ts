@@ -16,7 +16,11 @@ type ApiInsight = {
   citations: string[];
 };
 
-type LockedTeaser = { category: string; severity: string };
+type LockedTeaser = {
+  category: string;
+  severity: string;
+  confidence: number;
+};
 
 type ApiInsightsResponse = {
   insights: ApiInsight[];
@@ -90,12 +94,13 @@ export const getPublic = query({
 
     const publicOnly = parsed.insights.filter((i) => i.premium === false);
     const premiumOnly = parsed.insights.filter((i) => i.premium === true);
-    // Expose category + severity for premium teasers so the UI can
-    // render blurred shell rows that hint at scope without leaking
-    // the analysis. Headlines/bodies stay out until the buyer signs up.
+    // Expose real category + severity + confidence for premium teasers.
+    // The UI renders an honest "locked" row — no blurred decoy text.
+    // Real headlines/bodies stay server-side until the buyer signs up.
     const lockedTeasers = premiumOnly.slice(0, 3).map((i) => ({
       category: i.category,
       severity: i.severity,
+      confidence: i.confidence,
     }));
 
     return {
