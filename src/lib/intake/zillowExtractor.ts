@@ -241,7 +241,7 @@ export function extractZillowListingHtml(
 
   const attemptedStrategies = Array.from(state.attemptedStrategies);
   const strategiesUsed = Array.from(state.strategiesUsed);
-  if (attemptedStrategies.length === 0) {
+  if (strategiesUsed.length === 0) {
     return {
       success: false,
       error: {
@@ -251,7 +251,7 @@ export function extractZillowListingHtml(
         sourceUrl: input.sourceUrl,
         listingId: parsedUrl.data.listingId,
         normalizedUrl: parsedUrl.data.normalizedUrl,
-        attemptedStrategies: [],
+        attemptedStrategies,
       },
     };
   }
@@ -678,7 +678,7 @@ function extractFromVisibleText(
   const derivedBaths = splitBathrooms(
     undefined,
     undefined,
-    toNumber(text.match(/([0-9]+(?:\.[0-9])?)\s+baths?/i)?.[1]),
+    toNumber(text.match(/([0-9]+(?:\.[0-9])?)\s+(?:baths?|ba)\b/i)?.[1]),
   );
 
   return {
@@ -702,7 +702,7 @@ function extractFromVisibleText(
           /\b(Condo|Townhouse|Single Family|SingleFamily|House|Lot\/land|Unimproved Land)\b/i,
         )?.[1],
       ),
-    beds: toNumber(text.match(/([0-9]+(?:\.[0-9])?)\s+beds?/i)?.[1]),
+    beds: toNumber(text.match(/([0-9]+(?:\.[0-9])?)\s+(?:beds?|bd)\b/i)?.[1]),
     bathsFull: derivedBaths.full,
     bathsHalf: derivedBaths.half,
     sqftLiving: toNumber(text.match(/([\d,]+)\s+sqft\b/i)?.[1]),
