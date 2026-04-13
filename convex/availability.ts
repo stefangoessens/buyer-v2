@@ -3,7 +3,12 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { requireAuth } from "./lib/session";
 import { availabilityOwnerType, availabilityStatus } from "./lib/validators";
-import { assertValidWindow, assertValidRange } from "./lib/scheduling";
+import { assertValidRange } from "./lib/scheduling";
+import {
+  applyAvailabilityWindowPatch,
+  buildAvailabilityWindowState,
+  type AvailabilityWindowState,
+} from "./lib/availability";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // KIN-836 — Availability and scheduling utility model
@@ -21,9 +26,10 @@ import { assertValidWindow, assertValidRange } from "./lib/scheduling";
 //     them directly; they are mediated through tour mutations.
 //
 // Validation:
-//   - All create/update calls that touch time bounds are run through
-//     `assertValidWindow` to catch bad ISO strings, inverted or zero
-//     windows, unknown timezones, and absurd (multi-week) durations.
+//   - All create/update calls that touch time bounds are normalized into
+//     requested + UTC window state so bad ISO strings, inverted or zero
+//     windows, unknown timezones, and invalid constraints are rejected
+//     before persistence.
 //
 // Audit:
 //   - Every mutation writes an auditLog entry keyed to the window id.
@@ -52,10 +58,117 @@ function canAccessOwner(
  * Recurring spec for availability windows. daysOfWeek uses 0 = Sunday
  * through 6 = Saturday, matching JS Date.getDay().
  */
-const recurringSpec = v.object({
+const recurringSpecValidator = v.object({
   daysOfWeek: v.array(v.number()),
   until: v.optional(v.string()),
 });
+
+const schedulingConstraintsValidator = v.object({
+  minimumNoticeMinutes: v.optional(v.number()),
+  bufferBeforeMinutes: v.optional(v.number()),
+  bufferAfterMinutes: v.optional(v.number()),
+  maximumDurationMinutes: v.optional(v.number()),
+});
+
+const requestedWindowValidator = v.object({
+  startAt: v.string(),
+  endAt: v.string(),
+  timezone: v.string(),
+});
+
+const normalizedWindowValidator = v.object({
+  startUtc: v.string(),
+  endUtc: v.string(),
+  durationMs: v.number(),
+});
+
+const availabilityWindowViewValidator = v.object({
+  id: v.id("availabilityWindows"),
+  ownerType: availabilityOwnerType,
+  ownerId: v.string(),
+  requestedWindow: requestedWindowValidator,
+  normalizedWindow: normalizedWindowValidator,
+  recurring: v.optional(recurringSpecValidator),
+  constraints: v.optional(schedulingConstraintsValidator),
+  status: availabilityStatus,
+  notes: v.optional(v.string()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+
+function validateRecurring(
+  recurring: Doc<"availabilityWindows">["recurring"] | undefined,
+): void {
+  if (recurring?.until !== undefined) {
+    const untilDate = new Date(recurring.until);
+    if (Number.isNaN(untilDate.getTime())) {
+      throw new Error(`Invalid recurring.until ISO date: ${recurring.until}`);
+    }
+  }
+
+  if (!recurring) return;
+
+  for (const day of recurring.daysOfWeek) {
+    if (!Number.isInteger(day) || day < 0 || day > 6) {
+      throw new Error(
+        `Invalid recurring.daysOfWeek entry: ${day} (must be integer 0..6)`,
+      );
+    }
+  }
+}
+
+function hydrateAvailabilityState(
+  row: Pick<
+    Doc<"availabilityWindows">,
+    | "startAt"
+    | "endAt"
+    | "timezone"
+    | "requestedWindow"
+    | "normalizedWindow"
+    | "constraints"
+  >,
+): AvailabilityWindowState {
+  if (row.requestedWindow && row.normalizedWindow) {
+    return {
+      requestedWindow: row.requestedWindow,
+      normalizedWindow: row.normalizedWindow,
+      constraints: row.constraints,
+    };
+  }
+
+  const state = buildAvailabilityWindowState(
+    {
+      startAt: row.startAt,
+      endAt: row.endAt,
+      timezone: row.timezone,
+    },
+    row.constraints,
+  );
+
+  if (!state.valid) {
+    const details = state.errors.map((error) => error.message).join("; ");
+    throw new Error(`Availability window is stored in an invalid state: ${details}`);
+  }
+
+  return state.state;
+}
+
+function serializeAvailabilityWindow(row: Doc<"availabilityWindows">) {
+  const state = hydrateAvailabilityState(row);
+  return {
+    id: row._id,
+    ownerType: row.ownerType,
+    ownerId: row.ownerId,
+    requestedWindow: state.requestedWindow,
+    normalizedWindow: state.normalizedWindow,
+    recurring: row.recurring,
+    constraints: state.constraints,
+    status: row.status,
+    notes: row.notes,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
 
 // ═══ Queries ═════════════════════════════════════════════════════════════════
 
@@ -70,7 +183,7 @@ export const getByOwner = query({
     ownerId: v.string(),
     status: v.optional(availabilityStatus),
   },
-  returns: v.array(v.any()),
+  returns: v.array(availabilityWindowViewValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (!canAccessOwner(user, args.ownerType, args.ownerId)) return [];
@@ -82,10 +195,11 @@ export const getByOwner = query({
       )
       .collect();
 
-    if (args.status) {
-      return windows.filter((w) => w.status === args.status);
-    }
-    return windows;
+    const filtered = args.status
+      ? windows.filter((window) => window.status === args.status)
+      : windows;
+
+    return filtered.map(serializeAvailabilityWindow);
   },
 });
 
@@ -105,7 +219,7 @@ export const getByOwnerRange = query({
     rangeStartUtc: v.string(),
     rangeEndUtc: v.string(),
   },
-  returns: v.array(v.any()),
+  returns: v.array(availabilityWindowViewValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (!canAccessOwner(user, args.ownerType, args.ownerId)) return [];
@@ -122,16 +236,15 @@ export const getByOwnerRange = query({
       )
       .collect();
 
-    return windows.filter((w) => {
-      // Build a lightweight normalized view of each window for the overlap
-      // check. Storage format is ISO with offset, so new Date() → iso is
-      // sufficient to compute UTC strings here.
-      const wStartUtc = new Date(w.startAt).toISOString();
-      const wEndUtc = new Date(w.endAt).toISOString();
-      // Inline strict overlap check against the range (no need to build a
-      // full NormalizedWindow for a simple bounds comparison).
-      return wStartUtc < range.endUtc && range.startUtc < wEndUtc;
-    });
+    return windows
+      .filter((window) => {
+        const state = hydrateAvailabilityState(window);
+        return (
+          state.normalizedWindow.startUtc < range.endUtc &&
+          range.startUtc < state.normalizedWindow.endUtc
+        );
+      })
+      .map(serializeAvailabilityWindow);
   },
 });
 
@@ -153,7 +266,8 @@ export const createWindow = mutation({
     startAt: v.string(),
     endAt: v.string(),
     timezone: v.string(),
-    recurring: v.optional(recurringSpec),
+    recurring: v.optional(recurringSpecValidator),
+    constraints: v.optional(schedulingConstraintsValidator),
     status: availabilityStatus,
     notes: v.optional(v.string()),
   },
@@ -161,33 +275,24 @@ export const createWindow = mutation({
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (!canAccessOwner(user, args.ownerType, args.ownerId)) {
-      throw new Error(
-        "Not authorized to create availability for this owner"
-      );
+      throw new Error("Not authorized to create availability for this owner");
     }
 
-    // Validates ISO parsing, ordering, duration, and IANA timezone.
-    assertValidWindow(args.startAt, args.endAt, args.timezone);
-
-    // If a recurring.until date is provided, sanity-check it is parseable.
-    if (args.recurring?.until !== undefined) {
-      const untilDate = new Date(args.recurring.until);
-      if (Number.isNaN(untilDate.getTime())) {
-        throw new Error(
-          `Invalid recurring.until ISO date: ${args.recurring.until}`
-        );
-      }
+    const schedulingState = buildAvailabilityWindowState(
+      {
+        startAt: args.startAt,
+        endAt: args.endAt,
+        timezone: args.timezone,
+      },
+      args.constraints,
+    );
+    if (!schedulingState.valid) {
+      const details = schedulingState.errors
+        .map((error) => `${error.code}: ${error.message}`)
+        .join("; ");
+      throw new Error(`Invalid availability window — ${details}`);
     }
-    // Sanity-check daysOfWeek are in range 0..6 (Sun..Sat).
-    if (args.recurring) {
-      for (const d of args.recurring.daysOfWeek) {
-        if (!Number.isInteger(d) || d < 0 || d > 6) {
-          throw new Error(
-            `Invalid recurring.daysOfWeek entry: ${d} (must be integer 0..6)`
-          );
-        }
-      }
-    }
+    validateRecurring(args.recurring);
 
     const now = new Date().toISOString();
 
@@ -197,7 +302,10 @@ export const createWindow = mutation({
       startAt: args.startAt,
       endAt: args.endAt,
       timezone: args.timezone,
+      requestedWindow: schedulingState.state.requestedWindow,
+      normalizedWindow: schedulingState.state.normalizedWindow,
       recurring: args.recurring,
+      constraints: schedulingState.state.constraints,
       status: args.status,
       notes: args.notes,
       createdAt: now,
@@ -214,6 +322,7 @@ export const createWindow = mutation({
         ownerId: args.ownerId,
         status: args.status,
         recurring: args.recurring !== undefined,
+        hasConstraints: schedulingState.state.constraints !== undefined,
       }),
       timestamp: now,
     });
@@ -237,7 +346,8 @@ export const updateWindow = mutation({
     startAt: v.optional(v.string()),
     endAt: v.optional(v.string()),
     timezone: v.optional(v.string()),
-    recurring: v.optional(recurringSpec),
+    recurring: v.optional(recurringSpecValidator),
+    constraints: v.optional(schedulingConstraintsValidator),
     status: v.optional(availabilityStatus),
     notes: v.optional(v.string()),
   },
@@ -252,39 +362,22 @@ export const updateWindow = mutation({
       throw new Error("Not authorized to update this availability window");
     }
 
-    // Compute effective values after patch, for validation purposes.
-    const nextStart = args.startAt ?? existing.startAt;
-    const nextEnd = args.endAt ?? existing.endAt;
-    const nextTz = args.timezone ?? existing.timezone;
-
-    // Only revalidate if any time field is provided. Storing valid data
-    // today guarantees stored data is valid, so we don't need to re-run
-    // the validator on every unrelated patch.
-    if (
-      args.startAt !== undefined ||
-      args.endAt !== undefined ||
-      args.timezone !== undefined
-    ) {
-      assertValidWindow(nextStart, nextEnd, nextTz);
+    const schedulingState = applyAvailabilityWindowPatch(
+      hydrateAvailabilityState(existing),
+      {
+        startAt: args.startAt,
+        endAt: args.endAt,
+        timezone: args.timezone,
+        constraints: args.constraints,
+      },
+    );
+    if (!schedulingState.valid) {
+      const details = schedulingState.errors
+        .map((error) => `${error.code}: ${error.message}`)
+        .join("; ");
+      throw new Error(`Invalid availability window — ${details}`);
     }
-
-    if (args.recurring !== undefined) {
-      if (args.recurring.until !== undefined) {
-        const untilDate = new Date(args.recurring.until);
-        if (Number.isNaN(untilDate.getTime())) {
-          throw new Error(
-            `Invalid recurring.until ISO date: ${args.recurring.until}`
-          );
-        }
-      }
-      for (const d of args.recurring.daysOfWeek) {
-        if (!Number.isInteger(d) || d < 0 || d > 6) {
-          throw new Error(
-            `Invalid recurring.daysOfWeek entry: ${d} (must be integer 0..6)`
-          );
-        }
-      }
-    }
+    validateRecurring(args.recurring ?? existing.recurring);
 
     const now = new Date().toISOString();
 
@@ -292,7 +385,19 @@ export const updateWindow = mutation({
     if (args.startAt !== undefined) patch.startAt = args.startAt;
     if (args.endAt !== undefined) patch.endAt = args.endAt;
     if (args.timezone !== undefined) patch.timezone = args.timezone;
+    if (
+      args.startAt !== undefined ||
+      args.endAt !== undefined ||
+      args.timezone !== undefined ||
+      args.constraints !== undefined
+    ) {
+      patch.requestedWindow = schedulingState.state.requestedWindow;
+      patch.normalizedWindow = schedulingState.state.normalizedWindow;
+    }
     if (args.recurring !== undefined) patch.recurring = args.recurring;
+    if (args.constraints !== undefined) {
+      patch.constraints = schedulingState.state.constraints;
+    }
     if (args.status !== undefined) patch.status = args.status;
     if (args.notes !== undefined) patch.notes = args.notes;
 
