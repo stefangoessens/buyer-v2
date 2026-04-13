@@ -14,22 +14,22 @@
 //   3. Check consent / suppression state before doing anything else
 //   4. Classify the message body via the shared classifier
 //   5. Handle each intent (STOP, START, HELP, URL, text, empty)
-//   6. For URL intents: reuse the listing URL parser logic from KIN-774
-//      (mirrored at convex/intake.ts PORTAL_PATTERNS) to extract portal
-//      + listing id, then create or reuse a sourceListings row
+//   6. For URL intents: reuse the shared listing URL parser module to
+//      extract portal + listing id, then create or reuse a sourceListings row
 //   7. Build a signed reply link for the happy path
 //   8. Persist one smsIntakeMessages row per processed message
 //
 // What lives elsewhere:
 //   - Twilio signature validation → convex/http.ts (outside this task's scope)
 //   - Actual outbound SMS send → Twilio REST client in a Convex action
-//   - URL parser mirror → inlined below (Convex can't import from src/)
+//   - Shared URL parser → packages/shared/src/intake-parser.ts
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { internalMutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
+import { parseListingUrl } from "../packages/shared/src/intake-parser";
 import { requireRole } from "./lib/session";
 import { smsConsentStatus, smsIntakeOutcome } from "./lib/validators";
 import {
@@ -38,153 +38,6 @@ import {
   hashPhone,
   normalizePhone,
 } from "./lib/smsIntakeCompute";
-
-// ───────────────────────────────────────────────────────────────────────────
-// URL parser — inlined mirror of src/lib/intake/parser.ts (KIN-774)
-//
-// Convex can't import from src/, so the parse logic is duplicated here in
-// the same shape the src module uses: discriminated-union result, typed
-// platform name, listing id, address hint. This matches the semantics of
-// `parseListingUrl` from src/lib/intake/index.ts byte-for-byte.
-// ───────────────────────────────────────────────────────────────────────────
-
-type SmsSourcePlatform = "zillow" | "redfin" | "realtor";
-
-interface SmsPortalMetadata {
-  platform: SmsSourcePlatform;
-  listingId: string;
-  normalizedUrl: string;
-  addressHint: string | null;
-  rawUrl: string;
-}
-
-type SmsParseResult =
-  | { success: true; data: SmsPortalMetadata }
-  | { success: false; error: { code: string; message: string } };
-
-interface PortalPatternMatch {
-  listingId: string;
-  addressHint: string | null;
-}
-
-interface PortalDef {
-  platform: SmsSourcePlatform;
-  domains: string[];
-  match: (url: URL) => PortalPatternMatch | null;
-}
-
-function matchZillow(url: URL): PortalPatternMatch | null {
-  const zpidMatch = url.pathname.match(/(\d+)_zpid/);
-  if (!zpidMatch) return null;
-  const addressMatch = url.pathname.match(/\/homedetails\/([^/]+)\//);
-  let addressHint: string | null = null;
-  if (addressMatch) {
-    try {
-      addressHint = decodeURIComponent(addressMatch[1]).replace(/-/g, " ");
-    } catch {
-      addressHint = addressMatch[1].replace(/-/g, " ");
-    }
-  }
-  return { listingId: zpidMatch[1], addressHint };
-}
-
-function matchRedfin(url: URL): PortalPatternMatch | null {
-  const homeMatch = url.pathname.match(/\/home\/(\d+)/);
-  if (!homeMatch) return null;
-  const pathParts = url.pathname
-    .split("/home/")[0]
-    .split("/")
-    .filter(Boolean);
-  const addressHint =
-    pathParts.length >= 3
-      ? pathParts.slice(2).join(" ").replace(/-/g, " ")
-      : null;
-  return { listingId: homeMatch[1], addressHint };
-}
-
-function matchRealtor(url: URL): PortalPatternMatch | null {
-  const detailMatch = url.pathname.match(
-    /\/realestateandhomes-detail\/([^/]+)/,
-  );
-  if (!detailMatch) return null;
-  const slug = detailMatch[1];
-  const addressHint = slug.startsWith("M") ? null : slug.replace(/_/g, " ");
-  return { listingId: slug, addressHint };
-}
-
-const SMS_PORTAL_MATCHERS: PortalDef[] = [
-  {
-    platform: "zillow",
-    domains: ["zillow.com", "www.zillow.com"],
-    match: matchZillow,
-  },
-  {
-    platform: "redfin",
-    domains: ["redfin.com", "www.redfin.com"],
-    match: matchRedfin,
-  },
-  {
-    platform: "realtor",
-    domains: ["realtor.com", "www.realtor.com"],
-    match: matchRealtor,
-  },
-];
-
-function parseListingUrlInline(input: string): SmsParseResult {
-  const trimmed = input.trim();
-  let url: URL;
-  try {
-    const withProtocol = trimmed.startsWith("http")
-      ? trimmed
-      : `https://${trimmed}`;
-    url = new URL(withProtocol);
-  } catch {
-    return {
-      success: false,
-      error: { code: "malformed_url", message: "Input is not a valid URL" },
-    };
-  }
-
-  const hostname = url.hostname.toLowerCase();
-  for (const portal of SMS_PORTAL_MATCHERS) {
-    if (
-      !portal.domains.some((d) => hostname === d || hostname.endsWith(`.${d}`))
-    ) {
-      continue;
-    }
-
-    const match = portal.match(url);
-    if (!match) {
-      return {
-        success: false,
-        error: {
-          code: "missing_listing_id",
-          message: `URL appears to be ${portal.platform} but no listing ID could be extracted`,
-        },
-      };
-    }
-
-    const normalized = new URL(url.pathname, `https://${portal.domains[0]}`);
-    return {
-      success: true,
-      data: {
-        platform: portal.platform,
-        listingId: match.listingId,
-        normalizedUrl: normalized.toString(),
-        addressHint: match.addressHint,
-        rawUrl: trimmed,
-      },
-    };
-  }
-
-  return {
-    success: false,
-    error: {
-      code: "unsupported_url",
-      message: `URL domain "${hostname}" is not a supported real estate portal`,
-    },
-  };
-}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Environment-dependent config
@@ -251,6 +104,23 @@ const REPLY_COPY = {
   urlProcessedPrefix: "Deal room ready — open it here: ",
 } as const;
 
+interface ProcessInboundSmsArgs {
+  messageSid: string;
+  fromPhone: string;
+  toPhone: string;
+  body: string;
+}
+
+interface ProcessInboundSmsResult {
+  outcome: Doc<"smsIntakeMessages">["outcome"];
+  intakeId: Id<"smsIntakeMessages">;
+  replyBody: string;
+  replySent: boolean;
+  dealRoomId: Id<"dealRooms"> | undefined;
+  sourceListingId: Id<"sourceListings"> | undefined;
+  replyLink: string | undefined;
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Mutation: processInboundSms
 // ───────────────────────────────────────────────────────────────────────────
@@ -284,80 +154,91 @@ export const processInboundSms = internalMutation({
     replyLink: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
-    const now = new Date().toISOString();
+    return await processInboundSmsInternal(ctx, args);
+  },
+});
 
-    // ── Step 1: idempotency via Twilio Message SID ─────────────────────
-    // On retry (Twilio webhook replay), return the SAME reply payload
-    // that was computed the first time so the webhook can re-emit the
-    // expected TwiML response — e.g. STOP confirmation or HELP guidance
-    // that the user needs to see. `outcome` is still tagged "duplicate"
-    // so caller telemetry can distinguish retries, but the reply body
-    // is preserved from the persisted row.
-    const existing = await ctx.db
-      .query("smsIntakeMessages")
-      .withIndex("by_messageSid", (q) => q.eq("messageSid", args.messageSid))
-      .unique();
-    if (existing) {
+export async function processInboundSmsInternal(
+  ctx: MutationCtx,
+  args: ProcessInboundSmsArgs,
+): Promise<ProcessInboundSmsResult> {
+  const now = new Date().toISOString();
+
+  // ── Step 1: idempotency via Twilio Message SID ─────────────────────
+  // On retry (Twilio webhook replay), return the SAME reply payload
+  // that was computed the first time so the webhook can re-emit the
+  // expected TwiML response — e.g. STOP confirmation or HELP guidance
+  // that the user needs to see. `outcome` is still tagged "duplicate"
+  // so caller telemetry can distinguish retries, but the reply body
+  // is preserved from the persisted row.
+  const existing = await ctx.db
+    .query("smsIntakeMessages")
+    .withIndex("by_messageSid", (q) => q.eq("messageSid", args.messageSid))
+    .unique();
+  if (existing) {
+    return {
+      outcome: "duplicate" as const,
+      intakeId: existing._id,
+      replyBody: existing.replyBody ?? "",
+      replySent: existing.replySent,
+      dealRoomId: existing.dealRoomId ?? undefined,
+      sourceListingId: existing.sourceListingId ?? undefined,
+      replyLink: existing.replyLink ?? undefined,
+    };
+  }
+
+  // ── Step 2: normalize + hash sender / destination ──────────────────
+  // Phones that fail normalization still get logged — we just hash
+  // the raw trimmed input so operators can correlate support cases.
+  const normalizedFrom = normalizePhone(args.fromPhone);
+  const normalizedTo = normalizePhone(args.toPhone);
+  const phoneHash = await hashPhone(normalizedFrom ?? args.fromPhone.trim());
+  const toHash = await hashPhone(normalizedTo ?? args.toPhone.trim());
+
+  // ── Step 3: consent / suppression lookup ───────────────────────────
+  const consent = await ctx.db
+    .query("smsConsent")
+    .withIndex("by_phoneHash", (q) => q.eq("phoneHash", phoneHash))
+    .unique();
+
+  // ── Step 4: classify ───────────────────────────────────────────────
+  const intent = classifyInboundSms(args.body);
+
+  // ── Step 5: early suppression gate ─────────────────────────────────
+  // If the user is opted_out or suppressed, the ONLY intents that still
+  // get processed are HELP and START. Everything else short-circuits to
+  // a suppressed outcome with an empty reply.
+  if (
+    consent &&
+    (consent.status === "opted_out" || consent.status === "suppressed")
+  ) {
+    if (intent.kind !== "help" && intent.kind !== "start") {
+      const intakeId = await ctx.db.insert("smsIntakeMessages", {
+        messageSid: args.messageSid,
+        phoneHash,
+        toHash,
+        body: args.body,
+        outcome: "suppressed",
+        errorCode: consent.status,
+        replyBody: "",
+        replySent: false,
+        receivedAt: now,
+        processedAt: now,
+      });
       return {
-        outcome: "duplicate" as const,
-        intakeId: existing._id,
-        replyBody: existing.replyBody ?? "",
-        replySent: existing.replySent,
-        dealRoomId: existing.dealRoomId ?? undefined,
-        sourceListingId: existing.sourceListingId ?? undefined,
-        replyLink: existing.replyLink ?? undefined,
+        outcome: "suppressed" as const,
+        intakeId,
+        replyBody: "",
+        replySent: false,
+        dealRoomId: undefined,
+        sourceListingId: undefined,
+        replyLink: undefined,
       };
     }
+  }
 
-    // ── Step 2: normalize + hash sender / destination ──────────────────
-    // Phones that fail normalization still get logged — we just hash
-    // the raw trimmed input so operators can correlate support cases.
-    const normalizedFrom = normalizePhone(args.fromPhone);
-    const normalizedTo = normalizePhone(args.toPhone);
-    const phoneHash = await hashPhone(normalizedFrom ?? args.fromPhone.trim());
-    const toHash = await hashPhone(normalizedTo ?? args.toPhone.trim());
-
-    // ── Step 3: consent / suppression lookup ───────────────────────────
-    const consent = await ctx.db
-      .query("smsConsent")
-      .withIndex("by_phoneHash", (q) => q.eq("phoneHash", phoneHash))
-      .unique();
-
-    // ── Step 4: classify ───────────────────────────────────────────────
-    const intent = classifyInboundSms(args.body);
-
-    // ── Step 5: early suppression gate ─────────────────────────────────
-    // If the user is opted_out or suppressed, the ONLY intents that still
-    // get processed are HELP and START. Everything else short-circuits to
-    // a suppressed outcome with an empty reply.
-    if (consent && (consent.status === "opted_out" || consent.status === "suppressed")) {
-      if (intent.kind !== "help" && intent.kind !== "start") {
-        const intakeId = await ctx.db.insert("smsIntakeMessages", {
-          messageSid: args.messageSid,
-          phoneHash,
-          toHash,
-          body: args.body,
-          outcome: "suppressed",
-          errorCode: consent.status,
-          replyBody: "",
-          replySent: false,
-          receivedAt: now,
-          processedAt: now,
-        });
-        return {
-          outcome: "suppressed" as const,
-          intakeId,
-          replyBody: "",
-          replySent: false,
-          dealRoomId: undefined,
-          sourceListingId: undefined,
-          replyLink: undefined,
-        };
-      }
-    }
-
-    // ── Step 6: handle by intent ───────────────────────────────────────
-    switch (intent.kind) {
+  // ── Step 6: handle by intent ───────────────────────────────────────
+  switch (intent.kind) {
       case "empty":
         return await writeMessage(ctx, {
           messageSid: args.messageSid,
@@ -450,7 +331,7 @@ export const processInboundSms = internalMutation({
           now,
         });
 
-        const parsed = parseListingUrlInline(intent.url);
+        const parsed = parseListingUrl(intent.url);
         if (!parsed.success) {
           // "unsupported_url" is the interesting failure mode — the
           // user sent something that parses as a URL but isn't from
@@ -483,7 +364,7 @@ export const processInboundSms = internalMutation({
         const existingListing = await ctx.db
           .query("sourceListings")
           .withIndex("by_sourceUrl", (q) =>
-            q.eq("sourceUrl", parsed.data.rawUrl),
+            q.eq("sourceUrl", parsed.data.normalizedUrl),
           )
           .first();
 
@@ -491,10 +372,11 @@ export const processInboundSms = internalMutation({
           existingListing?._id ??
           (await ctx.db.insert("sourceListings", {
             sourcePlatform: parsed.data.platform,
-            sourceUrl: parsed.data.rawUrl,
+            sourceUrl: parsed.data.normalizedUrl,
             rawData: JSON.stringify({
               source: "sms",
               messageSid: args.messageSid,
+              rawUrl: parsed.data.rawUrl,
               normalizedUrl: parsed.data.normalizedUrl,
               addressHint: parsed.data.addressHint,
             }),
@@ -502,15 +384,12 @@ export const processInboundSms = internalMutation({
             status: "pending",
           }));
 
-        // Build a signed link pointing at the sourceListing via the
-        // generic intake route. We don't have a dealRoomId yet — the
-        // anonymous SMS sender doesn't have a buyer record, so the
-        // signed link resolves to the listing. When the user clicks
-        // through and registers, the web layer creates the deal room
-        // and swaps the link target.
+        // We don't have a buyer-bound deal room yet for an anonymous SMS
+        // sender, so the controlled link needs to land in the intake/open
+        // flow for this normalized listing URL, not a fake deal-room path.
         const replyLink = await buildSignedLink(
           getAppBaseUrl(),
-          sourceListingId,
+          parsed.data.normalizedUrl,
           getSignedLinkSecret(),
         );
 
@@ -530,8 +409,7 @@ export const processInboundSms = internalMutation({
         });
       }
     }
-  },
-});
+}
 
 // ───────────────────────────────────────────────────────────────────────────
 // Internal helpers

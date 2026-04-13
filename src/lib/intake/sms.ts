@@ -228,38 +228,45 @@ export async function hashPhone(normalized: string): Promise<string> {
 const DEFAULT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Build a signed reply link using HMAC-SHA256 with a shared secret.
+ * Build a signed SMS intake link using HMAC-SHA256 with a shared secret.
  *
- * Format: `<baseUrl>/deal-room/<dealRoomId>?t=<timestamp>&sig=<hmacHex>`
+ * Format:
+ * `<baseUrl>/intake?url=<encoded-normalized-url>&source=sms&t=<timestamp>&sig=<hmacHex>`
  *
- * The signature covers `<dealRoomId>:<timestamp>` so links can't be forged
- * or replayed past the expiry — and swapping the dealRoomId in the URL
- * invalidates the signature.
+ * The signature covers `<normalizedUrl>:<timestamp>` so the listing target
+ * can't be swapped without invalidating the signature, while still routing
+ * the buyer through the existing intake/open flow.
  *
  * `baseUrl` is trimmed of trailing slashes so callers can pass either
  * `https://example.com` or `https://example.com/` and get the same result.
  */
 export async function buildSignedLink(
   baseUrl: string,
-  dealRoomId: string,
+  normalizedUrl: string,
   secret: string,
   timestamp?: number,
 ): Promise<string> {
   const ts = timestamp ?? Date.now();
-  const payload = `${dealRoomId}:${ts}`;
+  const payload = `${normalizedUrl}:${ts}`;
   const sig = await hmacSha256Hex(secret, payload);
   const cleanBase = baseUrl.replace(/\/+$/, "");
-  return `${cleanBase}/deal-room/${dealRoomId}?t=${ts}&sig=${sig}`;
+  const params = new URLSearchParams({
+    url: normalizedUrl,
+    source: "sms",
+    t: String(ts),
+    sig,
+  });
+  return `${cleanBase}/intake?${params.toString()}`;
 }
 
 /**
  * Verify a signed link built by `buildSignedLink`.
  *
- * Returns either `{ valid: true, dealRoomId }` or `{ valid: false, reason }`.
+ * Returns either `{ valid: true, normalizedUrl }` or `{ valid: false, reason }`.
  * Reasons:
  *   - `malformed_url` — not a parseable URL at all
  *   - `missing_params` — no t/sig query parameter
- *   - `missing_deal_room` — couldn't extract the deal-room id from the path
+ *   - `missing_url` — no URL payload is present in the intake link
  *   - `expired` — older than `maxAgeMs`
  *   - `future` — timestamp in the future (clock skew / tampering)
  *   - `bad_signature` — recomputed HMAC doesn't match
@@ -272,7 +279,7 @@ export async function verifySignedLink(
   secret: string,
   maxAgeMs: number = DEFAULT_MAX_AGE_MS,
 ): Promise<
-  { valid: true; dealRoomId: string } | { valid: false; reason: string }
+  { valid: true; normalizedUrl: string } | { valid: false; reason: string }
 > {
   let parsed: URL;
   try {
@@ -281,11 +288,10 @@ export async function verifySignedLink(
     return { valid: false, reason: "malformed_url" };
   }
 
-  const match = parsed.pathname.match(/\/deal-room\/([^/?#]+)/);
-  if (!match) {
-    return { valid: false, reason: "missing_deal_room" };
+  const normalizedUrl = parsed.searchParams.get("url");
+  if (!normalizedUrl) {
+    return { valid: false, reason: "missing_url" };
   }
-  const dealRoomId = match[1];
 
   const tRaw = parsed.searchParams.get("t");
   const sig = parsed.searchParams.get("sig");
@@ -308,12 +314,12 @@ export async function verifySignedLink(
     return { valid: false, reason: "expired" };
   }
 
-  const expected = await hmacSha256Hex(secret, `${dealRoomId}:${ts}`);
+  const expected = await hmacSha256Hex(secret, `${normalizedUrl}:${ts}`);
   if (!constantTimeEqualHex(expected, sig)) {
     return { valid: false, reason: "bad_signature" };
   }
 
-  return { valid: true, dealRoomId };
+  return { valid: true, normalizedUrl };
 }
 
 // ───────────────────────────────────────────────────────────────────────────

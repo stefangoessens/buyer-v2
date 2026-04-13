@@ -1,10 +1,26 @@
+import React from "react";
 import Image from "next/image";
 
 interface HeroSectionProps {
   children?: React.ReactNode;
+  title?: React.ReactNode;
+  subtitle?: React.ReactNode;
 }
 
-export function HeroSection({ children }: HeroSectionProps) {
+const defaultTitle = (
+  <>
+    Get the best deal on your <span className="text-primary-700">Florida home</span>
+  </>
+);
+
+const defaultSubtitle =
+  "Paste a Zillow, Redfin, or Realtor link. Get instant AI-powered analysis, fair pricing, and expert buyer representation, completely free.";
+
+export function HeroSection({
+  children,
+  title = defaultTitle,
+  subtitle = defaultSubtitle,
+}: HeroSectionProps) {
   return (
     <section className="relative w-full overflow-hidden bg-[#FCFBFF]">
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
@@ -19,11 +35,10 @@ export function HeroSection({ children }: HeroSectionProps) {
               Florida-exclusive buyer brokerage
             </div>
             <h1 className="mt-6 text-4xl font-semibold tracking-[-0.006em] text-neutral-800 sm:text-5xl lg:text-[52px] lg:leading-[1.15]">
-              Get the best deal on your{" "}
-              <span className="text-primary-700">Florida home</span>
+              {title}
             </h1>
             <p className="mt-6 text-[18px] leading-[1.5] text-neutral-500">
-              Paste a Zillow, Redfin, or Realtor link. Get instant AI-powered analysis, fair pricing, and expert buyer representation, completely free.
+              {subtitle}
             </p>
             <div className="mt-8">{children}</div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-neutral-500">

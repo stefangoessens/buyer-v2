@@ -1,23 +1,6 @@
 import { mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-
-const PORTAL_PATTERNS = [
-  {
-    platform: "zillow" as const,
-    domains: ["zillow.com", "www.zillow.com"],
-    pattern: /(\d+)_zpid/,
-  },
-  {
-    platform: "redfin" as const,
-    domains: ["redfin.com", "www.redfin.com"],
-    pattern: /\/home\/(\d+)/,
-  },
-  {
-    platform: "realtor" as const,
-    domains: ["realtor.com", "www.realtor.com"],
-    pattern: /\/realestateandhomes-detail\/([^/]+)/,
-  },
-] as const;
+import { parseListingUrl } from "../packages/shared/src/intake-parser";
 
 /**
  * Submit a listing URL for intake processing.
@@ -40,71 +23,40 @@ export const submitUrl = mutation({
     })
   ),
   handler: async (ctx, args) => {
-    const trimmed = args.url.trim();
-
-    // Parse URL
-    let url: URL;
-    try {
-      const withProtocol = trimmed.startsWith("http")
-        ? trimmed
-        : `https://${trimmed}`;
-      url = new URL(withProtocol);
-    } catch {
+    const parsed = parseListingUrl(args.url);
+    if (!parsed.success) {
       return {
         success: false as const,
-        error: "Invalid URL",
-        code: "malformed_url",
+        error: parsed.error.message,
+        code: parsed.error.code,
       };
     }
 
-    const hostname = url.hostname.toLowerCase();
+    const existing = await ctx.db
+      .query("sourceListings")
+      .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", parsed.data.normalizedUrl))
+      .first();
 
-    // Find matching portal
-    for (const portal of PORTAL_PATTERNS) {
-      if (!portal.domains.some((d) => hostname === d)) continue;
-
-      const match = url.pathname.match(portal.pattern);
-      if (!match) {
-        return {
-          success: false as const,
-          error: `No listing ID found in ${portal.platform} URL`,
-          code: "missing_listing_id",
-        };
-      }
-
-      // Check for existing listing with this URL (use .first() since duplicates possible)
-      const existing = await ctx.db
-        .query("sourceListings")
-        .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", trimmed))
-        .first();
-
-      if (existing) {
-        return {
-          success: true as const,
-          sourceListingId: existing._id,
-          platform: portal.platform,
-        };
-      }
-
-      // Create new source listing
-      const id = await ctx.db.insert("sourceListings", {
-        sourcePlatform: portal.platform,
-        sourceUrl: trimmed,
-        extractedAt: new Date().toISOString(),
-        status: "pending",
-      });
-
+    if (existing) {
       return {
         success: true as const,
-        sourceListingId: id,
-        platform: portal.platform,
+        sourceListingId: existing._id,
+        platform: parsed.data.platform,
       };
     }
 
+    const id = await ctx.db.insert("sourceListings", {
+      sourcePlatform: parsed.data.platform,
+      sourceUrl: parsed.data.normalizedUrl,
+      rawData: JSON.stringify({ rawUrl: parsed.data.rawUrl }),
+      extractedAt: new Date().toISOString(),
+      status: "pending",
+    });
+
     return {
-      success: false as const,
-      error: `Unsupported portal: ${hostname}`,
-      code: "unsupported_url",
+      success: true as const,
+      sourceListingId: id,
+      platform: parsed.data.platform,
     };
   },
 });
@@ -123,31 +75,28 @@ export const processUrl = internalMutation({
   },
   returns: v.union(v.id("sourceListings"), v.null()),
   handler: async (ctx, args) => {
-    const trimmed = args.url.trim();
-    let url: URL;
-    try {
-      const withProtocol = trimmed.startsWith("http")
-        ? trimmed
-        : `https://${trimmed}`;
-      url = new URL(withProtocol);
-    } catch {
+    const parsed = parseListingUrl(args.url);
+    if (!parsed.success) {
       return null;
     }
 
-    const hostname = url.hostname.toLowerCase();
-    for (const portal of PORTAL_PATTERNS) {
-      if (!portal.domains.some((d) => hostname === d)) continue;
-      const match = url.pathname.match(portal.pattern);
-      if (!match) return null;
-
-      return await ctx.db.insert("sourceListings", {
-        sourcePlatform: portal.platform,
-        sourceUrl: trimmed,
-        rawData: JSON.stringify({ source: args.source }),
-        extractedAt: new Date().toISOString(),
-        status: "pending",
-      });
+    const existing = await ctx.db
+      .query("sourceListings")
+      .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", parsed.data.normalizedUrl))
+      .first();
+    if (existing) {
+      return existing._id;
     }
-    return null;
+
+    return await ctx.db.insert("sourceListings", {
+      sourcePlatform: parsed.data.platform,
+      sourceUrl: parsed.data.normalizedUrl,
+      rawData: JSON.stringify({
+        source: args.source,
+        rawUrl: parsed.data.rawUrl,
+      }),
+      extractedAt: new Date().toISOString(),
+      status: "pending",
+    });
   },
 });

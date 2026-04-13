@@ -318,20 +318,42 @@ const TEST_BASE_URL = "https://app.example.com";
 const TEST_SECRET = "shhh-this-is-a-test-secret";
 
 describe("buildSignedLink", () => {
-  it("includes the deal room id in the path", async () => {
+  it("routes to the intake flow", async () => {
     const link = await buildSignedLink(
       TEST_BASE_URL,
-      "dr_123",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       1_700_000_000_000,
     );
-    expect(link).toContain("/deal-room/dr_123");
+    expect(link).toContain("/intake?");
+  });
+
+  it("includes the normalized listing url in the query string", async () => {
+    const link = await buildSignedLink(
+      TEST_BASE_URL,
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
+      TEST_SECRET,
+      1_700_000_000_000,
+    );
+    expect(link).toContain(
+      encodeURIComponent("https://www.zillow.com/homedetails/Test/12345_zpid/"),
+    );
+  });
+
+  it("includes the sms source param", async () => {
+    const link = await buildSignedLink(
+      TEST_BASE_URL,
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
+      TEST_SECRET,
+      1_700_000_000_000,
+    );
+    expect(link).toContain("source=sms");
   });
 
   it("includes the timestamp query param", async () => {
     const link = await buildSignedLink(
       TEST_BASE_URL,
-      "dr_123",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       1_700_000_000_000,
     );
@@ -341,7 +363,7 @@ describe("buildSignedLink", () => {
   it("includes a hex signature query param", async () => {
     const link = await buildSignedLink(
       TEST_BASE_URL,
-      "dr_123",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       1_700_000_000_000,
     );
@@ -352,21 +374,22 @@ describe("buildSignedLink", () => {
 
   it("produces stable output for same inputs", async () => {
     const ts = 1_700_000_000_000;
-    const a = await buildSignedLink(TEST_BASE_URL, "dr_123", TEST_SECRET, ts);
-    const b = await buildSignedLink(TEST_BASE_URL, "dr_123", TEST_SECRET, ts);
+    const url = "https://www.zillow.com/homedetails/Test/12345_zpid/";
+    const a = await buildSignedLink(TEST_BASE_URL, url, TEST_SECRET, ts);
+    const b = await buildSignedLink(TEST_BASE_URL, url, TEST_SECRET, ts);
     expect(a).toBe(b);
   });
 
   it("normalizes trailing slashes on baseUrl", async () => {
     const a = await buildSignedLink(
       "https://app.example.com/",
-      "dr_123",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       1_700_000_000_000,
     );
     const b = await buildSignedLink(
       "https://app.example.com",
-      "dr_123",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       1_700_000_000_000,
     );
@@ -375,7 +398,11 @@ describe("buildSignedLink", () => {
 
   it("uses current time when timestamp is omitted", async () => {
     const before = Date.now();
-    const link = await buildSignedLink(TEST_BASE_URL, "dr_x", TEST_SECRET);
+    const link = await buildSignedLink(
+      TEST_BASE_URL,
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
+      TEST_SECRET,
+    );
     const after = Date.now();
     const match = link.match(/t=(\d+)/);
     expect(match).not.toBeNull();
@@ -389,17 +416,25 @@ describe("buildSignedLink", () => {
 
 describe("verifySignedLink", () => {
   it("verifies a freshly built link", async () => {
-    const link = await buildSignedLink(TEST_BASE_URL, "dr_abc", TEST_SECRET);
+    const targetUrl = "https://www.zillow.com/homedetails/Test/12345_zpid/";
+    const link = await buildSignedLink(TEST_BASE_URL, targetUrl, TEST_SECRET);
     const result = await verifySignedLink(link, TEST_SECRET);
     expect(result.valid).toBe(true);
     if (result.valid) {
-      expect(result.dealRoomId).toBe("dr_abc");
+      expect(result.normalizedUrl).toBe(targetUrl);
     }
   });
 
-  it("rejects a link with a tampered deal room id", async () => {
-    const link = await buildSignedLink(TEST_BASE_URL, "dr_abc", TEST_SECRET);
-    const tampered = link.replace("/deal-room/dr_abc", "/deal-room/dr_evil");
+  it("rejects a link with a tampered listing url", async () => {
+    const link = await buildSignedLink(
+      TEST_BASE_URL,
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
+      TEST_SECRET,
+    );
+    const tampered = link.replace(
+      encodeURIComponent("https://www.zillow.com/homedetails/Test/12345_zpid/"),
+      encodeURIComponent("https://www.zillow.com/homedetails/Test/99999_zpid/"),
+    );
     const result = await verifySignedLink(tampered, TEST_SECRET);
     expect(result.valid).toBe(false);
     if (!result.valid) {
@@ -414,7 +449,7 @@ describe("verifySignedLink", () => {
     const ts = Date.now() - 1000;
     const link = await buildSignedLink(
       TEST_BASE_URL,
-      "dr_abc",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       ts,
     );
@@ -427,7 +462,11 @@ describe("verifySignedLink", () => {
   });
 
   it("rejects a link signed with a different secret", async () => {
-    const link = await buildSignedLink(TEST_BASE_URL, "dr_abc", "secret-a");
+    const link = await buildSignedLink(
+      TEST_BASE_URL,
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
+      "secret-a",
+    );
     const result = await verifySignedLink(link, "secret-b");
     expect(result.valid).toBe(false);
     if (!result.valid) {
@@ -439,7 +478,7 @@ describe("verifySignedLink", () => {
     const expiredTs = Date.now() - 8 * 24 * 60 * 60 * 1000; // 8 days ago
     const link = await buildSignedLink(
       TEST_BASE_URL,
-      "dr_abc",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       expiredTs,
     );
@@ -454,7 +493,7 @@ describe("verifySignedLink", () => {
     const recentTs = Date.now() - 1000;
     const link = await buildSignedLink(
       TEST_BASE_URL,
-      "dr_abc",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       recentTs,
     );
@@ -467,7 +506,7 @@ describe("verifySignedLink", () => {
     const ts = Date.now() - 5000;
     const link = await buildSignedLink(
       TEST_BASE_URL,
-      "dr_abc",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       ts,
     );
@@ -488,7 +527,7 @@ describe("verifySignedLink", () => {
 
   it("rejects a URL with no sig param", async () => {
     const result = await verifySignedLink(
-      "https://app.example.com/deal-room/dr_abc?t=1700000000000",
+      "https://app.example.com/intake?url=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2FTest%2F12345_zpid%2F&source=sms&t=1700000000000",
       TEST_SECRET,
     );
     expect(result.valid).toBe(false);
@@ -499,7 +538,7 @@ describe("verifySignedLink", () => {
 
   it("rejects a URL with no timestamp param", async () => {
     const result = await verifySignedLink(
-      "https://app.example.com/deal-room/dr_abc?sig=abc",
+      "https://app.example.com/intake?url=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2FTest%2F12345_zpid%2F&source=sms&sig=abc",
       TEST_SECRET,
     );
     expect(result.valid).toBe(false);
@@ -512,7 +551,7 @@ describe("verifySignedLink", () => {
     const futureTs = Date.now() + 10 * 60_000; // 10 minutes in the future
     const link = await buildSignedLink(
       TEST_BASE_URL,
-      "dr_abc",
+      "https://www.zillow.com/homedetails/Test/12345_zpid/",
       TEST_SECRET,
       futureTs,
     );
@@ -523,20 +562,20 @@ describe("verifySignedLink", () => {
     }
   });
 
-  it("rejects a URL without a deal-room segment in the path", async () => {
+  it("rejects a URL without a signed listing target", async () => {
     const result = await verifySignedLink(
-      "https://app.example.com/other/path?t=1&sig=abc",
+      "https://app.example.com/intake?source=sms&t=1&sig=abc",
       TEST_SECRET,
     );
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.reason).toBe("missing_deal_room");
+      expect(result.reason).toBe("missing_url");
     }
   });
 
   it("rejects a URL with non-numeric timestamp", async () => {
     const result = await verifySignedLink(
-      "https://app.example.com/deal-room/dr_abc?t=nope&sig=abc",
+      "https://app.example.com/intake?url=https%3A%2F%2Fwww.zillow.com%2Fhomedetails%2FTest%2F12345_zpid%2F&source=sms&t=nope&sig=abc",
       TEST_SECRET,
     );
     expect(result.valid).toBe(false);

@@ -11,6 +11,7 @@
     "./config": "./src/config.ts",
     "./contracts": "./src/contracts.ts",
     "./external-access": "./src/external-access.ts",
+    "./intake-parser": "./src/intake-parser.ts",
     "./launch-events": "./src/launch-events.ts",
     "./utils": "./src/utils.ts"
   },
