@@ -30,8 +30,8 @@ describe("track() — funnel category", () => {
     ).not.toThrow();
   });
 
-  it("accepts teaser_viewed with empty properties", () => {
-    expect(() => track("teaser_viewed", {})).not.toThrow();
+  it("accepts teaser_viewed with only propertyId", () => {
+    expect(() => track("teaser_viewed", { propertyId: "prop_2" })).not.toThrow();
   });
 
   it("accepts registration_started with source", () => {

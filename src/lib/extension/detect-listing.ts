@@ -13,6 +13,7 @@
  * Convex mutations handle the rest.
  */
 
+import type { LinkPastedSource } from "@buyer-v2/shared/launch-events";
 import { parseListingUrl } from "@/lib/intake/parser";
 
 export type DetectionStatus =
@@ -118,7 +119,8 @@ export function buildIntakeForwardUrl(
   buyerV2BaseUrl: string,
   normalizedListingUrl: string,
 ): string {
+  const source: Extract<LinkPastedSource, "extension"> = "extension";
   const base = buyerV2BaseUrl.replace(/\/$/, "");
   const encoded = encodeURIComponent(normalizedListingUrl);
-  return `${base}/intake?url=${encoded}&source=extension`;
+  return `${base}/intake?url=${encoded}&source=${source}`;
 }
