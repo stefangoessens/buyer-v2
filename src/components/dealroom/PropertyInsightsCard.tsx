@@ -265,6 +265,8 @@ function GenerationInProgress() {
   );
 }
 
+type LockedTeaser = { category: string; severity: string };
+
 type InsightsResponse = {
   insights: Array<{
     category: string;
@@ -277,7 +279,51 @@ type InsightsResponse = {
   }>;
   generatedAt: string;
   totalCount: number;
+  lockedTeasers?: LockedTeaser[];
 } | null;
+
+function BlurredLockedRow({ teaser }: { teaser: LockedTeaser }) {
+  const category = (teaser.category as InsightCategory) ?? "market_position";
+  const severity = (teaser.severity as InsightSeverity) ?? "info";
+  // A dummy insight the PropertyInsightItem can render — the blur
+  // overlay on top scrubs the leaked text so only the category + shape
+  // show through. Buyers see the structure, not the content.
+  const decoyInsight: Insight = {
+    category,
+    severity,
+    headline: "The full analytical take on this angle is in your free account",
+    body: "Comps-adjusted delta · specific negotiation moves · a numeric call on whether this listing is worth opening on · broker review state · citations from every upstream engine.",
+    confidence: 0.5,
+    premium: true,
+    citations: [],
+  };
+  return (
+    <div className="relative">
+      <div className="pointer-events-none select-none opacity-95 blur-[5px]">
+        <PropertyInsightItem insight={decoyInsight} />
+      </div>
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-end pr-2 md:pr-4">
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary-700 shadow-sm ring-1 ring-primary-100 backdrop-blur">
+          <svg
+            className="size-3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2.25}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+            />
+          </svg>
+          Locked
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function PropertyInsightsCard(props: PropertyInsightsCardProps) {
   const publicResult = useQuery(
@@ -306,6 +352,7 @@ export function PropertyInsightsCard(props: PropertyInsightsCardProps) {
 
   const insights = result.insights.map(normalizeInsight);
   const { generatedAt, totalCount } = result;
+  const lockedTeasers = result.lockedTeasers ?? [];
   const remaining = Math.max(0, totalCount - insights.length);
   const showUnlock = props.variant === "public" && remaining > 0;
 
@@ -324,6 +371,10 @@ export function PropertyInsightsCard(props: PropertyInsightsCardProps) {
             insight={insight}
           />
         ))}
+        {props.variant === "public" &&
+          lockedTeasers.map((teaser, idx) => (
+            <BlurredLockedRow key={`locked-${idx}`} teaser={teaser} />
+          ))}
       </div>
       {showUnlock && props.variant === "public" ? (
         <UnlockRow

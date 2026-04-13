@@ -16,6 +16,8 @@ type ApiInsight = {
   citations: string[];
 };
 
+type LockedTeaser = { category: string; severity: string };
+
 type ApiInsightsResponse = {
   insights: ApiInsight[];
   overallConfidence: number;
@@ -23,6 +25,7 @@ type ApiInsightsResponse = {
   generatedAtEngine: string;
   hasGatedPremium: boolean;
   totalCount: number;
+  lockedTeasers?: LockedTeaser[];
 } | null;
 
 function parseInsightsRecord(record: {
@@ -86,15 +89,23 @@ export const getPublic = query({
     if (!parsed) return null;
 
     const publicOnly = parsed.insights.filter((i) => i.premium === false);
-    const hasGatedPremium = parsed.insights.some((i) => i.premium === true);
+    const premiumOnly = parsed.insights.filter((i) => i.premium === true);
+    // Expose category + severity for premium teasers so the UI can
+    // render blurred shell rows that hint at scope without leaking
+    // the analysis. Headlines/bodies stay out until the buyer signs up.
+    const lockedTeasers = premiumOnly.slice(0, 3).map((i) => ({
+      category: i.category,
+      severity: i.severity,
+    }));
 
     return {
       insights: publicOnly,
       overallConfidence: parsed.overallConfidence,
       generatedAt: latest.generatedAt,
       generatedAtEngine: "insights",
-      hasGatedPremium,
+      hasGatedPremium: premiumOnly.length > 0,
       totalCount: parsed.insights.length,
+      lockedTeasers,
     };
   },
 });
