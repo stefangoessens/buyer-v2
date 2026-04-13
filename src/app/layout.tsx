@@ -4,6 +4,10 @@ import { fontVariables } from "@/app/fonts";
 import { Providers } from "@/app/providers";
 import { appSurfaceDefinitions } from "@/lib/app-shell";
 import "./globals.css";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   ...appSurfaceDefinitions.marketing.metadata,
@@ -59,7 +63,7 @@ export default function RootLayout({
 }) {
   return (
     <ConvexAuthNextjsServerProvider>
-      <html lang="en">
+      <html lang="en" className={cn("font-sans", geist.variable)}>
         <head>
           <script
             dangerouslySetInnerHTML={{ __html: chromeExtensionErrorSilencer }}

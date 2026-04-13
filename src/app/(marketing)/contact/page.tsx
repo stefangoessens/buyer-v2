@@ -33,15 +33,15 @@ export default function ContactPage() {
               <form className="mt-6 grid grid-cols-1 gap-5">
                 <label className="grid gap-2">
                   <span className="text-sm font-medium text-neutral-700">Name</span>
-                  <Input placeholder="Your name" className="h-12 rounded-[12px]" />
+                  <Input placeholder="Your name" />
                 </label>
                 <label className="grid gap-2">
                   <span className="text-sm font-medium text-neutral-700">Email</span>
-                  <Input type="email" placeholder="you@example.com" className="h-12 rounded-[12px]" />
+                  <Input type="email" placeholder="you@example.com" />
                 </label>
                 <label className="grid gap-2">
                   <span className="text-sm font-medium text-neutral-700">Listing link (optional)</span>
-                  <Input placeholder="https://www.zillow.com/..." className="h-12 rounded-[12px]" />
+                  <Input placeholder="https://www.zillow.com/..." />
                 </label>
                 <label className="grid gap-2">
                   <span className="text-sm font-medium text-neutral-700">Message</span>

@@ -21,7 +21,7 @@ export function PasteLinkCTA() {
   };
 
   return (
-    <Card className="overflow-hidden border-neutral-200 bg-gradient-to-br from-primary-50 via-white to-accent-50 p-6 md:p-8">
+    <Card className="overflow-hidden bg-gradient-to-br from-primary-50 via-white to-accent-50 p-6 md:p-8">
       <div className="flex flex-col gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">

@@ -30,7 +30,7 @@ export function KpiMetricTile({ metric, value }: KpiMetricTileProps) {
     <Card
       className={cn(
         "gap-2 transition-shadow hover:shadow-md",
-        value.source === "unavailable" && "border-dashed border-neutral-300",
+        value.source === "unavailable" && "border border-dashed border-neutral-300",
       )}
     >
       <CardHeader className="pb-0">

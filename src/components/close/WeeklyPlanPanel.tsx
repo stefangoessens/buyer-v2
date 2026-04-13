@@ -57,7 +57,7 @@ function Section({
 
 export function WeeklyPlanPanel({ plan }: WeeklyPlanPanelProps) {
   return (
-    <Card className="border-neutral-200">
+    <Card>
       <CardHeader>
         <div className="flex items-baseline justify-between">
           <CardTitle className="text-lg font-semibold text-neutral-900">

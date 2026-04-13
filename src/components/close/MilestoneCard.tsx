@@ -75,7 +75,7 @@ export function MilestoneCard({ milestone, emphasize }: MilestoneCardProps) {
   return (
     <Card
       className={cn(
-        "transition-all",
+        "border transition-all",
         emphasize
           ? "border-primary-300 shadow-md"
           : "border-neutral-200 hover:border-neutral-300",

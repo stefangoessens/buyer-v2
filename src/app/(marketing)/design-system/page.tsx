@@ -64,18 +64,18 @@ export default function DesignSystemPage() {
             <div>
               <h2 className="text-xl font-semibold text-neutral-800">UI primitives</h2>
               <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
-                <Card className="rounded-[24px] border-neutral-200/80 p-8">
+                <Card className="p-8">
                   <div className="flex flex-wrap items-center gap-3">
                     <Badge>Badge</Badge>
                     <Badge variant="secondary">Secondary</Badge>
                   </div>
                   <div className="mt-6 flex flex-wrap items-center gap-3">
-                    <Button className="rounded-[12px]">Primary</Button>
-                    <Button variant="secondary" className="rounded-[12px]">Secondary</Button>
-                    <Button variant="outline" className="rounded-[12px]">Outline</Button>
+                    <Button>Primary</Button>
+                    <Button variant="secondary">Secondary</Button>
+                    <Button variant="outline">Outline</Button>
                   </div>
                   <div className="mt-6 grid gap-3">
-                    <Input className="h-12 rounded-[12px]" placeholder="Input" />
+                    <Input placeholder="Input" />
                   </div>
                 </Card>
 

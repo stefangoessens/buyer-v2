@@ -23,7 +23,7 @@ export function WorkstreamGrid({ groups }: WorkstreamGridProps) {
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
       {groups.map((group) => (
-        <Card key={group.workstream} className="border-neutral-200">
+        <Card key={group.workstream}>
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-base font-semibold text-neutral-900">

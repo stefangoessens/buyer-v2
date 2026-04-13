@@ -28,8 +28,8 @@ export function AdminMetricCard({
     <Card
       className={cn(
         "gap-2 transition-shadow hover:shadow-md",
-        tone === "warning" && "border-warning-500/40 bg-warning-50/50",
-        tone === "error" && "border-error-500/40 bg-error-50/40",
+        tone === "warning" && "border border-warning-500/40 bg-warning-50/50",
+        tone === "error" && "border border-error-500/40 bg-error-50/40",
       )}
     >
       <CardHeader className="pb-0">

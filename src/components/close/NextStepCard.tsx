@@ -23,7 +23,7 @@ export function NextStepCard({
   daysToClose,
 }: NextStepCardProps) {
   return (
-    <Card className="border-neutral-200">
+    <Card>
       <CardContent className="flex flex-col gap-4 p-6 md:flex-row md:items-start md:justify-between">
         <div className="flex-1">
           <p className="text-xs uppercase tracking-wide text-neutral-500">

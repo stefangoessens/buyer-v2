@@ -25,7 +25,7 @@ export function DealRoomCard({ row, now }: DealRoomCardProps) {
       href={`/dealroom/${row.dealRoomId}/offer`}
       className="group block"
     >
-      <Card className="h-full overflow-hidden p-0 transition-all hover:border-primary-300 hover:shadow-md">
+      <Card className="h-full overflow-hidden p-0 transition-all hover:ring-2 hover:ring-primary-300 hover:shadow-md">
         <div className="relative aspect-video bg-neutral-100">
           {row.primaryPhotoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element

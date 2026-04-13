@@ -73,7 +73,7 @@ export function ScenarioCard({
   return (
     <Card
       className={cn(
-        "relative flex h-full flex-col transition-all",
+        "relative flex h-full flex-col border transition-all",
         isSelected
           ? "border-primary-400 ring-2 ring-primary-200 shadow-md"
           : "border-neutral-200 hover:border-neutral-300",

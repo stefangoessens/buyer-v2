@@ -45,7 +45,7 @@ export function QueueIndexCards({ counts }: QueueIndexCardsProps) {
             <Card
               className={cn(
                 "h-full transition-shadow hover:shadow-md",
-                row.urgent > 0 && "border-error-500/40",
+                row.urgent > 0 && "border border-error-500/40",
               )}
             >
               <CardHeader>
