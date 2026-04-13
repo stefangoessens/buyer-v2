@@ -750,6 +750,8 @@ export const getInternalView = query({
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (user.role !== "broker" && user.role !== "admin") return null;
+    const dealRoom = await loadDealRoom(ctx, args.dealRoomId);
+    if (!dealRoom) return null;
 
     const statusRow = await getCompensationStatusRowInternal(ctx, args.dealRoomId);
     const entries = await getEntriesForDealRoom(ctx, args.dealRoomId);
