@@ -1,12 +1,19 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { requireAuth } from "./lib/session";
 import { communicationChannel } from "./lib/validators";
 import {
   extractPlaceholders,
-  isValidVersion,
   renderTemplate as renderTemplateLib,
 } from "./lib/templateRender";
+import type {
+  CommunicationTemplateRecord,
+} from "../packages/shared/src/communication-templates";
+import {
+  compareCommunicationTemplateVersions,
+  isValidCommunicationTemplateVersion,
+} from "../packages/shared/src/communication-templates";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // KIN-835 — Communication template registry
@@ -28,6 +35,44 @@ import {
 // `src/lib/templates/render.ts` for use from React Server Components
 // and unit tests — the two files must stay in sync.
 // ═══════════════════════════════════════════════════════════════════════════
+
+const communicationTemplateRecordShape = {
+  key: v.string(),
+  channel: communicationChannel,
+  version: v.string(),
+  subject: v.optional(v.string()),
+  body: v.string(),
+  variables: v.array(v.string()),
+  isActive: v.boolean(),
+  description: v.optional(v.string()),
+  author: v.string(),
+  changeNotes: v.optional(v.string()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+} as const;
+
+const communicationTemplateDocValidator = v.object({
+  _id: v.id("communicationTemplates"),
+  _creationTime: v.number(),
+  ...communicationTemplateRecordShape,
+});
+
+const communicationTemplateRenderResultValidator = v.object({
+  subject: v.optional(v.string()),
+  body: v.string(),
+  version: v.string(),
+});
+
+type CommunicationTemplateRow = CommunicationTemplateRecord & {
+  _id: Id<"communicationTemplates">;
+  _creationTime: number;
+};
+
+type CommunicationTemplateRenderResult = {
+  subject?: string;
+  body: string;
+  version: string;
+};
 
 /**
  * Guard that every public function uses: returns the current user if
@@ -54,7 +99,7 @@ export const getActive = query({
     key: v.string(),
     channel: communicationChannel,
   },
-  returns: v.any(),
+  returns: v.union(v.null(), communicationTemplateDocValidator),
   handler: async (ctx, args) => {
     await requireBrokerOrAdmin(ctx);
 
@@ -79,7 +124,7 @@ export const listByKey = query({
     key: v.string(),
     channel: v.optional(communicationChannel),
   },
-  returns: v.array(v.any()),
+  returns: v.array(communicationTemplateDocValidator),
   handler: async (ctx, args) => {
     await requireBrokerOrAdmin(ctx);
 
@@ -113,7 +158,7 @@ export const listByKey = query({
  */
 export const listActive = query({
   args: {},
-  returns: v.array(v.any()),
+  returns: v.array(communicationTemplateDocValidator),
   handler: async (ctx) => {
     await requireBrokerOrAdmin(ctx);
 
@@ -155,7 +200,7 @@ export const createVersion = mutation({
 
     // 1. Version format — we keep the format deliberately narrow
     //    (major.minor.patch) so the UI can show a simple bump control.
-    if (!isValidVersion(args.version)) {
+    if (!isValidCommunicationTemplateVersion(args.version)) {
       throw new Error(
         `Invalid version '${args.version}' — expected semver major.minor.patch`
       );
@@ -194,14 +239,17 @@ export const createVersion = mutation({
 
     // 3. Duplicate check — (key, channel, version) is the natural
     //    identity of a template row.
-    const existing = await ctx.db
+    const existing = (await ctx.db
       .query("communicationTemplates")
       .withIndex("by_key_and_channel", (q) =>
         q.eq("key", args.key).eq("channel", args.channel)
       )
-      .collect();
+      .collect()) as CommunicationTemplateRow[];
 
-    const duplicate = existing.find((t) => t.version === args.version);
+    const duplicate = existing.find(
+      (t) =>
+        compareCommunicationTemplateVersions(t.version, args.version) === 0
+    );
     if (duplicate) {
       throw new Error(
         `Version ${args.version} already exists for (${args.key}, ${args.channel})`
@@ -326,11 +374,7 @@ export const renderTemplate = mutation({
       v.union(v.string(), v.number(), v.boolean())
     ),
   },
-  returns: v.object({
-    subject: v.optional(v.string()),
-    body: v.string(),
-    version: v.string(),
-  }),
+  returns: communicationTemplateRenderResultValidator,
   handler: async (ctx, args) => {
     await requireBrokerOrAdmin(ctx);
 
@@ -375,10 +419,11 @@ export const renderTemplate = mutation({
       renderedSubject = subjectResult.rendered;
     }
 
-    return {
+    const result: CommunicationTemplateRenderResult = {
       subject: renderedSubject,
       body: bodyResult.rendered,
       version: active.version,
     };
+    return result;
   },
 });

@@ -17,6 +17,11 @@
  * broker/admin console.
  */
 
+import type {
+  CommunicationTemplateInputValue,
+  CommunicationTemplateRenderInputs,
+} from "@buyer-v2/shared";
+
 // ─── Placeholder regex ─────────────────────────────────────────────────────
 //
 // Matches `{{ name }}` with optional surrounding whitespace. The capture
@@ -53,6 +58,9 @@ export interface RenderOptions {
    */
   strict?: boolean;
 }
+
+export type TemplateInputValue = CommunicationTemplateInputValue;
+export type TemplateInputs = CommunicationTemplateRenderInputs;
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
@@ -91,7 +99,7 @@ export function extractPlaceholders(template: string): string[] {
 export function renderTemplate(
   template: string,
   declaredVariables: string[],
-  inputs: Record<string, string | number | boolean>,
+  inputs: TemplateInputs,
   options?: RenderOptions
 ): RenderResult {
   const errors: RenderError[] = [];

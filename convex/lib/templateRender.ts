@@ -9,6 +9,11 @@
  * future Node scripts without pulling Convex types in.
  */
 
+import type {
+  CommunicationTemplateInputValue,
+  CommunicationTemplateRenderInputs,
+} from "../../packages/shared/src/communication-templates";
+
 // ─── Placeholder regex ─────────────────────────────────────────────────────
 // Matches `{{ name }}` with optional surrounding whitespace. The capture
 // group holds the variable name. Names must start with a letter or
@@ -31,6 +36,9 @@ export interface RenderOptions {
   allowExtraInputs?: boolean;
   strict?: boolean;
 }
+
+export type TemplateInputValue = CommunicationTemplateInputValue;
+export type TemplateInputs = CommunicationTemplateRenderInputs;
 
 // ─── Public API ────────────────────────────────────────────────────────────
 
@@ -57,7 +65,7 @@ export function extractPlaceholders(template: string): string[] {
 export function renderTemplate(
   template: string,
   declaredVariables: string[],
-  inputs: Record<string, string | number | boolean>,
+  inputs: TemplateInputs,
   options?: RenderOptions
 ): RenderResult {
   const errors: RenderError[] = [];
