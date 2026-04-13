@@ -125,6 +125,7 @@ struct ShareImportBackendResponse: Sendable, Codable, Equatable {
 enum ShareImportState: Sendable, Equatable {
     case idle
     case validating
+    case restoringSession(pendingUrl: String)
     case signInRequired(pendingUrl: String)
     case sessionExpired(pendingUrl: String)
     case submitting
@@ -207,11 +208,14 @@ final class ConvexShareImportBackend: ShareImportBackend, Sendable {
 ///   1. Share extension / universal link handler passes a URL string
 ///      to `handleSharedURL(_:)`.
 ///   2. Service validates the URL. Invalid → `.invalid`.
-///   3. Checks auth state. Not signed in → `.signInRequired(pendingUrl)`
-///      and the caller stashes the URL to re-try post-sign-in.
-///   4. Expired session → `.sessionExpired(pendingUrl)` so the caller
+///   3. If the app is still restoring a prior session, transition to
+///      `.restoringSession(pendingUrl)` so the caller can preserve the
+///      entry without flashing a signed-out recovery path.
+///   4. Not signed in → `.signInRequired(pendingUrl)` and the caller
+///      stashes the URL to re-try post-sign-in.
+///   5. Expired session → `.sessionExpired(pendingUrl)` so the caller
 ///      can drive the session recovery flow.
-///   5. Signed in → POST to backend, transition to `.submitting`,
+///   6. Signed in → POST to backend, transition to `.submitting`,
 ///      then `.imported(outcome)` or `.error(message)`.
 ///
 /// On sign-in completion, the caller invokes `resumePendingImport()`
@@ -266,7 +270,11 @@ final class ShareImportService {
 
     private func attemptImport(url: String, portal: ShareImportPortal) async {
         switch authService.state {
-        case .signedOut, .restoring:
+        case .restoring:
+            pendingUrl = url
+            state = .restoringSession(pendingUrl: url)
+            return
+        case .signedOut:
             pendingUrl = url
             state = .signInRequired(pendingUrl: url)
             return

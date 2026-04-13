@@ -56,6 +56,11 @@ enum RouteResolutionResult: Sendable, Equatable {
     /// Payload parsed successfully and the user is allowed to reach it.
     case resolved(InboundRoute)
 
+    /// Payload parsed successfully while the app is still restoring a
+    /// prior session. The caller should preserve the destination and
+    /// retry resolution once the auth boundary settles.
+    case restoring(pendingRoute: InboundRoute)
+
     /// Payload parsed successfully but the user is signed out. The caller
     /// should show sign-in and apply the pending route after auth completes.
     case signInRequired(pendingRoute: InboundRoute)

@@ -502,8 +502,8 @@ struct InboundRouteResolverTests {
         }
     }
 
-    @Test("resolve → .signInRequired while AuthService is .restoring")
-    func testResolveRestoringMapsToSignInRequired() {
+    @Test("resolve → .restoring while AuthService is .restoring")
+    func testResolveRestoringMapsToRestoring() {
         // Before initialize() runs, AuthService state is .restoring.
         // Callers should hold the pending route and re-resolve once
         // auth finishes restoring.
@@ -519,8 +519,8 @@ struct InboundRouteResolverTests {
             InboundRoutePayload(url: "buyerv2://property/prop_1")
         )
 
-        guard case .signInRequired(let pending) = result else {
-            Issue.record("Expected .signInRequired, got \(result)")
+        guard case .restoring(let pending) = result else {
+            Issue.record("Expected .restoring, got \(result)")
             return
         }
         #expect(pending == .property(propertyId: "prop_1"))

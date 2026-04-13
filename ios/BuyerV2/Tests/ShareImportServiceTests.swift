@@ -330,6 +330,26 @@ struct ShareImportServiceTests {
         #expect(backend.submitCallCount == 0) // never hit backend
     }
 
+    @Test("restoring session → .restoringSession(pendingUrl)")
+    func testRestoringSessionStashesPending() async {
+        let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .restoring)
+        let service = ShareImportService(
+            backend: backend,
+            authService: authService
+        )
+
+        let url = "https://www.zillow.com/homedetails/123"
+        await service.handleSharedURL(url)
+
+        guard case .restoringSession(let pending) = service.state else {
+            Issue.record("Expected .restoringSession")
+            return
+        }
+        #expect(pending == url)
+        #expect(backend.submitCallCount == 0)
+    }
+
     @Test("resumePendingImport after sign-in completes successfully")
     func testResumePendingImport() async {
         let backend = MockShareImportBackend()

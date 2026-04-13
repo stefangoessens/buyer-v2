@@ -40,14 +40,14 @@ final class InboundRouteResolver {
     ///   1. Parse the payload into an `InboundRoute` (pure — no auth).
     ///   2. If parse fails → `.invalidTarget`.
     ///   3. If auth state is `.signedIn` → `.resolved(route)`.
-    ///   4. If auth state is `.expired` → `.sessionExpired(route)`.
-    ///   5. If auth state is `.authUnavailable` → `.authUnavailable(route)`.
-    ///   6. Otherwise (`.signedOut`, `.restoring`) → `.signInRequired(route)`.
+    ///   4. If auth state is `.restoring` → `.restoring(route)`.
+    ///   5. If auth state is `.expired` → `.sessionExpired(route)`.
+    ///   6. If auth state is `.authUnavailable` → `.authUnavailable(route)`.
+    ///   7. If auth state is `.signedOut` → `.signInRequired(route)`.
     ///
-    /// The restoring state deliberately maps to `.signInRequired` rather
-    /// than blocking: callers should hold the pending route and re-ask
-    /// after the auth service finishes restoring (the AuthService state
-    /// observer will rerun this resolver).
+    /// The restoring state is explicit so deep-link and push entry paths
+    /// can preserve the pending destination without flashing a signed-out
+    /// recovery UI during cold-start session restoration.
     func resolve(_ payload: InboundRoutePayload) -> RouteResolutionResult {
         let parseResult = Self.parseRoute(from: payload)
         switch parseResult {
@@ -57,11 +57,13 @@ final class InboundRouteResolver {
             switch authService.state {
             case .signedIn:
                 return .resolved(route)
+            case .restoring:
+                return .restoring(pendingRoute: route)
             case .expired:
                 return .sessionExpired(pendingRoute: route)
             case .authUnavailable:
                 return .authUnavailable(pendingRoute: route)
-            case .signedOut, .restoring:
+            case .signedOut:
                 return .signInRequired(pendingRoute: route)
             }
         }
