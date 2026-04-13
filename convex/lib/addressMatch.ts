@@ -214,31 +214,54 @@ function parseRawAddress(raw: string): {
     }
   }
 
-  const tailRegex = /^(.+?)[\s,]+([A-Za-z][A-Za-z.\s]*?)\s+(\d{5}(?:-\d{4})?)$/;
-  const tailMatch = cleaned.match(tailRegex);
-  if (!tailMatch) return null;
+  const zipRegex = /(\d{5}(?:-\d{4})?)$/;
+  const zipMatch = cleaned.match(zipRegex);
+  if (!zipMatch) return null;
+  const zip = zipMatch[1];
+  const withoutZip = cleaned.slice(0, cleaned.length - zip.length).trim();
 
-  const beforeState = tailMatch[1].trim();
-  const state = tailMatch[2].trim();
-  const zip = tailMatch[3];
+  let state: string;
+  let withoutState: string;
+  const twoLetterMatch = withoutZip.match(/[\s,]+([A-Za-z]{2})$/);
+  if (twoLetterMatch) {
+    state = twoLetterMatch[1];
+    withoutState = withoutZip.slice(0, twoLetterMatch.index).trim();
+  } else {
+    const tailWords = withoutZip.replace(/,/g, " ").split(/\s+/).filter(Boolean);
+    if (tailWords.length < 2) return null;
 
-  const beforeParts = beforeState
-    .split(",")
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
-  if (beforeParts.length === 0) return null;
+    const twoWord = `${tailWords[tailWords.length - 2]} ${tailWords[tailWords.length - 1]}`;
+    const oneWord = tailWords[tailWords.length - 1];
+    if (US_STATES[twoWord.toUpperCase()]) {
+      state = twoWord;
+      withoutState = tailWords.slice(0, -2).join(" ");
+    } else if (US_STATES[oneWord.toUpperCase()]) {
+      state = oneWord;
+      withoutState = tailWords.slice(0, -1).join(" ");
+    } else {
+      return null;
+    }
+  }
+  withoutState = withoutState.replace(/,$/, "").trim();
+  if (!withoutState) return null;
 
   let city: string;
   let streetJoined: string;
-  if (beforeParts.length >= 2) {
-    city = beforeParts[beforeParts.length - 1];
-    streetJoined = beforeParts.slice(0, -1).join(", ");
+  if (withoutState.includes(",")) {
+    const parts = withoutState
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    city = parts[parts.length - 1];
+    streetJoined = parts.slice(0, -1).join(", ");
   } else {
-    const words = beforeParts[0].split(" ");
-    if (words.length < 3) return null;
+    const words = withoutState.split(/\s+/).filter(Boolean);
+    if (words.length < 2) return null;
     city = words[words.length - 1];
     streetJoined = words.slice(0, -1).join(" ");
   }
+
+  if (!streetJoined) return null;
 
   const { street, unit } = extractUnit(streetJoined);
   return { street, unit, city, state, zip };
