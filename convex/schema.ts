@@ -1951,6 +1951,27 @@ export default defineSchema({
     .index("by_key_and_changedAt", ["key", "changedAt"])
     .index("by_changedAt", ["changedAt"]),
 
+  // ═══ WATCHLIST (KIN-849) ═══
+  //
+  // Per-buyer ordered list of candidate properties the buyer wants
+  // to revisit. One row per (buyer, property) pair. Position is a
+  // 0..N-1 contiguous integer maintained by the mutation layer so
+  // the buyer UI renders in stable order.
+  //
+  // Distinct from propertyComparisons (KIN-843 — side-by-side
+  // spec diff) and from active deal rooms (KIN-744 — in-progress
+  // representation). Pure logic lives in `src/lib/watchlist/`.
+  watchlistEntries: defineTable({
+    buyerId: v.id("users"),
+    propertyId: v.id("properties"),
+    position: v.number(),
+    note: v.optional(v.string()),
+    addedAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_buyerId_and_position", ["buyerId", "position"])
+    .index("by_buyerId_and_propertyId", ["buyerId", "propertyId"]),
+
   // ═══ FILE FACTS (KIN-841) ═══
   //
   // Typed extracted facts from uploaded documents (HOA estoppels,
