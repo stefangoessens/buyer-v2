@@ -254,8 +254,49 @@ class RealtorExtractor:
             prop = self._find_listing_in_page_props(page_props)
             if prop is None:
                 continue
+            # Don't short-circuit on an empty/stub dict: when a page has
+            # multiple __NEXT_DATA__ scripts, an early placeholder (e.g.
+            # a fallback / SSR hydration stub) that is structurally valid
+            # but carries no listing fields would previously block the
+            # scanner from reaching the later blob with the real payload.
+            # Require at least one recognisable listing field before
+            # returning.
+            if not self._next_blob_has_listing_fields(prop):
+                continue
             return self._next_to_raw(prop)
         return {}
+
+    @staticmethod
+    def _next_blob_has_listing_fields(prop: dict[str, Any]) -> bool:
+        """Return True if a __NEXT_DATA__ dict carries real listing data.
+
+        A stub with only metadata (e.g. ``{"status": "sold"}``) should not
+        be accepted as the real listing blob. We consider the dict
+        populated if any of the core identity / price / address fields
+        are present AND non-empty.
+        """
+        core_fields = (
+            "list_price",
+            "price",
+            "current_price",
+            "listing_id",
+            "property_id",
+            "mls_number",
+            "mls_id",
+            "address",
+            "location",
+            "description",
+        )
+        for key in core_fields:
+            value = prop.get(key)
+            if value is None:
+                continue
+            if isinstance(value, dict) and not value:
+                continue
+            if isinstance(value, str) and not value.strip():
+                continue
+            return True
+        return False
 
     @staticmethod
     def _find_listing_in_page_props(page_props: dict[str, Any]) -> dict[str, Any] | None:
@@ -305,8 +346,14 @@ class RealtorExtractor:
             "beds": _to_float(
                 _first_present(description, "beds", "beds_max", "beds_min")
             ),
+            # `baths` is the decimal total (2.5); `baths_full` is only the
+            # integer full-bath count (2). Preferring `baths_full` over
+            # `baths_total` silently truncates half baths — a 2 full + 1
+            # half listing becomes `baths=2.0` instead of `2.5`. Prefer the
+            # decimal total first, fall back to full only when total is
+            # absent.
             "baths": _to_float(
-                _first_present(description, "baths", "baths_full", "baths_total")
+                _first_present(description, "baths", "baths_total", "baths_full")
             ),
             "living_area_sqft": _to_int(
                 _first_present(description, "sqft", "sqft_max", "sqft_min")

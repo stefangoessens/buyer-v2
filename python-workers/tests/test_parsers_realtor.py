@@ -1053,3 +1053,151 @@ class TestHelperUnits:
         # String and None pass through unchanged.
         assert _pick_residential_type("Condo") == "Condo"
         assert _pick_residential_type(None) is None
+
+
+class TestBathsTotalPreferredOverBathsFull:
+    """Regression: a listing with `baths=2.5` and `baths_full=2` must keep 2.5.
+
+    The old order (`baths_full` before `baths_total`) silently truncated
+    half baths. For a 2-full-plus-1-half listing, canonical output
+    dropped from 2.5 to 2.0 — which skewed downstream filtering and
+    ranking by bath count.
+    """
+
+    def test_half_baths_preserved_via_baths_field(self) -> None:
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id": "HALFBATH001",'
+            '"list_price": 725000,'
+            '"description": {'
+            '"beds": 3,'
+            '"baths": 2.5,'  # decimal total — wins
+            '"baths_full": 2,'  # integer full only — loses half
+            '"baths_total": 3,'
+            '"sqft": 1800'
+            '},'
+            '"address": {'
+            '"line": "789 Half St",'
+            '"city": "Miami",'
+            '"state_code": "FL",'
+            '"postal_code": "33130"'
+            '}}}}}</script>'
+            "</head><body></body></html>"
+        )
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "789-Half-St_Miami_FL_33130_M12345-67890"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.baths == 2.5
+
+    def test_baths_total_beats_baths_full_when_baths_missing(self) -> None:
+        """When `baths` is absent, `baths_total` is still preferred over `baths_full`."""
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id": "HALFBATH002",'
+            '"list_price": 725000,'
+            '"description": {'
+            '"beds": 3,'
+            '"baths_full": 2,'  # would win under the old order
+            '"baths_total": 3,'  # must win under the fix
+            '"sqft": 1800'
+            '},'
+            '"address": {'
+            '"line": "456 Total Rd",'
+            '"city": "Miami",'
+            '"state_code": "FL",'
+            '"postal_code": "33130"'
+            '}}}}}</script>'
+            "</head><body></body></html>"
+        )
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "456-Total-Rd_Miami_FL_33130_M22222-33333"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.baths == 3.0
+
+
+class TestNextStubBlobFallsThrough:
+    """Regression: empty/stub first __NEXT_DATA__ blob must not block later blobs.
+
+    Prior code returned as soon as it found any dict under property/
+    listing/home, so a structurally valid but empty early stub (from an
+    SSR hydration fallback) would prevent the scanner from reaching the
+    real listing payload in a second __NEXT_DATA__ script.
+    """
+
+    def test_empty_stub_falls_through_to_real_blob(self) -> None:
+        # First __NEXT_DATA__ carries a structurally-valid but empty
+        # property dict. Second __NEXT_DATA__ carries the real listing.
+        stub = '{"props":{"pageProps":{"property":{}}}}'
+        real = (
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id": "REAL123",'
+            '"list_price": 485000,'
+            '"description": {'
+            '"beds": 3,'
+            '"baths": 2,'
+            '"sqft": 1500'
+            '},'
+            '"address": {'
+            '"line": "100 Real Ave",'
+            '"city": "Doral",'
+            '"state_code": "FL",'
+            '"postal_code": "33172"'
+            '}}}}}'
+        )
+        html = (
+            "<!DOCTYPE html><html><head>"
+            f'<script id="__NEXT_DATA__" type="application/json">{stub}</script>'
+            f'<script id="__NEXT_DATA__" type="application/json">{real}</script>'
+            "</head><body></body></html>"
+        )
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "100-Real-Ave_Doral_FL_33172_M44444-55555"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        # The stub must have been skipped — real payload wins.
+        assert prop.listing_id == "REAL123"
+        assert prop.price_usd == 485_000
+        assert prop.beds == 3.0
+        assert prop.city == "Doral"
+
+    def test_metadata_only_stub_falls_through(self) -> None:
+        """A stub with only metadata (e.g. status) but no core fields falls through."""
+        stub = '{"props":{"pageProps":{"listing":{"status":"sold"}}}}'
+        real = (
+            '{"props":{"pageProps":{"listing":{'
+            '"listing_id": "META999",'
+            '"list_price": 550000,'
+            '"description": {'
+            '"beds": 2,'
+            '"baths": 2,'
+            '"sqft": 1100'
+            '},'
+            '"address": {'
+            '"line": "200 Metadata Ln",'
+            '"city": "Hollywood",'
+            '"state_code": "FL",'
+            '"postal_code": "33019"'
+            '}}}}}'
+        )
+        html = (
+            "<!DOCTYPE html><html><head>"
+            f'<script id="__NEXT_DATA__" type="application/json">{stub}</script>'
+            f'<script id="__NEXT_DATA__" type="application/json">{real}</script>'
+            "</head><body></body></html>"
+        )
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "200-Metadata-Ln_Hollywood_FL_33019_M66666-77777"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.listing_id == "META999"
+        assert prop.price_usd == 550_000
