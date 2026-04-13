@@ -3,17 +3,72 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
-    branches: [main]
+    branches: [main, staging]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  web:
-    name: Web
+  changes:
+    name: Detect changed surfaces
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      ci: ${{ steps.filter.outputs.ci }}
+      convex: ${{ steps.filter.outputs.convex }}
+      ios: ${{ steps.filter.outputs.ios }}
+      shared: ${{ steps.filter.outputs.shared }}
+      web: ${{ steps.filter.outputs.web }}
+      workers: ${{ steps.filter.outputs.workers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ci:
+              - '.github/**'
+              - 'scripts/**'
+            web:
+              - 'src/**'
+              - 'next.config.ts'
+              - 'instrumentation-client.ts'
+              - 'postcss.config.mjs'
+              - 'eslint.config.mjs'
+              - 'tsconfig.json'
+              - 'vitest.config.ts'
+              - 'playwright.config.ts'
+              - '.env.example'
+            convex:
+              - 'convex/**'
+            shared:
+              - 'packages/shared/**'
+            ios:
+              - 'ios/**'
+            workers:
+              - 'python-workers/**'
+              - 'services/extraction/**'
+              - 'railway.json'
+              - '.env.example'
+
+  web:
+    name: Web quality
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.web == 'true' ||
+      needs.changes.outputs.shared == 'true' ||
+      needs.changes.outputs.convex == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -41,14 +96,22 @@ jobs:
       - name: Build
         run: pnpm build:web
         env:
+          NEXT_PUBLIC_APP_URL: https://preview.buyer-v2.local
           NEXT_PUBLIC_CONVEX_URL: https://example.convex.cloud
           NEXT_PUBLIC_POSTHOG_KEY: test-posthog-key
           NEXT_PUBLIC_POSTHOG_HOST: https://us.i.posthog.com
           NEXT_PUBLIC_SENTRY_DSN: https://examplePublicKey@o0.ingest.sentry.io/0
 
   convex:
-    name: Convex
+    name: Convex quality
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.convex == 'true' ||
+      needs.changes.outputs.shared == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -68,8 +131,14 @@ jobs:
         run: pnpm --dir convex typecheck
 
   shared:
-    name: Shared
+    name: Shared package quality
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.shared == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -89,27 +158,34 @@ jobs:
         run: pnpm --dir packages/shared typecheck
 
   ios:
-    name: iOS
+    name: iOS quality
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.ios == 'true' ||
+      needs.changes.outputs.shared == 'true'
     runs-on: macos-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
       - name: Test Swift package
-        # `swift test` defaults to the macOS host target, but
-        # `BuyerV2/Package.swift` only declares `.iOS(.v17)` as a
-        # supported platform, so SwiftUI code referencing iOS-only
-        # APIs fails to compile on the macOS host. Run against an
-        # iOS Simulator via xcodebuild instead — matches how the
-        # package is actually consumed by the app target.
         run: |
           cd ios/BuyerV2
           xcodebuild test \
             -scheme BuyerV2 \
             -destination "platform=iOS Simulator,name=iPhone 16"
 
-  python:
-    name: Python (${{ matrix.workspace }})
+  workers:
+    name: Worker quality
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.workers == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -130,3 +206,138 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           python -m pytest -q
+
+  quality-gates:
+    name: Quality gates
+    needs:
+      - changes
+      - web
+      - convex
+      - shared
+      - ios
+      - workers
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Fail when an affected surface gate fails
+        env:
+          WEB_RESULT: ${{ needs.web.result }}
+          CONVEX_RESULT: ${{ needs.convex.result }}
+          SHARED_RESULT: ${{ needs.shared.result }}
+          IOS_RESULT: ${{ needs.ios.result }}
+          WORKERS_RESULT: ${{ needs.workers.result }}
+        run: |
+          echo "web=$WEB_RESULT"
+          echo "convex=$CONVEX_RESULT"
+          echo "shared=$SHARED_RESULT"
+          echo "ios=$IOS_RESULT"
+          echo "workers=$WORKERS_RESULT"
+
+          for result in "$WEB_RESULT" "$CONVEX_RESULT" "$SHARED_RESULT" "$IOS_RESULT" "$WORKERS_RESULT"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error::A required quality gate failed."
+              exit 1
+            fi
+          done
+
+          echo "All required quality gates passed."
+
+  preview-web:
+    name: Preview web health
+    needs:
+      - changes
+      - quality-gates
+    if: |
+      github.event_name == 'pull_request' &&
+      (
+        needs.changes.outputs.ci == 'true' ||
+        needs.changes.outputs.web == 'true' ||
+        needs.changes.outputs.shared == 'true' ||
+        needs.changes.outputs.convex == 'true'
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify preview web health
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          node scripts/verify-health.mjs \
+            --label "web preview" \
+            --template "${{ vars.PREVIEW_WEB_URL_TEMPLATE }}" \
+            --path "/api/health" \
+            --timeout-seconds "900" \
+            --interval-seconds "20"
+
+  preview-workers:
+    name: Preview worker health
+    needs:
+      - changes
+      - quality-gates
+    if: |
+      github.event_name == 'pull_request' &&
+      (
+        needs.changes.outputs.ci == 'true' ||
+        needs.changes.outputs.workers == 'true'
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify preview worker health
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          node scripts/verify-health.mjs \
+            --label "worker preview" \
+            --template "${{ vars.PREVIEW_EXTRACTION_URL_TEMPLATE }}" \
+            --path "/health" \
+            --timeout-seconds "900" \
+            --interval-seconds "20"
+
+  preview-ready:
+    name: Preview ready
+    needs:
+      - preview-web
+      - preview-workers
+      - quality-gates
+    if: github.event_name == 'pull_request' && always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Fail when preview verification fails
+        env:
+          PREVIEW_WEB_RESULT: ${{ needs.preview-web.result }}
+          PREVIEW_WORKERS_RESULT: ${{ needs.preview-workers.result }}
+          QUALITY_RESULT: ${{ needs.quality-gates.result }}
+        run: |
+          echo "quality=$QUALITY_RESULT"
+          echo "preview-web=$PREVIEW_WEB_RESULT"
+          echo "preview-workers=$PREVIEW_WORKERS_RESULT"
+
+          for result in "$QUALITY_RESULT" "$PREVIEW_WEB_RESULT" "$PREVIEW_WORKERS_RESULT"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error::Preview workflow is not ready for promotion."
+              exit 1
+            fi
+          done
+
+          echo "Preview workflow is ready for promotion."

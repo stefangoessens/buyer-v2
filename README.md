@@ -83,3 +83,8 @@ pnpm workers:test
 - **Hosting**: Railway (Next.js + Python services, per-PR preview environments)
 - **CI**: GitHub Actions
 - **Tracking**: Linear (project `buyer-v2`, team `Kindservices` / KIN)
+
+## Delivery Workflow
+
+- CI/CD and preview promotion rules are documented in [docs/ci-cd-preview-workflow.md](./docs/ci-cd-preview-workflow.md).
+- The extraction worker deploy surface uses [services/extraction/railway.json](./services/extraction/railway.json).
