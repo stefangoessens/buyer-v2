@@ -5,3 +5,4 @@ export * from "./scheduler";
 export * from "./listingAgentStats";
 export * from "./agentMerge";
 export * from "./neighborhoodStats";
+export * from "./fallback";

@@ -28,6 +28,11 @@ export const ENRICHMENT_SOURCES = [
   "neighborhood_market",
   "portal_estimates",
   "recent_sales",
+  // KIN-784: Browser Use fallback runs when deterministic extraction fails.
+  // Treated as an enrichment source so it reuses idempotency, retry, and
+  // operator-visible status infrastructure. The actual Browser Use execution
+  // lives in the Python worker; this is the orchestration contract.
+  "browser_use_fallback",
 ] as const;
 
 export type EnrichmentSource = (typeof ENRICHMENT_SOURCES)[number];
@@ -40,8 +45,11 @@ export const CRITICAL_SOURCES: readonly EnrichmentSource[] = [
   "portal_estimates",
 ];
 
-/** Default priority per source — lower number = higher priority. */
+/** Default priority per source — lower number = higher priority. Browser
+ * Use fallback sits at priority 5 because when it fires, the deterministic
+ * extractor has already failed and the deal room is blocked waiting. */
 export const SOURCE_PRIORITY: Record<EnrichmentSource, number> = {
+  browser_use_fallback: 5,
   cross_portal_match: 10,
   portal_estimates: 20,
   census_geocode: 30,
@@ -52,8 +60,10 @@ export const SOURCE_PRIORITY: Record<EnrichmentSource, number> = {
   recent_sales: 80,
 };
 
-/** Default retry budget per source. */
+/** Default retry budget per source. Browser Use is expensive and flaky so
+ * we cap at 2 attempts and escalate to manual ops after. */
 export const SOURCE_MAX_ATTEMPTS: Record<EnrichmentSource, number> = {
+  browser_use_fallback: 2,
   cross_portal_match: 2,
   portal_estimates: 3,
   census_geocode: 2,
@@ -243,8 +253,11 @@ export function buildDedupeKey(
 }
 
 /** Cache freshness horizons per source, in hours. After this, a job is
- * considered stale and eligible for a scheduled refresh. */
+ * considered stale and eligible for a scheduled refresh. Browser Use
+ * fallback never auto-refreshes — every run is explicitly triggered by
+ * an extraction failure, so the TTL only gates same-hour dedup. */
 export const SOURCE_CACHE_TTL_HOURS: Record<EnrichmentSource, number> = {
+  browser_use_fallback: 1,
   cross_portal_match: 72,
   portal_estimates: 24,
   census_geocode: 24 * 30,
@@ -254,3 +267,76 @@ export const SOURCE_CACHE_TTL_HOURS: Record<EnrichmentSource, number> = {
   neighborhood_market: 24,
   recent_sales: 12,
 };
+
+// ───────────────────────────────────────────────────────────────────────────
+// Browser Use fallback (KIN-784)
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Typed reasons for escalating from deterministic extraction to Browser
+ * Use fallback. Each reason maps to a specific extractor failure mode so
+ * operators can audit why a fallback was triggered.
+ */
+export const FALLBACK_REASONS = [
+  "parser_schema_drift",
+  "anti_bot_block",
+  "vendor_unavailable",
+  "unsupported_portal",
+  "manual_override",
+] as const;
+
+export type FallbackReason = (typeof FALLBACK_REASONS)[number];
+
+export const FALLBACK_REASON_LABELS: Record<FallbackReason, string> = {
+  parser_schema_drift:
+    "Deterministic parser hit unexpected page structure",
+  anti_bot_block:
+    "Portal returned anti-bot block / captcha / rate-limit page",
+  vendor_unavailable:
+    "Upstream vendor (Bright Data, etc.) unavailable or failing",
+  unsupported_portal:
+    "URL belongs to a portal with no deterministic extractor",
+  manual_override:
+    "Operator explicitly requested Browser Use fallback run",
+};
+
+/**
+ * Context passed to a Browser Use fallback job. Links back to the
+ * originating intake attempt so the resulting canonical property record
+ * preserves provenance ("extracted by Browser Use fallback after X").
+ */
+export interface BrowserUseFallbackContext {
+  /** The property we're trying to populate. */
+  propertyId: string;
+  /** Source URL the deterministic extractor tried and failed on. */
+  sourceUrl: string;
+  /** Which portal this URL is on (may be "unknown" for unsupported). */
+  portal: PortalName | "unknown";
+  /** Why the fallback was triggered. */
+  reason: FallbackReason;
+  /** The original extractor error code, for audit + root-cause analysis. */
+  originatingErrorCode?: EnrichmentErrorCode;
+  /** Optional free-form context from the caller — shows up in ops UI. */
+  note?: string;
+}
+
+/**
+ * The typed payload a Browser Use worker returns after a successful run.
+ * Fields match the canonical property subset; the Convex layer merges
+ * these back into `properties` via `propertyMerge` — same path as
+ * deterministic extractors.
+ */
+export interface BrowserUseFallbackResult {
+  /** Reference to the originating context for traceability. */
+  sourceUrl: string;
+  portal: PortalName | "unknown";
+  /** Canonical property fields extracted by the Browser Use agent. */
+  canonicalFields: Record<string, unknown>;
+  /** How confident the agent is about its output (0-1). */
+  confidence: number;
+  /** Screenshots / DOM snapshots captured for operator review. */
+  evidence: Array<{ kind: "screenshot" | "html" | "json"; url: string }>;
+  /** Which reason was used to trigger this run. */
+  reason: FallbackReason;
+  capturedAt: string;
+}
