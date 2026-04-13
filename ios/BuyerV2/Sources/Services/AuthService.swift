@@ -165,7 +165,7 @@ final class AuthService {
             }
             if isUnauthorized(error) {
                 await clearStoredSession()
-                state = .signedOut
+                state = .expired
                 return
             }
             credentials = nil
@@ -218,7 +218,7 @@ final class AuthService {
         } catch {
             if isUnauthorized(error) || isMissingRefreshToken(error) {
                 await clearStoredSession()
-                state = .signedOut
+                state = .expired
                 return
             }
             state = .authUnavailable

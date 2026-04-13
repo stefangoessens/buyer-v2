@@ -142,7 +142,7 @@ struct AuthServiceTests {
         #expect(provider.validateCallCount == 1)
     }
 
-    @Test("initialize() attempts refresh when token validation fails, then signs out if refresh also fails")
+    @Test("initialize() attempts refresh when token validation fails, then expires the session if refresh also fails")
     func testInitializeWithInvalidToken() async {
         let provider = MockAuthProvider()
         provider.authenticateResult = .success(testTokens)
@@ -160,10 +160,11 @@ struct AuthServiceTests {
 
         await freshService.initialize()
 
-        // Should have attempted refresh before falling back to signedOut
+        // Should have attempted refresh before falling back to the
+        // explicit expired recovery state.
         #expect(provider.refreshCallCount == 1)
-        guard case .signedOut = freshService.state else {
-            Issue.record("Expected .signedOut, got \(freshService.state)")
+        guard case .expired = freshService.state else {
+            Issue.record("Expected .expired, got \(freshService.state)")
             return
         }
     }
@@ -408,7 +409,7 @@ struct AuthServiceTests {
         #expect(provider.lastValidatedToken == "new-access-token")
     }
 
-    @Test("restoreSession() transitions to .signedOut when refresh fails")
+    @Test("restoreSession() transitions to .expired when refresh fails")
     func testRestoreSessionFailure() async throws {
         let provider = MockAuthProvider()
         provider.authenticateResult = .success(testTokens)
@@ -424,8 +425,8 @@ struct AuthServiceTests {
 
         await service.restoreSession()
 
-        guard case .signedOut = service.state else {
-            Issue.record("Expected .signedOut after failed restore, got \(service.state)")
+        guard case .expired = service.state else {
+            Issue.record("Expected .expired after failed restore, got \(service.state)")
             return
         }
     }
