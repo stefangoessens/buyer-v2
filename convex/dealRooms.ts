@@ -1,3 +1,4 @@
+import { internal } from "./_generated/api";
 import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, requireAuth } from "./lib/session";
@@ -98,14 +99,25 @@ export const create = mutation({
     const alreadyExists = existing.find((dr) => dr.propertyId === args.propertyId);
     if (alreadyExists) return alreadyExists._id;
 
-    return await ctx.db.insert("dealRooms", {
+    const now = new Date().toISOString();
+    const dealRoomId = await ctx.db.insert("dealRooms", {
       propertyId: args.propertyId,
       buyerId: user._id,
       status: "intake",
       accessLevel: "registered",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     });
+
+    await ctx.runMutation(internal.ledger.recordLifecycleEventInternal, {
+      dealRoomId,
+      lifecycleEvent: "deal_room_created",
+      actorUserId: user._id,
+      dealStatusAtChange: "intake",
+      internalReviewState: "not_required",
+    });
+
+    return dealRoomId;
   },
 });
 

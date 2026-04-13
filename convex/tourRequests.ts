@@ -14,6 +14,7 @@
  * only handles persistence, auth, and audit logging.
  */
 
+import { internal } from "./_generated/api";
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
@@ -432,6 +433,14 @@ export const submit = mutation({
       entityType: "tourRequests",
       entityId: args.requestId,
       timestamp: now,
+    });
+
+    await ctx.runMutation(internal.ledger.recordLifecycleEventInternal, {
+      dealRoomId: request.dealRoomId,
+      lifecycleEvent: "showing_coordination_started",
+      actorUserId: user._id,
+      dealStatusAtChange: "tour_scheduled",
+      internalReviewState: "not_required",
     });
 
     return null;

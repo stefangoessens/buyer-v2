@@ -116,11 +116,23 @@ export const compensationStatus = v.union(
 // Fee ledger entry types
 export const feeLedgerEntryType = v.union(
   v.literal("fee_set"),
+  v.literal("expected_buyer_fee"),
   v.literal("seller_credit"),
+  v.literal("seller_paid_amount"),
   v.literal("buyer_credit"),
   v.literal("closing_credit_projection"),
+  v.literal("projected_closing_credit"),
+  v.literal("buyer_paid_amount"),
   v.literal("actual_closing"),
+  v.literal("actual_closing_credit"),
   v.literal("adjustment")
+);
+
+export const feeLedgerAdjustmentTarget = v.union(
+  v.literal("expected_buyer_fee"),
+  v.literal("seller_paid_amount"),
+  v.literal("buyer_paid_amount"),
+  v.literal("projected_closing_credit")
 );
 
 // Fee ledger source
@@ -131,6 +143,28 @@ export const feeLedgerSource = v.union(
   v.literal("closing_statement"),
   v.literal("manual"),
   v.literal("system")
+);
+
+export const feeLedgerLifecycleEvent = v.union(
+  v.literal("deal_room_created"),
+  v.literal("showing_coordination_started"),
+  v.literal("listing_agent_confirmed"),
+  v.literal("offer_terms_submitted"),
+  v.literal("contract_executed"),
+  v.literal("closing_statement_recorded"),
+  v.literal("manual_override")
+);
+
+export const ledgerReviewState = v.union(
+  v.literal("not_required"),
+  v.literal("pending"),
+  v.literal("approved"),
+  v.literal("rejected")
+);
+
+export const ledgerVisibility = v.union(
+  v.literal("buyer_visible"),
+  v.literal("internal_only")
 );
 
 // Reconciliation report type

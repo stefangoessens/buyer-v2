@@ -1,3 +1,4 @@
+import { internal } from "./_generated/api";
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
@@ -106,6 +107,18 @@ export const updateStatus = mutation({
       timestamp: new Date().toISOString(),
     });
 
+    if (args.status === "fully_executed") {
+      await ctx.runMutation(internal.ledger.recordLifecycleEventInternal, {
+        dealRoomId: contract.dealRoomId,
+        lifecycleEvent: "contract_executed",
+        actorUserId: user._id,
+        offerId: contract.offerId,
+        contractId: args.contractId,
+        dealStatusAtChange: "under_contract",
+        internalReviewState: "pending",
+      });
+    }
+
     return null;
   },
 });
@@ -126,6 +139,15 @@ export const recordSignatureEvent = internalMutation({
     // Auto-update status on signed event
     if (args.event === "signed") {
       await ctx.db.patch(args.contractId, { status: "fully_executed" });
+
+      await ctx.runMutation(internal.ledger.recordLifecycleEventInternal, {
+        dealRoomId: contract.dealRoomId,
+        lifecycleEvent: "contract_executed",
+        offerId: contract.offerId,
+        contractId: args.contractId,
+        dealStatusAtChange: "under_contract",
+        internalReviewState: "pending",
+      });
     }
 
     await ctx.db.insert("auditLog", {

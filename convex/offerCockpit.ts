@@ -1,3 +1,4 @@
+import { internal } from "./_generated/api";
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getCurrentUser, requireAuth } from "./lib/session";
@@ -292,6 +293,21 @@ export const submitForReview = mutation({
       details: JSON.stringify({ version: draft.version }),
       timestamp: now,
     });
+
+    await ctx.runMutation(internal.ledger.recordLifecycleEventInternal, {
+      dealRoomId: args.dealRoomId,
+      lifecycleEvent: "offer_terms_submitted",
+      actorUserId: user._id,
+      offerId: draft.offerId,
+      negotiatedAmount: draft.sellerCredits,
+      projectedClosingCredit: draft.buyerCredits,
+      internalReviewState: "pending",
+      dealStatusAtChange: "offer_prep",
+      offerStatusAtChange: "pending_review",
+      ipcProjectedSellerCredit: draft.sellerCredits,
+      ipcProjectedBuyerCredit: 0,
+    });
+
     return draft._id;
   },
 });
