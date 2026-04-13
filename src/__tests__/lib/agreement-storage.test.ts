@@ -7,6 +7,7 @@ import {
   buildAgreementCreatedAudit,
   buildAgreementDraft,
   buildAgreementReplacedAudit,
+  buildAgreementSentPatch,
   buildAgreementSignedAudit,
   buildAgreementSignedPatch,
   buildReplacementDraftInput,
@@ -44,6 +45,46 @@ function agreement(
 }
 
 describe("agreement storage helpers", () => {
+  it("rejects unauthorized actors and invalid lifecycle transitions", () => {
+    expect(() =>
+      buildAgreementDraft(
+        actor({ role: "buyer", _id: "buyer_1" }),
+        {
+          dealRoomId: "deal_1",
+          buyerId: "buyer_1",
+          type: "tour_pass",
+        },
+        NOW,
+      ),
+    ).toThrow("Only brokers and admins can manage agreements")
+
+    expect(() =>
+      buildAgreementSentPatch(
+        agreement({ status: "signed" }),
+        actor(),
+        NOW,
+      ),
+    ).toThrow("Can only send draft agreements")
+
+    expect(() =>
+      buildAgreementSignedPatch(
+        agreement({ status: "draft" }),
+        actor(),
+        {},
+        NOW,
+      ),
+    ).toThrow("Can only sign sent agreements")
+
+    expect(() =>
+      buildAgreementCanceledPatch(
+        agreement({ status: "sent" }),
+        actor(),
+        {},
+        NOW,
+      ),
+    ).toThrow("Can only cancel signed agreements")
+  })
+
   it("builds typed draft state and create audit metadata", () => {
     const broker = actor()
     const draft = buildAgreementDraft(
@@ -297,6 +338,33 @@ describe("agreement storage helpers", () => {
     expect(JSON.parse(deniedAudit.details ?? "{}")).toMatchObject({
       outcome: "denied",
       artifactStorageId: "storage_signed",
+    })
+  })
+
+  it("resolves governing agreements even when legacy timestamp fields are missing", () => {
+    const resolved = resolveCurrentAgreementReadModel([
+      agreement({
+        _id: "agreement_legacy_tour",
+        status: "signed",
+        type: "tour_pass",
+        createdAt: undefined,
+        updatedAt: undefined,
+        signedAt: "2026-04-01T08:00:00.000Z",
+      }),
+      agreement({
+        _id: "agreement_legacy_full_rep",
+        status: "signed",
+        type: "full_representation",
+        createdAt: undefined,
+        updatedAt: undefined,
+        signedAt: "2026-04-02T08:00:00.000Z",
+      }),
+    ])
+
+    expect(resolved).toMatchObject({
+      agreementId: "agreement_legacy_full_rep",
+      type: "full_representation",
+      accessScope: "offers",
     })
   })
 })

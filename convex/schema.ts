@@ -284,8 +284,10 @@ export default defineSchema({
     signedArtifact: v.optional(agreementArtifact),
     effectiveStartAt: v.optional(v.string()),
     effectiveEndAt: v.optional(v.string()),
-    createdAt: v.string(),
-    updatedAt: v.string(),
+    // Legacy rows may predate these lifecycle timestamps. New writes must
+    // populate both fields, but reads stay tolerant until backfill lands.
+    createdAt: v.optional(v.string()),
+    updatedAt: v.optional(v.string()),
     createdByUserId: v.optional(v.id("users")),
     lastUpdatedByUserId: v.optional(v.id("users")),
     sentAt: v.optional(v.string()),

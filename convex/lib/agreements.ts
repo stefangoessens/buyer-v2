@@ -54,8 +54,8 @@ export interface AgreementRecordLike<
   signedArtifact?: AgreementArtifact<StorageId>
   effectiveStartAt?: string
   effectiveEndAt?: string
-  createdAt: string
-  updatedAt: string
+  createdAt?: string
+  updatedAt?: string
   createdByUserId?: UserId
   lastUpdatedByUserId?: UserId
   sentAt?: string
