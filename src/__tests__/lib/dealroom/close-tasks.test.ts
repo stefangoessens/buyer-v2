@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildCloseTaskTransitionPatch,
+  buildCloseTaskUpdatePatch,
+  buildCreateCloseTask,
   validateTransition,
   projectBuyerRow,
   projectInternalRow,
@@ -101,6 +104,134 @@ describe("validateTransition", () => {
     expect(TERMINAL_STATUSES.length).toBe(2);
     expect(TERMINAL_STATUSES).toContain("completed");
     expect(TERMINAL_STATUSES).toContain("canceled");
+  });
+});
+
+describe("buildCreateCloseTask", () => {
+  it("attaches owner, due date, status, and visibility on create", () => {
+    const created = buildCreateCloseTask(
+      {
+        dealRoomId: "deal_1",
+        contractId: "contract_1",
+        title: "Wire earnest money",
+        description: "Send escrow wire before cutoff",
+        category: "financing",
+        visibility: "buyer_visible",
+        ownerRole: "buyer",
+        ownerUserId: "user_1",
+        ownerDisplayName: "Alice Buyer",
+        dueDate: TOMORROW,
+        internalNotes: "Confirm receipt with title",
+      },
+      "2026-04-12T09:00:00.000Z",
+    );
+
+    expect(created.status).toBe("pending");
+    expect(created.ownerRole).toBe("buyer");
+    expect(created.ownerUserId).toBe("user_1");
+    expect(created.ownerDisplayName).toBe("Alice Buyer");
+    expect(created.dueDate).toBe(TOMORROW);
+    expect(created.visibility).toBe("buyer_visible");
+    expect(created.createdAt).toBe("2026-04-12T09:00:00.000Z");
+    expect(created.updatedAt).toBe("2026-04-12T09:00:00.000Z");
+  });
+});
+
+describe("buildCloseTaskUpdatePatch", () => {
+  it("updates mutable task fields including owner assignment", () => {
+    const { changedFields, patch } = buildCloseTaskUpdatePatch(
+      mkTask({
+        ownerRole: "buyer",
+        ownerUserId: "buyer_1",
+        ownerDisplayName: "Alice Buyer",
+      }),
+      {
+        title: "Schedule final walkthrough",
+        dueDate: "2026-04-20T00:00:00.000Z",
+        ownerRole: "broker",
+        ownerUserId: "broker_1",
+        ownerDisplayName: "Brenda Broker",
+        internalNotes: "Coordinate with listing side",
+      },
+      "2026-04-12T10:00:00.000Z",
+    );
+
+    expect(changedFields).toEqual([
+      "title",
+      "dueDate",
+      "ownerRole",
+      "ownerUserId",
+      "ownerDisplayName",
+      "internalNotes",
+    ]);
+    expect(patch).toMatchObject({
+      title: "Schedule final walkthrough",
+      dueDate: "2026-04-20T00:00:00.000Z",
+      ownerRole: "broker",
+      ownerUserId: "broker_1",
+      ownerDisplayName: "Brenda Broker",
+      internalNotes: "Coordinate with listing side",
+      updatedAt: "2026-04-12T10:00:00.000Z",
+    });
+  });
+
+  it("returns an empty patch when nothing changes", () => {
+    const { changedFields, patch } = buildCloseTaskUpdatePatch(
+      mkTask(),
+      {},
+      "2026-04-12T10:00:00.000Z",
+    );
+
+    expect(changedFields).toEqual([]);
+    expect(patch).toEqual({});
+  });
+});
+
+describe("buildCloseTaskTransitionPatch", () => {
+  it("marks a task completed and stamps completedAt once", () => {
+    const patch = buildCloseTaskTransitionPatch(
+      mkTask({ status: "in_progress" }),
+      { newStatus: "completed" },
+      "2026-04-12T11:00:00.000Z",
+    );
+
+    expect(patch).toMatchObject({
+      status: "completed",
+      completedAt: "2026-04-12T11:00:00.000Z",
+      updatedAt: "2026-04-12T11:00:00.000Z",
+    });
+  });
+
+  it("does not overwrite completedAt on idempotent complete", () => {
+    const patch = buildCloseTaskTransitionPatch(
+      mkTask({
+        status: "completed",
+        completedAt: "2026-04-11T11:00:00.000Z",
+      }),
+      { newStatus: "completed" },
+      "2026-04-12T11:00:00.000Z",
+    );
+
+    expect(patch.status).toBe("completed");
+    expect(patch.completedAt).toBeUndefined();
+    expect(patch.updatedAt).toBe("2026-04-12T11:00:00.000Z");
+  });
+
+  it("clears blockedReason when moving out of blocked", () => {
+    const patch = buildCloseTaskTransitionPatch(
+      mkTask({
+        status: "blocked",
+        blockedReason: "Waiting on lender docs",
+      }),
+      { newStatus: "in_progress" },
+      "2026-04-12T11:00:00.000Z",
+    );
+
+    expect(patch).toMatchObject({
+      status: "in_progress",
+      updatedAt: "2026-04-12T11:00:00.000Z",
+    });
+    expect(patch.blockedReason).toBeUndefined();
   });
 });
 
