@@ -4,7 +4,7 @@ const listingUrl =
   "https://www.zillow.com/homedetails/100-Las-Olas-Blvd-1001-Fort-Lauderdale-FL-33301/12345678_zpid/";
 
 test.describe("Intake happy path", () => {
-  test("covers homepage paste submit and intake teaser handoff", async ({
+  test("covers homepage paste submit and intake teaser round-trip handoff", async ({
     page,
   }) => {
     await page.goto("/");
@@ -34,5 +34,14 @@ test.describe("Intake happy path", () => {
     });
     await expect(continueLink).toBeVisible();
     await expect(continueLink).toHaveAttribute("href", /\/\?intake=/);
+
+    await continueLink.click();
+
+    await expect(page).toHaveURL(/\/\?intake=/);
+    await expect(
+      page.getByRole("heading", {
+        name: /Get the best deal on your Florida home/i,
+      }),
+    ).toBeVisible();
   });
 });
