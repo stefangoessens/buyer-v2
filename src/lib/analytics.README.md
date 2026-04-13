@@ -1,12 +1,15 @@
 # Analytics Event Catalog — Governance
 
-The canonical event catalog lives in `src/lib/analytics.ts`. Every event tracked by web or iOS must be declared in `AnalyticsEventMap` with typed properties.
+The full analytics catalog lives in `src/lib/analytics.ts`.
+
+Launch-critical events are defined once in `@buyer-v2/shared/launch-events` and then inherited into `AnalyticsEventMap`. That shared module also owns the runtime validator, emitter helpers, contract changelog, and the serializable contract snapshot used by downstream consumers/codegen.
 
 ## Adding a new event
-1. Add a key to `AnalyticsEventMap` with the properties shape. Include a JSDoc comment describing when the event fires.
-2. Add a matching entry in `EVENT_METADATA` with `{ category, owner, whenFired, piiSafe }`.
-3. Use `track("event_name", { ... })` at the call site — TypeScript enforces the shape.
-4. Open a PR with the catalog change and the call site together. The owner guild must approve.
+1. If the event is launch-critical, add it to `@buyer-v2/shared/launch-events` and update the contract changelog there.
+2. Add a key to `AnalyticsEventMap` only for non-launch events. Include a JSDoc comment describing when the event fires.
+3. Add a matching entry in `EVENT_METADATA` with `{ category, owner, whenFired, piiSafe }`.
+4. Use `track("event_name", { ... })` at the call site — TypeScript enforces the shape.
+5. Open a PR with the catalog change and the call site together. The owner guild must approve.
 
 ## Event naming convention
 - `snake_case` verb_noun: `tour_requested`, `offer_submitted`, `deal_closed`

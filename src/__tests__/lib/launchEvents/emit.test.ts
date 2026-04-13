@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import {
+  createLaunchEventEmitter,
+  createLaunchEventEnvelope,
   emitLaunchEvent,
   LaunchEventValidationFailure,
   describeError,
 } from "@/lib/launchEvents/emit";
 import type { LaunchEventTransport } from "@/lib/launchEvents/emit";
+import { LAUNCH_EVENT_CONTRACT } from "@/lib/launchEvents/contract";
 
 function makeTransport(): LaunchEventTransport & {
   calls: Array<{ name: string; properties: Record<string, unknown> }>;
@@ -32,7 +35,7 @@ describe("emitLaunchEvent — valid events", () => {
     emitLaunchEvent(
       transport,
       "link_pasted",
-      { url: "https://redfin.com/home/1", source: "blog" },
+      { url: "https://redfin.com/home/1", source: "hero" },
       { throwOnInvalid: false }
     );
     expect(transport.calls).toHaveLength(1);
@@ -277,6 +280,30 @@ describe("emitLaunchEvent options", () => {
     );
     expect(transport.calls).toHaveLength(1);
     expect(transport.calls[0]?.name).toBe("custom_event");
+  });
+});
+
+describe("shared launch event helpers", () => {
+  it("builds a versioned event envelope", () => {
+    const envelope = createLaunchEventEnvelope("link_pasted", {
+      url: "https://zillow.com/home/1",
+      source: "hero",
+    });
+    expect(envelope.contractVersion).toBe(LAUNCH_EVENT_CONTRACT.version);
+    expect(envelope.name).toBe("link_pasted");
+  });
+
+  it("creates a typed emitter bound to one transport", () => {
+    const transport = makeTransport();
+    const emit = createLaunchEventEmitter(transport, {
+      throwOnInvalid: false,
+    });
+    emit("message_sent", {
+      channel: "email",
+      templateKey: "tour_confirmed",
+    });
+    expect(transport.calls).toHaveLength(1);
+    expect(transport.calls[0]?.name).toBe("message_sent");
   });
 });
 

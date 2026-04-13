@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  CURRENT_LAUNCH_EVENT_CONTRACT_VERSION,
   LAUNCH_EVENT_CONTRACT,
+  LAUNCH_EVENT_CONTRACT_CHANGELOG,
   LAUNCH_EVENT_NAMES,
+  serializeLaunchEventContract,
 } from "@/lib/launchEvents/contract";
 import type { AnalyticsEventMap } from "@/lib/analytics";
+import type { LaunchEventName } from "@/lib/launchEvents/types";
 
 // MARK: - Contract shape
 
@@ -14,6 +18,12 @@ describe("LAUNCH_EVENT_CONTRACT", () => {
 
   it("has an ISO-8601 lastUpdated date", () => {
     expect(LAUNCH_EVENT_CONTRACT.lastUpdated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("keeps the changelog head in sync with the exported current version", () => {
+    const latest = LAUNCH_EVENT_CONTRACT_CHANGELOG.at(-1);
+    expect(latest?.version).toBe(CURRENT_LAUNCH_EVENT_CONTRACT_VERSION);
+    expect(LAUNCH_EVENT_CONTRACT.version).toBe(CURRENT_LAUNCH_EVENT_CONTRACT_VERSION);
   });
 
   it("has at least one event per launch-critical category", () => {
@@ -72,7 +82,9 @@ describe("LAUNCH_EVENT_CONTRACT", () => {
   });
 
   it("LAUNCH_EVENT_NAMES mirrors the events map", () => {
-    const fromMap = new Set(Object.keys(LAUNCH_EVENT_CONTRACT.events));
+    const fromMap = new Set(
+      Object.keys(LAUNCH_EVENT_CONTRACT.events) as LaunchEventName[]
+    );
     expect(LAUNCH_EVENT_NAMES.size).toBe(fromMap.size);
     for (const name of fromMap) {
       expect(LAUNCH_EVENT_NAMES.has(name)).toBe(true);
@@ -93,5 +105,14 @@ describe("LAUNCH_EVENT_CONTRACT", () => {
       sentinel[name as keyof AnalyticsEventMap] = true;
       expect(sentinel[name as keyof AnalyticsEventMap]).toBe(true);
     }
+  });
+
+  it("serializes a reviewable JSON snapshot with the current version", () => {
+    const serialized = serializeLaunchEventContract();
+    const parsed = JSON.parse(serialized) as typeof LAUNCH_EVENT_CONTRACT;
+    expect(parsed.version).toBe(LAUNCH_EVENT_CONTRACT.version);
+    expect(Object.keys(parsed.events)).toEqual(
+      Object.keys(LAUNCH_EVENT_CONTRACT.events)
+    );
   });
 });

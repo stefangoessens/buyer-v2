@@ -1,4 +1,5 @@
 import posthog from "posthog-js";
+import type { LaunchEventMap } from "@buyer-v2/shared/launch-events";
 import { deepScrubPii } from "@/lib/security/pii-guard";
 
 /**
@@ -14,32 +15,10 @@ import { deepScrubPii } from "@/lib/security/pii-guard";
  * Owned by: Analytics guild. Source of truth — PostHog dashboards
  * reference these exact event names.
  */
-export interface AnalyticsEventMap {
-  // ─── Funnel events (marketing → deal room → close) ─────────────────
-  /** Fired when a buyer pastes a property URL into the intake form. */
-  link_pasted: { url: string; source: string };
-  /** Fired on teaser page mount (before registration gate). */
-  teaser_viewed: { propertyId?: string; source?: string };
-  /** Fired when the registration modal opens. */
-  registration_started: { source: string };
-  /** Fired on successful registration submission. */
-  registration_completed: { userId: string; source?: string };
-
-  // ─── Deal room interactions ────────────────────────────────────────
-  /** Fired when a buyer enters a deal room (after access check). */
-  deal_room_entered: {
-    dealRoomId: string;
-    propertyId: string;
-    accessLevel: "anonymous" | "registered" | "full";
-  };
+export interface AnalyticsEventMap extends LaunchEventMap {
+  // ─── Non-launch analytics events ────────────────────────────────────
   /** Fired on deal room unmount; reports time spent in ms. */
   deal_room_exited: { dealRoomId: string; timeSpentMs: number };
-  /** Fired when the pricing panel renders with a real result. */
-  pricing_panel_viewed: {
-    dealRoomId: string;
-    propertyId: string;
-    overallConfidence: number;
-  };
   /** Fired when the leverage analysis section becomes visible. */
   leverage_analysis_viewed: {
     dealRoomId: string;
@@ -87,16 +66,6 @@ export interface AnalyticsEventMap {
   };
 
   // ─── Tour flow ──────────────────────────────────────────────────────
-  /** Fired when a buyer requests a tour from the deal room. */
-  tour_requested: {
-    dealRoomId: string;
-    propertyId: string;
-    requestedWindow: string;
-  };
-  /** Fired when a tour is confirmed by an agent. */
-  tour_confirmed: { tourId: string; agentId: string; scheduledAt: string };
-  /** Fired when a tour is marked completed. */
-  tour_completed: { tourId: string; dealRoomId: string };
   /** Fired when a tour is canceled by either side. */
   tour_canceled: {
     tourId: string;
@@ -115,45 +84,20 @@ export interface AnalyticsEventMap {
     scenarioIndex: number;
     offerPrice: number;
   };
-  /** Fired on offer submission to the listing side. */
-  offer_submitted: {
-    offerId: string;
-    dealRoomId: string;
-    offerPrice: number;
-  };
   /** Fired when a seller counter lands. */
   offer_countered: { offerId: string; counterPrice: number };
-  /** Fired on offer acceptance. */
-  offer_accepted: {
-    offerId: string;
-    dealRoomId: string;
-    finalPrice: number;
-  };
   /** Fired on offer rejection. */
   offer_rejected: { offerId: string; reason: string };
   /** Fired when a buyer withdraws their offer. */
   offer_withdrawn: { offerId: string; reason: string };
 
   // ─── Closing flow ───────────────────────────────────────────────────
-  /** Fired when a contract is fully executed. */
-  contract_signed: { contractId: string; dealRoomId: string };
   /** Fired when a contract is amended post-signature. */
   contract_amended: { contractId: string; amendmentType: string };
   /** Fired when a closing milestone is completed. */
   milestone_completed: { contractId: string; milestoneName: string };
-  /** Fired when a deal reaches the closed state. */
-  deal_closed: {
-    dealRoomId: string;
-    contractId: string;
-    closingDate: string;
-  };
 
   // ─── Communication flow ─────────────────────────────────────────────
-  /** Fired when an outbound message is queued. */
-  message_sent: {
-    channel: "email" | "sms" | "push" | "in_app";
-    templateKey: string;
-  };
   /** Fired when delivery is confirmed by the channel provider. */
   message_delivered: { messageId: string; channel: string };
   /** Fired when a recipient opens a message (email/push). */
