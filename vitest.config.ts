@@ -16,6 +16,10 @@ export default defineConfig({
         find: "@",
         replacement: path.resolve(__dirname, "./src"),
       },
+      {
+        find: "server-only",
+        replacement: path.resolve(__dirname, "./src/test/server-only.ts"),
+      },
     ],
   },
   test: {

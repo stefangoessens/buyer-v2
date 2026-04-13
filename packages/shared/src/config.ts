@@ -48,34 +48,55 @@ export const workspaceSurfaces = {
 } as const satisfies Record<string, WorkspaceSurface>;
 
 type EnvSource = Record<string, string | undefined>;
+type RuntimeMode = "development" | "test" | "production";
+type EnvVisibility = "public" | "server";
 
 interface EnvVariable {
-  defaultValue: string;
-  description: string;
+  readonly defaultValue: string;
+  readonly description: string;
+  readonly visibility: EnvVisibility;
+  readonly required?: boolean;
+  readonly format?: "url";
 }
 
 type EnvSpec = Record<string, EnvVariable>;
+type EnvKey<TSpec extends EnvSpec> = Extract<keyof TSpec, string>;
+
+export interface EnvIssue<TKey extends string = string> {
+  readonly key: TKey;
+  readonly message: string;
+}
 
 export const webPublicEnvSpec = {
   NEXT_PUBLIC_CONVEX_URL: {
     defaultValue: "",
     description: "Convex deployment URL exposed to the browser.",
+    visibility: "public",
+    format: "url",
   },
   NEXT_PUBLIC_POSTHOG_KEY: {
     defaultValue: "",
     description: "PostHog project API key.",
+    visibility: "public",
   },
   NEXT_PUBLIC_POSTHOG_HOST: {
     defaultValue: "https://us.i.posthog.com",
     description: "PostHog ingestion host.",
+    visibility: "public",
+    format: "url",
   },
   NEXT_PUBLIC_SENTRY_DSN: {
     defaultValue: "",
     description: "Browser Sentry DSN.",
+    visibility: "public",
+    format: "url",
   },
   NEXT_PUBLIC_APP_URL: {
     defaultValue: "http://localhost:3000",
     description: "Canonical app URL used by the web surface.",
+    visibility: "public",
+    required: true,
+    format: "url",
   },
 } as const satisfies EnvSpec;
 
@@ -83,30 +104,51 @@ export const webServerEnvSpec = {
   CONVEX_DEPLOY_KEY: {
     defaultValue: "",
     description: "Convex deploy key for CI and deploy automation.",
+    visibility: "server",
   },
   ANTHROPIC_API_KEY: {
     defaultValue: "",
     description: "Anthropic provider key.",
+    visibility: "server",
   },
   OPENAI_API_KEY: {
     defaultValue: "",
     description: "OpenAI provider key.",
+    visibility: "server",
   },
   SENTRY_AUTH_TOKEN: {
     defaultValue: "",
     description: "Sentry auth token for release uploads.",
+    visibility: "server",
   },
   SENTRY_DSN: {
     defaultValue: "",
     description: "Server-side Sentry DSN.",
+    visibility: "server",
+    format: "url",
+  },
+  SENTRY_ORG: {
+    defaultValue: "kindservices",
+    description: "Sentry organization used for release uploads.",
+    visibility: "server",
+    required: true,
+  },
+  SENTRY_PROJECT: {
+    defaultValue: "buyer-v2-web",
+    description: "Sentry project used for Next.js releases.",
+    visibility: "server",
+    required: true,
   },
   POSTHOG_PERSONAL_API_KEY: {
     defaultValue: "",
     description: "PostHog personal API key.",
+    visibility: "server",
   },
   NODE_ENV: {
     defaultValue: "development",
     description: "Node runtime environment.",
+    visibility: "server",
+    required: true,
   },
 } as const satisfies EnvSpec;
 
@@ -127,4 +169,89 @@ export function readEnv<TSpec extends EnvSpec>(
   return Object.freeze(
     Object.fromEntries(entries) as { readonly [Key in keyof TSpec]: string },
   );
+}
+
+export function validateEnv<TSpec extends EnvSpec>(
+  spec: TSpec,
+  source: EnvSource = {},
+): readonly EnvIssue<EnvKey<TSpec>>[] {
+  const values = readEnv(spec, source);
+  const mode = resolveRuntimeMode(source);
+  const issues: Array<EnvIssue<EnvKey<TSpec>>> = [];
+
+  for (const [key, config] of Object.entries(spec) as Array<[EnvKey<TSpec>, TSpec[EnvKey<TSpec>]]>) {
+    const rawValue = source[key];
+    const rawValueProvided = Object.prototype.hasOwnProperty.call(source, key);
+    const missingRequiredValue =
+      !hasValue(rawValue) &&
+      (!hasValue(config.defaultValue) || rawValueProvided);
+
+    if (config.required && missingRequiredValue) {
+      issues.push({
+        key,
+        message: `${key} is required for ${mode} runtime.`,
+      });
+    }
+
+    if (config.format === "url" && hasValue(values[key])) {
+      try {
+        new URL(values[key]);
+      } catch {
+        issues.push({
+          key,
+          message: `${key} must be a valid absolute URL.`,
+        });
+      }
+    }
+
+    if (config.visibility === "public" && !key.startsWith("NEXT_PUBLIC_")) {
+      issues.push({
+        key,
+        message: `${key} is marked public but does not use the NEXT_PUBLIC_ prefix.`,
+      });
+    }
+
+    if (config.visibility === "server" && key.startsWith("NEXT_PUBLIC_")) {
+      issues.push({
+        key,
+        message: `${key} is marked server-only but uses the NEXT_PUBLIC_ prefix.`,
+      });
+    }
+  }
+
+  return issues;
+}
+
+export function requireEnvKeys<
+  TSpec extends EnvSpec,
+  const TKeys extends readonly EnvKey<TSpec>[],
+>(
+  spec: TSpec,
+  keys: TKeys,
+  source: EnvSource = {},
+): Readonly<{ [Key in TKeys[number]]: string }> {
+  const values = readEnv(spec, source);
+  const missing = keys.filter((key) => !hasValue(values[key]));
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required environment variables: ${missing.join(", ")}`,
+    );
+  }
+
+  return Object.freeze(
+    Object.fromEntries(keys.map((key) => [key, values[key]])) as {
+      readonly [Key in TKeys[number]]: string;
+    },
+  );
+}
+
+function resolveRuntimeMode(source: EnvSource): RuntimeMode {
+  const raw = source.NODE_ENV?.trim();
+
+  if (raw === "production" || raw === "test") {
+    return raw;
+  }
+
+  return "development";
 }

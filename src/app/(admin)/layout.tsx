@@ -1,26 +1,13 @@
 import type { Metadata } from "next";
+import { appSurfaceDefinitions } from "@/lib/app-shell";
 
 // Internal console pages are always dynamic — they query live session
 // state, queue counts, and KPI snapshots from Convex on every request.
 // Prerendering would either leak stale data or fail when the Convex
 // client is not available at build time.
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-export const metadata: Metadata = {
-  title: {
-    default: "Internal Console · Kindservices",
-    template: "%s · Kindservices Console",
-  },
-  robots: {
-    index: false,
-    follow: false,
-    nocache: true,
-    googleBot: {
-      index: false,
-      follow: false,
-    },
-  },
-};
+export const metadata: Metadata = appSurfaceDefinitions.internalConsole.metadata;
 
 export default function AdminLayout({
   children,

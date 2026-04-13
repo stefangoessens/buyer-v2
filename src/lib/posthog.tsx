@@ -4,17 +4,17 @@ import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, Suspense } from "react";
+import { env } from "@/lib/env";
 
 // Initialize PostHog (call once, guards against double-init)
 let initialized = false;
 
 export function initPostHog() {
   if (initialized || typeof window === "undefined") return;
-  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+  if (!env.NEXT_PUBLIC_POSTHOG_KEY) return;
 
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
-    api_host:
-      process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
+  posthog.init(env.NEXT_PUBLIC_POSTHOG_KEY, {
+    api_host: env.NEXT_PUBLIC_POSTHOG_HOST,
     capture_pageview: false, // We handle this manually below
     capture_pageleave: true,
     persistence: "localStorage+cookie",
@@ -34,7 +34,7 @@ export function PostHogProvider({ children }: { children: ReactNode }) {
     initPostHog();
   }, []);
 
-  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+  if (!env.NEXT_PUBLIC_POSTHOG_KEY) {
     return <>{children}</>;
   }
 

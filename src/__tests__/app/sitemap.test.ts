@@ -16,15 +16,15 @@ import {
 let prevSiteUrl: string | undefined;
 
 beforeEach(() => {
-  prevSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  process.env.NEXT_PUBLIC_SITE_URL = "https://buyerv2.com";
+  prevSiteUrl = process.env.NEXT_PUBLIC_APP_URL;
+  process.env.NEXT_PUBLIC_APP_URL = "https://buyerv2.com";
 });
 
 afterEach(() => {
   if (prevSiteUrl === undefined) {
-    delete process.env.NEXT_PUBLIC_SITE_URL;
+    delete process.env.NEXT_PUBLIC_APP_URL;
   } else {
-    process.env.NEXT_PUBLIC_SITE_URL = prevSiteUrl;
+    process.env.NEXT_PUBLIC_APP_URL = prevSiteUrl;
   }
 });
 

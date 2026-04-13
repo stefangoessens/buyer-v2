@@ -9,18 +9,18 @@ import {
 } from "@/lib/seo/builder";
 import type { SeoInput } from "@/lib/seo/types";
 
-// Snapshot + restore NEXT_PUBLIC_SITE_URL so tests don't bleed.
+// Snapshot + restore NEXT_PUBLIC_APP_URL so tests don't bleed.
 let previousSiteUrl: string | undefined;
 
 beforeEach(() => {
-  previousSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  previousSiteUrl = process.env.NEXT_PUBLIC_APP_URL;
 });
 
 afterEach(() => {
   if (previousSiteUrl === undefined) {
-    delete process.env.NEXT_PUBLIC_SITE_URL;
+    delete process.env.NEXT_PUBLIC_APP_URL;
   } else {
-    process.env.NEXT_PUBLIC_SITE_URL = previousSiteUrl;
+    process.env.NEXT_PUBLIC_APP_URL = previousSiteUrl;
   }
 });
 
@@ -40,18 +40,18 @@ function makeInput(overrides: Partial<SeoInput> = {}): SeoInput {
 
 describe("getSiteOrigin", () => {
   it("returns the env var when set", () => {
-    process.env.NEXT_PUBLIC_SITE_URL = "https://staging.buyerv2.com";
+    process.env.NEXT_PUBLIC_APP_URL = "https://staging.buyerv2.com";
     expect(getSiteOrigin()).toBe("https://staging.buyerv2.com");
   });
 
   it("strips trailing slash", () => {
-    process.env.NEXT_PUBLIC_SITE_URL = "https://buyerv2.com/";
+    process.env.NEXT_PUBLIC_APP_URL = "https://buyerv2.com/";
     expect(getSiteOrigin()).toBe("https://buyerv2.com");
   });
 
   it("falls back to default when env var missing", () => {
-    delete process.env.NEXT_PUBLIC_SITE_URL;
-    expect(getSiteOrigin()).toBe("https://buyerv2.com");
+    delete process.env.NEXT_PUBLIC_APP_URL;
+    expect(getSiteOrigin()).toBe("http://localhost:3000");
   });
 });
 
@@ -59,7 +59,7 @@ describe("getSiteOrigin", () => {
 
 describe("buildCanonicalUrl", () => {
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_SITE_URL = "https://buyerv2.com";
+    process.env.NEXT_PUBLIC_APP_URL = "https://buyerv2.com";
   });
 
   it("builds absolute URL from path", () => {
@@ -109,7 +109,7 @@ describe("buildCanonicalUrl", () => {
   });
 
   it("uses the site origin from env var", () => {
-    process.env.NEXT_PUBLIC_SITE_URL = "https://staging.buyerv2.com";
+    process.env.NEXT_PUBLIC_APP_URL = "https://staging.buyerv2.com";
     expect(buildCanonicalUrl(makeInput())).toBe(
       "https://staging.buyerv2.com/pricing"
     );
@@ -203,7 +203,7 @@ describe("validateSeoInput", () => {
 
 describe("buildMetadata", () => {
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_SITE_URL = "https://buyerv2.com";
+    process.env.NEXT_PUBLIC_APP_URL = "https://buyerv2.com";
   });
 
   it("builds a complete Metadata object for a public marketing page", () => {
@@ -309,7 +309,7 @@ describe("buildMetadata", () => {
 
 describe("buildStructuredData", () => {
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_SITE_URL = "https://buyerv2.com";
+    process.env.NEXT_PUBLIC_APP_URL = "https://buyerv2.com";
   });
 
   it("emits WebPage for marketing kind", () => {
@@ -407,7 +407,7 @@ describe("buildStructuredData", () => {
 
 describe("buildMetadata article time fields (codex PR #51 regression)", () => {
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_SITE_URL = "https://buyerv2.com";
+    process.env.NEXT_PUBLIC_APP_URL = "https://buyerv2.com";
   });
 
   it("sets publishedTime from publishedAt, modifiedTime from lastModified", () => {

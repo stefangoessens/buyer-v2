@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { readPublicEnv } from "@/lib/env";
 import type {
   SeoInput,
   SeoValidation,
@@ -20,7 +21,7 @@ import type {
  *   - Sensible defaults for every optional field
  *   - JSON-LD structured data derived from the content `kind`
  *
- * The site origin is read from `NEXT_PUBLIC_SITE_URL` with a safe
+ * The site origin is read from `NEXT_PUBLIC_APP_URL` with a safe
  * fallback — it's a public constant, not a secret.
  */
 
@@ -35,7 +36,7 @@ const DEFAULT_SOCIAL_IMAGE_PATH = "/og-default.png";
  * the env var without a module-level side effect.
  */
 export function getSiteOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const raw = readPublicEnv(process.env).NEXT_PUBLIC_APP_URL.trim();
   if (!raw) return DEFAULT_SITE_URL;
   return raw.replace(/\/+$/, ""); // strip trailing slash
 }
