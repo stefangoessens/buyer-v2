@@ -223,6 +223,45 @@ describe("extractRealtorListingHtml", () => {
     expect(result.error.attemptedStrategies).toContain("html-text");
   });
 
+  it("marks successful but incomplete parses as partial review state", () => {
+    const result = extractRealtorListingHtml({
+      html: `
+        <html>
+          <head>
+            <meta property="og:title" content="77 Harbor Ln, Naples, FL 34102" />
+            <meta property="og:description" content="Waterfront villa shell listing." />
+          </head>
+          <body>
+            <h1 data-testid="address-block">77 Harbor Ln, Naples, FL 34102</h1>
+            <div data-testid="price">$1,250,000</div>
+          </body>
+        </html>
+      `,
+      sourceUrl:
+        "https://www.realtor.com/realestateandhomes-detail/77-Harbor-Ln_Naples_FL_34102_M77777-12345",
+      fetchedAt: "2026-04-12T12:00:00Z",
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.payload.reviewState).toBe("partial");
+    expect(result.payload.data.address.city).toBe("Naples");
+    expect(result.payload.data.listPrice).toBe(1250000);
+    expect(result.payload.data.realtorId).toBe("M77777-12345");
+    expect(result.payload.missingFields).toEqual([
+      "propertyType",
+      "photoUrls",
+      "photoCount",
+      "beds",
+      "bathsFull",
+      "sqftLiving",
+      "yearBuilt",
+    ]);
+    expect(result.payload.source.strategiesUsed).toEqual(["html-text"]);
+    expect(result.payload.source.fieldStrategies.realtorId).toBeUndefined();
+  });
+
   it("returns a schema-drift error when no strategy yields listing fields", () => {
     const result = extractRealtorListingHtml({
       html: `
