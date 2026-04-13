@@ -10,8 +10,8 @@
 // For now this page:
 //   1. Validates the forwarded URL with the canonical parser
 //   2. Shows the buyer the detected listing metadata
-//   3. Offers a "Continue" CTA that returns to the homepage where the
-//      existing PasteLinkInput handles the next step
+//   3. Offers a "Continue" CTA into the implemented deal-room preview
+//      route so the browser smoke can assert a real handoff
 //
 // The page is a server component so we can read searchParams without a
 // client roundtrip and so SEO can mark the route as noindex (intake is
@@ -81,6 +81,7 @@ export default async function IntakePage({ searchParams }: IntakePageProps) {
       : parsed.data.platform === "redfin"
         ? "Redfin"
         : "Realtor.com";
+  const dealRoomPreviewHref = `/property/${encodeURIComponent(parsed.data.listingId)}`;
 
   return (
     <main className="mx-auto max-w-xl px-6 py-16">
@@ -106,10 +107,10 @@ export default async function IntakePage({ searchParams }: IntakePageProps) {
         ) : null}
       </dl>
       <Link
-        href={`/?intake=${encodeURIComponent(parsed.data.normalizedUrl)}`}
+        href={dealRoomPreviewHref}
         className="mt-6 inline-block rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white"
       >
-        Continue to buyer-v2
+        Continue to deal room preview
       </Link>
     </main>
   );

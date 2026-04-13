@@ -32,29 +32,56 @@ test.describe("Homepage", () => {
     ).toBeVisible();
   });
 
-  test("paste input accepts and validates URL", async ({ page }) => {
+  test("routes a pasted listing through the intake teaser into the deal room preview", async ({
+    page,
+  }) => {
     await page.goto("/");
 
-    const input = page.locator("input").first();
-    await input.fill(
-      "https://www.zillow.com/homedetails/Test/12345678_zpid/"
+    await page
+      .locator(
+        'input[placeholder*="Paste"], input[placeholder*="paste"], input[type="url"]',
+      )
+      .first()
+      .fill("https://www.zillow.com/homedetails/Test/12345678_zpid/");
+
+    await page
+      .locator('button[type="submit"]')
+      .or(page.getByRole("button", { name: /analyze|get/i }))
+      .first()
+      .click();
+
+    await expect(page).toHaveURL(/\/intake\?/);
+    await expect(
+      page.getByRole("heading", { name: /Importing from Zillow/i }),
+    ).toBeVisible();
+    await expect(page.getByText("12345678")).toBeVisible();
+
+    await page
+      .getByRole("link", { name: /continue to deal room preview/i })
+      .click();
+
+    await expect(page).toHaveURL(/\/property\/12345678$/);
+    await expect(page.getByRole("heading", { name: /Deal Room/i })).toBeVisible();
+    await expect(page.getByText("Property: 12345678")).toBeVisible();
+  });
+
+  test("invalid intake links show a typed recovery message", async ({ page }) => {
+    await page.goto(
+      "/intake?url=https%3A%2F%2Fwww.example.com%2Funsupported-listing&source=e2e"
     );
 
-    // Should have a submit button
-    const submitBtn = page
-      .locator('button[type="submit"]')
-      .or(page.getByRole("button", { name: /analyze|get/i }));
-    await expect(submitBtn.first()).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /We couldn't import that link/i })
+    ).toBeVisible();
+    await expect(
+      page.getByText(/supports Zillow, Redfin, and Realtor.com listings/i)
+    ).toBeVisible();
   });
 
   test("footer renders with legal notice", async ({ page }) => {
     await page.goto("/");
 
-    // Scroll to bottom
-    await page.evaluate(() =>
-      window.scrollTo(0, document.body.scrollHeight)
-    );
-
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(
       page
         .getByText("Florida licensed")

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { startTransition } from "react";
+import { useRouter } from "next/navigation";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { TrustBar } from "@/components/marketing/TrustBar";
 import { FeatureCard } from "@/components/marketing/FeatureCard";
@@ -63,14 +64,16 @@ const testimonials = [
 ];
 
 export default function Home() {
-  const [submitted, setSubmitted] = useState(false);
+  const router = useRouter();
 
-  // PasteLinkInput handles track("link_pasted") internally — no duplicate here
-  const handleSubmit = useCallback(async (_url: string) => {
-    setSubmitted(true);
-    // Convex submitUrl mutation will be called when Convex is available
-    // For now, the paste-link flow transitions to the deal room on the next page
-  }, []);
+  function handleSubmit(url: string) {
+    // PasteLinkInput handles track("link_pasted") internally — no duplicate
+    // here. The intake route owns the teaser preview before handing off into
+    // the implemented deal-room placeholder route.
+    startTransition(() => {
+      router.push(`/intake?url=${encodeURIComponent(url)}&source=homepage`);
+    });
+  }
 
   return (
     <>
@@ -79,13 +82,7 @@ export default function Home() {
         title="Get the best deal on your Florida home"
         subtitle="Paste a Zillow, Redfin, or Realtor link. Get instant AI-powered analysis, fair pricing, and expert buyer representation — for free."
       >
-        {submitted ? (
-          <div className="rounded-xl bg-white/10 px-6 py-4 text-lg font-medium text-white backdrop-blur">
-            Analyzing your property...
-          </div>
-        ) : (
-          <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
-        )}
+        <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
       </HeroSection>
 
       {/* Trust Bar */}
@@ -177,13 +174,7 @@ export default function Home() {
             Paste a listing link and get your free AI analysis in seconds.
           </p>
           <div className="mt-8">
-            {submitted ? (
-              <div className="rounded-xl bg-white/10 px-6 py-4 text-lg font-medium text-white backdrop-blur">
-                Analyzing your property...
-              </div>
-            ) : (
-              <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
-            )}
+            <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
           </div>
         </div>
       </section>

@@ -8,7 +8,7 @@ KIN-948 establishes the baseline test stack for every buyer-v2 surface without e
 |---|---|---|---|
 | Web + shared TypeScript | Vitest | `pnpm test` / `pnpm test:coverage` | Unit tests, contract tests, Convex integration harnesses, and AI eval snapshots |
 | Convex backend | Vitest + mocked Convex ctx/db harness | `pnpm test` | Registered query/mutation/action handlers are executed through `_handler` with reusable mocks |
-| Browser flows | Playwright | `pnpm test:e2e` | Smoke-checks the implemented homepage paste + intake teaser round-trip handoff on every PR |
+| Browser flows | Playwright | `pnpm test:e2e` | Smoke-checks the implemented homepage paste -> intake teaser -> deal-room preview flow on every PR |
 | Python worker library | pytest + pytest-cov | `pnpm workers:lib:test` | Deterministic parser/unit coverage with fixture-backed portal samples |
 | Extraction service | pytest + pytest-cov | `pnpm workers:service:test` | Service API behavior and transport coverage |
 | iOS | XCTest / Swift Testing | `pnpm ios:test` | Swift package tests plus shared JSON contract fixtures |
@@ -58,4 +58,4 @@ GitHub Actions blocks PRs on:
 - Prefer fixture-backed tests over network or vendor calls.
 - Add new Convex function tests through `src/test/convex.ts` unless a real local Convex deployment is required.
 - When a new mobile-facing JSON payload is introduced, add a shared fixture in `src/test/fixtures/contracts/` and validate it in both Vitest and Swift before wiring the endpoint.
-- When the registration and authenticated deal-room handoff is fully implemented, extend the Playwright smoke from intake teaser coverage to the full paste → teaser → register → deal room path rather than creating a second parallel spec.
+- When the registration and authenticated deal-room handoff is fully implemented, extend the existing Playwright smoke from paste -> teaser -> deal-room preview to the full paste -> teaser -> register -> authenticated deal room path rather than creating a second parallel spec.
