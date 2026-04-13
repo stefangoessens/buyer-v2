@@ -146,18 +146,31 @@ export const resolveBySlug = mutation({
     const result = resolveShareLink(row ? toRaw(row) : null, now);
 
     if (!result.ok) {
-      // Write a denied event — linkId optional because the lookup may
-      // have missed entirely.
       if (row) {
+        // Known link, but denied — log to the typed events table.
         await ctx.db.insert("dealRoomShareLinkEvents", {
           linkId: row._id,
           dealRoomId: row.dealRoomId,
           event:
             result.reason === "expired"
               ? "denied_expired"
-              : result.reason === "revoked"
-                ? "denied_revoked"
-                : "denied_not_found",
+              : "denied_revoked",
+          timestamp: now,
+        });
+      } else {
+        // Unknown slug — we have no linkId to reference, so log to the
+        // general auditLog table instead. Keeps probes observable for
+        // monitoring without loosening the events table schema. We
+        // never log the raw slug — it is the link secret — only a
+        // short prefix hash for correlation. (Codex P2)
+        await ctx.db.insert("auditLog", {
+          action: "deal_room_share_link_denied_not_found",
+          entityType: "dealRoomShareLinks",
+          entityId: "unknown",
+          details: JSON.stringify({
+            slugPrefix: args.slug.slice(0, 4),
+            slugLength: args.slug.length,
+          }),
           timestamp: now,
         });
       }
@@ -254,9 +267,14 @@ export const create = mutation({
     }
 
     const now = new Date().toISOString();
+    // Attribute the link to the deal-room buyer, not the acting user.
+    // When staff creates "on behalf of" a buyer, the buyer must still
+    // own the lifecycle so they can revoke. The actual actor is
+    // captured in the event's `actorUserId`. (Codex P1)
+    const createdByUserId = dealRoom.buyerId;
     const linkId = await ctx.db.insert("dealRoomShareLinks", {
       dealRoomId: args.dealRoomId,
-      createdByUserId: user._id,
+      createdByUserId,
       slug: finalSlug,
       scope: args.scope,
       status: "active",
