@@ -229,15 +229,29 @@ const factReturnValidator = v.object({
 });
 
 /**
- * List facts for a deal room. Role-filtered server-side:
- *   - buyer → approved + non-internal only
+ * List facts for a deal room. Role-filtered + ownership-checked
+ * server-side:
+ *   - buyer → must own the deal room (dealRoom.buyerId === user._id)
+ *     AND sees only approved + non-internal facts
  *   - broker/admin → everything
+ *
+ * Ownership check is the codex P1 regression from PR #99 — without
+ * it, any authenticated buyer with a leaked dealRoomId could read
+ * another buyer's facts, which is a cross-tenant data leak.
  */
 export const listByDealRoom = query({
   args: { dealRoomId: v.id("dealRooms") },
   returns: v.array(factReturnValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
+
+    if (user.role === "buyer") {
+      const dealRoom = await ctx.db.get(args.dealRoomId);
+      if (!dealRoom || dealRoom.buyerId !== user._id) {
+        throw new Error("deal room not accessible to this user");
+      }
+    }
+
     const rows = await ctx.db
       .query("fileFacts")
       .withIndex("by_dealRoomId", (q) =>
@@ -254,7 +268,10 @@ export const listByDealRoom = query({
 });
 
 /**
- * List facts for a specific property. Same role filter.
+ * List facts for a specific property. Same role filter, plus a
+ * property-level ownership check for buyers: the buyer must own
+ * at least one deal room for the property. Without this, a buyer
+ * with a leaked propertyId could query facts for any property.
  */
 export const listByProperty = query({
   args: { propertyId: v.id("properties") },
@@ -264,6 +281,22 @@ export const listByProperty = query({
     if (!user) {
       throw new Error("Authentication required");
     }
+
+    if (user.role === "buyer") {
+      // Buyer access to a property is mediated through deal-room
+      // ownership — if they don't own a deal room for this property
+      // they shouldn't see its facts. One deal room match is
+      // sufficient; we short-circuit on the first hit.
+      const ownedDealRoom = await ctx.db
+        .query("dealRooms")
+        .withIndex("by_buyerId", (q) => q.eq("buyerId", user._id))
+        .filter((q) => q.eq(q.field("propertyId"), args.propertyId))
+        .first();
+      if (!ownedDealRoom) {
+        throw new Error("property not accessible to this user");
+      }
+    }
+
     const rows = await ctx.db
       .query("fileFacts")
       .withIndex("by_propertyId_and_factSlug", (q) =>
