@@ -33,6 +33,10 @@ import { Doc, Id } from "./_generated/dataModel";
 import { requireRole } from "./lib/session";
 import { smsConsentStatus, smsIntakeOutcome } from "./lib/validators";
 import {
+  checkAndPersistRateLimit,
+  recordRateLimitOutcome,
+} from "./lib/rateLimitBuckets";
+import {
   buildSignedLink,
   classifyInboundSms,
   hashPhone,
@@ -247,6 +251,10 @@ const REPLY_COPY = {
     "We couldn't find a listing link in your message. Please send a Zillow, Redfin, or Realtor.com listing link.",
   unsupportedUrl:
     "We only support Zillow, Redfin, and Realtor.com listings right now. Please send one of those.",
+  rateLimited:
+    "Too many messages hit this intake channel. Please wait a few minutes before trying again.",
+  blocked:
+    "This number is temporarily blocked from sending more listing links. Please wait and try again later.",
   // Prefix — the signed link is appended per message.
   urlProcessedPrefix: "Deal room ready — open it here: ",
 } as const;
@@ -282,6 +290,10 @@ export const processInboundSms = internalMutation({
     dealRoomId: v.optional(v.id("dealRooms")),
     sourceListingId: v.optional(v.id("sourceListings")),
     replyLink: v.optional(v.string()),
+    rateLimitState: v.optional(
+      v.union(v.literal("retry_later"), v.literal("blocked")),
+    ),
+    retryAt: v.optional(v.string()),
   }),
   handler: async (ctx, args) => {
     const now = new Date().toISOString();
@@ -426,8 +438,32 @@ export const processInboundSms = internalMutation({
         });
       }
 
-      case "text_only":
-        return await writeMessage(ctx, {
+      case "text_only": {
+        const rateLimit = await checkAndPersistRateLimit(ctx, {
+          channel: "sms",
+          identifier: phoneHash,
+        });
+        if (!rateLimit.state.allowed) {
+          const callerState = rateLimit.callerState!;
+          return await writeMessage(ctx, {
+            messageSid: args.messageSid,
+            phoneHash,
+            toHash,
+            body: args.body,
+            outcome: "rate_limited",
+            errorCode: callerState.status,
+            replyBody:
+              callerState.status === "blocked"
+                ? REPLY_COPY.blocked
+                : REPLY_COPY.rateLimited,
+            replySent: true,
+            now,
+            rateLimitState: callerState.status,
+            retryAt: callerState.retryAt,
+          });
+        }
+
+        const result = await writeMessage(ctx, {
           messageSid: args.messageSid,
           phoneHash,
           toHash,
@@ -439,7 +475,40 @@ export const processInboundSms = internalMutation({
           now,
         });
 
+        await recordRateLimitOutcome(ctx, {
+          channel: "sms",
+          identifier: phoneHash,
+          outcome: "failure",
+        });
+
+        return result;
+      }
+
       case "url": {
+        const rateLimit = await checkAndPersistRateLimit(ctx, {
+          channel: "sms",
+          identifier: phoneHash,
+        });
+        if (!rateLimit.state.allowed) {
+          const callerState = rateLimit.callerState!;
+          return await writeMessage(ctx, {
+            messageSid: args.messageSid,
+            phoneHash,
+            toHash,
+            body: args.body,
+            outcome: "rate_limited",
+            errorCode: callerState.status,
+            replyBody:
+              callerState.status === "blocked"
+                ? REPLY_COPY.blocked
+                : REPLY_COPY.rateLimited,
+            replySent: true,
+            now,
+            rateLimitState: callerState.status,
+            retryAt: callerState.retryAt,
+          });
+        }
+
         // Any URL activity counts as an implicit opt-in — the user is
         // clearly engaging with the service. This matches the spec's
         // "a link or START" opts the user in.
@@ -464,7 +533,7 @@ export const processInboundSms = internalMutation({
             outcome === "unsupported_url"
               ? REPLY_COPY.unsupportedUrl
               : REPLY_COPY.invalidUrl;
-          return await writeMessage(ctx, {
+          const result = await writeMessage(ctx, {
             messageSid: args.messageSid,
             phoneHash,
             toHash,
@@ -475,6 +544,14 @@ export const processInboundSms = internalMutation({
             replySent: true,
             now,
           });
+
+          await recordRateLimitOutcome(ctx, {
+            channel: "sms",
+            identifier: phoneHash,
+            outcome: "failure",
+          });
+
+          return result;
         }
 
         // Happy path — reuse an existing sourceListings row for the
@@ -516,7 +593,7 @@ export const processInboundSms = internalMutation({
 
         const replyBody = `${REPLY_COPY.urlProcessedPrefix}${replyLink}`;
 
-        return await writeMessage(ctx, {
+        const result = await writeMessage(ctx, {
           messageSid: args.messageSid,
           phoneHash,
           toHash,
@@ -528,6 +605,14 @@ export const processInboundSms = internalMutation({
           replySent: true,
           now,
         });
+
+        await recordRateLimitOutcome(ctx, {
+          channel: "sms",
+          identifier: phoneHash,
+          outcome: "success",
+        });
+
+        return result;
       }
     }
   },
@@ -557,6 +642,8 @@ async function writeMessage(
     replyLink?: string;
     replyBody: string;
     replySent: boolean;
+    rateLimitState?: "retry_later" | "blocked";
+    retryAt?: string;
     now: string;
   },
 ): Promise<{
@@ -567,6 +654,8 @@ async function writeMessage(
   dealRoomId: Id<"dealRooms"> | undefined;
   sourceListingId: Id<"sourceListings"> | undefined;
   replyLink: string | undefined;
+  rateLimitState: "retry_later" | "blocked" | undefined;
+  retryAt: string | undefined;
 }> {
   const intakeId = await ctx.db.insert("smsIntakeMessages", {
     messageSid: args.messageSid,
@@ -592,6 +681,8 @@ async function writeMessage(
     dealRoomId: args.dealRoomId,
     sourceListingId: args.sourceListingId,
     replyLink: args.replyLink,
+    rateLimitState: args.rateLimitState,
+    retryAt: args.retryAt,
   };
 }
 

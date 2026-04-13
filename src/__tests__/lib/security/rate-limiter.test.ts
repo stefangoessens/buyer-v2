@@ -6,6 +6,9 @@ import {
   escalatingBlockMs,
   recordFailure,
   recordSuccess,
+  shouldFlagSuspiciousSpike,
+  suspiciousSpikeThreshold,
+  toExplicitRateLimitState,
   type BucketSnapshot,
   type Channel,
 } from "@/lib/security/rate-limiter";
@@ -275,6 +278,63 @@ describe("checkRateLimit — block active", () => {
     expect(state.allowed).toBe(true);
     // The stale blockedUntil gets cleared on the next allowed request.
     expect(nextBucket.blockedUntil).toBeUndefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Caller-facing denial mapping + suspicious spike thresholds
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("toExplicitRateLimitState", () => {
+  it("maps window_exceeded into retry_later", () => {
+    expect(
+      toExplicitRateLimitState({
+        allowed: false,
+        blockedUntil: offsetFromBase(60_000),
+        reason: "window_exceeded",
+      }),
+    ).toEqual({
+      status: "retry_later",
+      retryAt: offsetFromBase(60_000),
+    });
+  });
+
+  it("maps block_active into blocked", () => {
+    expect(
+      toExplicitRateLimitState({
+        allowed: false,
+        blockedUntil: offsetFromBase(120_000),
+        reason: "block_active",
+      }),
+    ).toEqual({
+      status: "blocked",
+      retryAt: offsetFromBase(120_000),
+    });
+  });
+});
+
+describe("suspicious spike telemetry helpers", () => {
+  it("uses an 80% threshold with a floor of 3 requests", () => {
+    expect(suspiciousSpikeThreshold("homepage")).toBe(
+      Math.max(3, Math.ceil(CHANNEL_CONFIGS.homepage.maxRequests * 0.8)),
+    );
+    expect(suspiciousSpikeThreshold("sms")).toBe(
+      Math.max(3, Math.ceil(CHANNEL_CONFIGS.sms.maxRequests * 0.8)),
+    );
+  });
+
+  it("flags the first crossing into the suspicious zone", () => {
+    const threshold = suspiciousSpikeThreshold("homepage");
+    expect(
+      shouldFlagSuspiciousSpike("homepage", threshold - 1, threshold),
+    ).toBe(true);
+  });
+
+  it("does not refire once the bucket is already above threshold", () => {
+    const threshold = suspiciousSpikeThreshold("extension");
+    expect(
+      shouldFlagSuspiciousSpike("extension", threshold, threshold + 1),
+    ).toBe(false);
   });
 });
 

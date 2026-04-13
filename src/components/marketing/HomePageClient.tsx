@@ -1,11 +1,71 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { TrustBar } from "@/components/marketing/TrustBar";
 import { FeatureCard } from "@/components/marketing/FeatureCard";
 import { TestimonialCard } from "@/components/marketing/TestimonialCard";
 import { PasteLinkInput } from "@/components/marketing/PasteLinkInput";
+import { convex } from "@/lib/convex";
+import { api } from "../../../convex/_generated/api";
+
+const PUBLIC_THROTTLE_STORAGE_KEY = "buyer-v2:intake-throttle-id";
+
+type PublicIntakeSource = "homepage" | "extension" | "share_import";
+
+type SubmissionState =
+  | { kind: "idle" }
+  | { kind: "submitting" }
+  | { kind: "accepted" }
+  | { kind: "retry_later"; retryAt: string }
+  | { kind: "blocked"; retryAt: string }
+  | { kind: "error"; message: string };
+
+function resolveIntakeSource(source: string | null): PublicIntakeSource {
+  if (source === "extension") {
+    return "extension";
+  }
+  if (source === "share_import") {
+    return "share_import";
+  }
+  return "homepage";
+}
+
+function readOrCreateThrottleId(): string {
+  if (typeof window === "undefined") {
+    return "server-render";
+  }
+
+  const existing = window.localStorage.getItem(PUBLIC_THROTTLE_STORAGE_KEY);
+  if (existing && existing.trim().length > 0) {
+    return existing;
+  }
+
+  const next =
+    typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `intake-${Date.now()}`;
+  window.localStorage.setItem(PUBLIC_THROTTLE_STORAGE_KEY, next);
+  return next;
+}
+
+function formatRetryCopy(kind: "retry_later" | "blocked", retryAt: string): string {
+  const retryMs = new Date(retryAt).getTime();
+  if (Number.isNaN(retryMs)) {
+    return kind === "blocked"
+      ? "This intake channel is temporarily blocked. Please try again later."
+      : "Too many attempts. Please try again shortly.";
+  }
+
+  const remainingMs = Math.max(0, retryMs - Date.now());
+  const remainingMinutes = Math.ceil(remainingMs / 60_000);
+  const unit = remainingMinutes === 1 ? "minute" : "minutes";
+
+  return kind === "blocked"
+    ? `This intake channel is temporarily blocked. Try again in about ${remainingMinutes} ${unit}.`
+    : `Too many attempts. Try again in about ${remainingMinutes} ${unit}.`;
+}
 
 const trustStats = [
   { value: "500+", label: "Buyers served" },
@@ -63,35 +123,99 @@ const testimonials = [
 ];
 
 export function HomePageClient() {
-  const [submitted, setSubmitted] = useState(false);
+  const searchParams = useSearchParams();
+  const forwardedUrl = searchParams.get("intake")?.trim() ?? "";
+  const intakeSource = resolveIntakeSource(searchParams.get("source"));
+  const autoSubmitted = useRef(false);
+  const [state, setState] = useState<SubmissionState>({ kind: "idle" });
 
-  // PasteLinkInput handles track("link_pasted") internally — no duplicate here
-  const handleSubmit = useCallback(async (_url: string) => {
-    setSubmitted(true);
-    // Convex submitUrl mutation will be called when Convex is available
-    // For now, the paste-link flow transitions to the deal room on the next page
-  }, []);
+  const handleSubmit = useCallback(
+    async (url: string) => {
+      setState({ kind: "submitting" });
+
+      if (!convex) {
+        setState({ kind: "accepted" });
+        return;
+      }
+
+      try {
+        const result = await convex.mutation(api.intake.submitUrl, {
+          url,
+          source: intakeSource,
+          throttleId:
+            intakeSource === "share_import" ? undefined : readOrCreateThrottleId(),
+        });
+
+        switch (result.kind) {
+          case "accepted":
+            setState({ kind: "accepted" });
+            return;
+          case "retry_later":
+            setState({ kind: "retry_later", retryAt: result.retryAt });
+            return;
+          case "blocked":
+            setState({ kind: "blocked", retryAt: result.retryAt });
+            return;
+          case "error":
+            setState({ kind: "error", message: result.error });
+            return;
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unable to submit intake.";
+        setState({ kind: "error", message });
+      }
+    },
+    [intakeSource],
+  );
+
+  useEffect(() => {
+    if (!forwardedUrl || autoSubmitted.current) {
+      return;
+    }
+
+    autoSubmitted.current = true;
+    void handleSubmit(forwardedUrl);
+  }, [forwardedUrl, handleSubmit]);
+
+  const isAccepted = state.kind === "accepted" || state.kind === "submitting";
+  const feedbackMessage =
+    state.kind === "retry_later" || state.kind === "blocked"
+      ? formatRetryCopy(state.kind, state.retryAt)
+      : state.kind === "error"
+        ? state.message
+        : null;
 
   return (
     <>
-      {/* Hero */}
       <HeroSection
         title="Get the best deal on your Florida home"
         subtitle="Paste a Zillow, Redfin, or Realtor link. Get instant AI-powered analysis, fair pricing, and expert buyer representation — for free."
       >
-        {submitted ? (
+        {feedbackMessage ? (
+          <p className="max-w-xl text-center text-sm font-medium text-primary-50">
+            {feedbackMessage}
+          </p>
+        ) : null}
+        {isAccepted ? (
           <div className="rounded-xl bg-white/10 px-6 py-4 text-lg font-medium text-white backdrop-blur">
-            Analyzing your property...
+            {state.kind === "submitting"
+              ? "Checking abuse controls and starting analysis..."
+              : "Analyzing your property..."}
           </div>
         ) : (
-          <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
+          <PasteLinkInput
+            variant="hero"
+            onSubmit={(url) => {
+              void handleSubmit(url);
+            }}
+            initialValue={forwardedUrl}
+          />
         )}
       </HeroSection>
 
-      {/* Trust Bar */}
       <TrustBar stats={trustStats} />
 
-      {/* Features */}
       <section className="w-full bg-white py-16 lg:py-24">
         <div className="mx-auto max-w-[1248px] px-6">
           <h2 className="text-center text-3xl font-bold tracking-tight text-neutral-800">
@@ -114,7 +238,6 @@ export function HomePageClient() {
         </div>
       </section>
 
-      {/* How It Works */}
       <section
         id="how-it-works"
         className="w-full bg-neutral-50 py-16 lg:py-24"
@@ -134,21 +257,18 @@ export function HomePageClient() {
                     {step.label}
                   </p>
                 </div>
-                {i < steps.length - 1 && (
+                {i < steps.length - 1 ? (
                   <>
-                    {/* Horizontal connector (desktop) */}
                     <div className="mx-6 hidden h-px w-16 bg-neutral-300 md:block" />
-                    {/* Vertical connector (mobile) */}
                     <div className="my-4 h-8 w-px bg-neutral-300 md:hidden" />
                   </>
-                )}
+                ) : null}
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Testimonials */}
       <section className="w-full bg-white py-16 lg:py-24">
         <div className="mx-auto max-w-[1248px] px-6">
           <h2 className="text-center text-3xl font-bold tracking-tight text-neutral-800">
@@ -167,7 +287,6 @@ export function HomePageClient() {
         </div>
       </section>
 
-      {/* Final CTA */}
       <section className="w-full bg-primary-700 py-16 lg:py-24">
         <div className="mx-auto max-w-3xl px-6 text-center">
           <h2 className="text-3xl font-bold tracking-tight text-white lg:text-4xl">
@@ -176,13 +295,26 @@ export function HomePageClient() {
           <p className="mt-4 text-lg text-primary-100">
             Paste a listing link and get your free AI analysis in seconds.
           </p>
+          {feedbackMessage ? (
+            <p className="mt-6 text-sm font-medium text-primary-50">
+              {feedbackMessage}
+            </p>
+          ) : null}
           <div className="mt-8">
-            {submitted ? (
+            {isAccepted ? (
               <div className="rounded-xl bg-white/10 px-6 py-4 text-lg font-medium text-white backdrop-blur">
-                Analyzing your property...
+                {state.kind === "submitting"
+                  ? "Checking abuse controls and starting analysis..."
+                  : "Analyzing your property..."}
               </div>
             ) : (
-              <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
+              <PasteLinkInput
+                variant="hero"
+                onSubmit={(url) => {
+                  void handleSubmit(url);
+                }}
+                initialValue={forwardedUrl}
+              />
             )}
           </div>
         </div>

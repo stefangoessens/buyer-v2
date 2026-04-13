@@ -107,6 +107,16 @@ export type RateLimitState =
     };
 
 /**
+ * Buyer-facing explicit denial state. We separate "retry_later" from a
+ * stronger "blocked" state so intake callers can render a deterministic
+ * countdown or a harder stop without parsing internal reason codes.
+ */
+export interface ExplicitRateLimitState {
+  status: "retry_later" | "blocked";
+  retryAt: string;
+}
+
+/**
  * Minimal persisted shape of a rate-limit bucket. The Convex table wraps
  * this with `throttleKey`, `channel`, timestamps, and indexes, but the
  * pure functions below only need the fields below.
@@ -115,6 +125,48 @@ export interface BucketSnapshot {
   requestTimestamps: string[];
   consecutiveFailures: number;
   blockedUntil?: string;
+}
+
+/**
+ * Map an internal `RateLimitState` denial into the explicit caller-facing
+ * contract required by intake surfaces.
+ */
+export function toExplicitRateLimitState(
+  state: Extract<RateLimitState, { allowed: false }>,
+): ExplicitRateLimitState {
+  return {
+    status: state.reason === "block_active" ? "blocked" : "retry_later",
+    retryAt: state.blockedUntil,
+  };
+}
+
+/**
+ * Near-saturation threshold for "suspicious spike" telemetry. We flag the
+ * first time a bucket crosses 80% of its request budget in the current
+ * window, with a floor of 3 requests so tiny test/dev budgets still have a
+ * meaningful threshold.
+ */
+export function suspiciousSpikeThreshold(channel: Channel): number {
+  const config = CHANNEL_CONFIGS[channel];
+  if (!config) {
+    throw new Error(`Unknown rate limit channel: ${channel}`);
+  }
+
+  return Math.max(3, Math.ceil(config.maxRequests * 0.8));
+}
+
+/**
+ * Whether a request count transition should emit a `suspicious_spike`
+ * telemetry event. We only fire on the crossing edge, not on every request
+ * after the threshold has already been breached.
+ */
+export function shouldFlagSuspiciousSpike(
+  channel: Channel,
+  previousCount: number,
+  nextCount: number,
+): boolean {
+  const threshold = suspiciousSpikeThreshold(channel);
+  return previousCount < threshold && nextCount >= threshold;
 }
 
 /**
