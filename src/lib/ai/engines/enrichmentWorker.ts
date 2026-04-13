@@ -1,13 +1,17 @@
 import { EnrichmentFailure, wrapUnknownError } from "@/lib/enrichment/errors";
 import type {
   AgentObservation,
+  BrowserUseFallbackContext,
+  BrowserUseFallbackResult,
   EnrichmentError,
   EnrichmentResult,
   EnrichmentSource,
+  FallbackReason,
   GeoKind,
   NeighborhoodSale,
   PortalName,
 } from "@/lib/enrichment/types";
+import { FALLBACK_REASONS } from "@/lib/enrichment/types";
 
 export interface EnrichmentFetchAdapters {
   femaFlood(args: {
@@ -58,6 +62,18 @@ export interface EnrichmentFetchAdapters {
     geoKey: string;
     windowDays: number;
   }): Promise<{ sales: NeighborhoodSale[]; citation: string }>;
+  /**
+   * KIN-784: Browser Use fallback. Runs when deterministic extraction
+   * fails for an explicit reason. The implementation lives in the Python
+   * worker lane; this contract is the handoff.
+   */
+  browserUseFallback(args: {
+    propertyId: string;
+    sourceUrl: string;
+    portal: PortalName | "unknown";
+    reason: FallbackReason;
+    note?: string;
+  }): Promise<{ result: BrowserUseFallbackResult; citation: string }>;
 }
 
 export interface WorkerJob {
@@ -179,6 +195,20 @@ async function dispatch(
       });
       return { data, citation };
     }
+    case "browser_use_fallback": {
+      const sourceUrl = requireString(job, ctx, "sourceUrl");
+      const portal = requireFallbackPortal(job, ctx, "portal");
+      const reason = requireFallbackReason(job, ctx, "reason");
+      const note = optionalString(ctx, "note");
+      const { citation, ...data } = await adapters.browserUseFallback({
+        propertyId: job.propertyId,
+        sourceUrl,
+        portal,
+        reason,
+        note,
+      });
+      return { data, citation };
+    }
   }
 }
 
@@ -250,6 +280,38 @@ function requireGeoKind(
   throw parseError(job, `Missing context.${key} (expected GeoKind)`);
 }
 
+function requireFallbackPortal(
+  job: WorkerJob,
+  ctx: Record<string, unknown>,
+  key: string,
+): PortalName | "unknown" {
+  const value = ctx[key];
+  if (
+    value === "zillow" ||
+    value === "redfin" ||
+    value === "realtor" ||
+    value === "unknown"
+  ) {
+    return value;
+  }
+  throw parseError(job, `Missing context.${key} (expected portal or unknown)`);
+}
+
+function requireFallbackReason(
+  job: WorkerJob,
+  ctx: Record<string, unknown>,
+  key: string,
+): FallbackReason {
+  const value = ctx[key];
+  if (
+    typeof value === "string" &&
+    (FALLBACK_REASONS as readonly string[]).includes(value)
+  ) {
+    return value as FallbackReason;
+  }
+  throw parseError(job, `Missing context.${key} (expected FallbackReason)`);
+}
+
 function parseError(job: WorkerJob, message: string): EnrichmentFailure {
   return new EnrichmentFailure({
     code: "parse_error",
@@ -279,4 +341,5 @@ export const stubAdapters: EnrichmentFetchAdapters = {
   neighborhoodMarket: async () => notImplemented("neighborhood_market")(),
   portalEstimates: async () => notImplemented("portal_estimates")(),
   recentSales: async () => notImplemented("recent_sales")(),
+  browserUseFallback: async () => notImplemented("browser_use_fallback")(),
 };

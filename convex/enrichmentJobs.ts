@@ -15,6 +15,7 @@ const sourceValidator = v.union(
   v.literal("neighborhood_market"),
   v.literal("portal_estimates"),
   v.literal("recent_sales"),
+  v.literal("browser_use_fallback"),
 );
 
 type EnrichmentSource =
@@ -25,9 +26,11 @@ type EnrichmentSource =
   | "listing_agent_profile"
   | "neighborhood_market"
   | "portal_estimates"
-  | "recent_sales";
+  | "recent_sales"
+  | "browser_use_fallback";
 
 const SOURCE_PRIORITY: Record<EnrichmentSource, number> = {
+  browser_use_fallback: 5,
   cross_portal_match: 10,
   portal_estimates: 20,
   census_geocode: 30,
@@ -53,6 +56,7 @@ const ALL_SOURCES: EnrichmentSource[] = [
  *  window are still considered fresh — `enqueueJob` returns the existing id
  *  as a no-op rather than kicking off a redundant fetch. */
 const SOURCE_CACHE_TTL_HOURS: Record<EnrichmentSource, number> = {
+  browser_use_fallback: 1,
   cross_portal_match: 72,
   portal_estimates: 24,
   census_geocode: 24 * 30,
@@ -186,6 +190,213 @@ export const enqueueAllSourcesForProperty = internalMutation({
     return jobIds;
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Browser Use fallback (KIN-784)
+// ─────────────────────────────────────────────────────────────────────────
+
+const fallbackReasonValidator = v.union(
+  v.literal("parser_schema_drift"),
+  v.literal("anti_bot_block"),
+  v.literal("vendor_unavailable"),
+  v.literal("unsupported_portal"),
+  v.literal("manual_override"),
+);
+
+const fallbackPortalValidator = v.union(
+  v.literal("zillow"),
+  v.literal("redfin"),
+  v.literal("realtor"),
+  v.literal("unknown"),
+);
+
+const extractorErrorCodeValidator = v.union(
+  v.literal("network_error"),
+  v.literal("not_found"),
+  v.literal("rate_limited"),
+  v.literal("parse_error"),
+  v.literal("unauthorized"),
+  v.literal("timeout"),
+  v.literal("unknown"),
+);
+
+/**
+ * Enqueue a Browser Use fallback job for a property whose deterministic
+ * extraction failed. Only enqueues when the extractor error code maps
+ * to a known fallback-eligible reason, when operator manually overrides,
+ * or when the portal is unsupported. Idempotent via fallback dedupe key.
+ *
+ * Returns `{ eligible: true, jobId }` on enqueue, or `{ eligible: false,
+ * skipReason }` when the failure does not warrant fallback.
+ */
+export const enqueueBrowserUseFallback = internalMutation({
+  args: {
+    propertyId: v.id("properties"),
+    sourceUrl: v.string(),
+    portal: fallbackPortalValidator,
+    extractorErrorCode: extractorErrorCodeValidator,
+    manualOverride: v.optional(v.boolean()),
+    unsupportedPortal: v.optional(v.boolean()),
+    operatorNote: v.optional(v.string()),
+  },
+  returns: v.union(
+    v.object({
+      eligible: v.literal(true),
+      jobId: v.id("enrichmentJobs"),
+      fallbackReason: fallbackReasonValidator,
+    }),
+    v.object({
+      eligible: v.literal(false),
+      skipReason: v.string(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    // Count prior fallback attempts for this (property, sourceUrl). Inline
+    // to avoid narrowing the Convex ctx type through a helper.
+    const priorRows = await ctx.db
+      .query("enrichmentJobs")
+      .withIndex("by_propertyId_and_source", (q) =>
+        q
+          .eq("propertyId", args.propertyId)
+          .eq("source", "browser_use_fallback"),
+      )
+      .collect();
+
+    let priorFallbackAttempts = 0;
+    for (const row of priorRows) {
+      if (row.status === "skipped") continue;
+      if (!row.contextJson) continue;
+      try {
+        const parsed = JSON.parse(row.contextJson) as { sourceUrl?: string };
+        if (parsed?.sourceUrl === args.sourceUrl) priorFallbackAttempts++;
+      } catch {
+        priorFallbackAttempts++;
+      }
+    }
+
+    const maxFallbackAttempts = 2;
+
+    if (priorFallbackAttempts >= maxFallbackAttempts) {
+      return {
+        eligible: false as const,
+        skipReason: "max_fallback_attempts_exceeded",
+      };
+    }
+
+    let fallbackReason:
+      | "parser_schema_drift"
+      | "anti_bot_block"
+      | "vendor_unavailable"
+      | "unsupported_portal"
+      | "manual_override"
+      | null = null;
+
+    if (args.manualOverride) {
+      fallbackReason = "manual_override";
+    } else if (args.unsupportedPortal) {
+      fallbackReason = "unsupported_portal";
+    } else {
+      switch (args.extractorErrorCode) {
+        case "parse_error":
+          fallbackReason = "parser_schema_drift";
+          break;
+        case "rate_limited":
+        case "unauthorized":
+          fallbackReason = "anti_bot_block";
+          break;
+        case "network_error":
+        case "timeout":
+          fallbackReason = "vendor_unavailable";
+          break;
+        default:
+          fallbackReason = null;
+      }
+    }
+
+    if (!fallbackReason) {
+      return {
+        eligible: false as const,
+        skipReason: `no_mapping_for_error_code:${args.extractorErrorCode}`,
+      };
+    }
+
+    const hourBucket = new Date().toISOString().slice(0, 13);
+    const urlHash = simpleHash(args.sourceUrl);
+    const dedupeKey = buildDedupeKey(
+      args.propertyId,
+      "browser_use_fallback",
+      `${urlHash}::${priorFallbackAttempts}::${hourBucket}`,
+    );
+
+    // Idempotency: if a job with this dedupe key is already pending or
+    // running, reuse it instead of enqueuing a duplicate.
+    const existing = await ctx.db
+      .query("enrichmentJobs")
+      .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", dedupeKey))
+      .order("desc")
+      .first();
+    if (existing && (existing.status === "pending" || existing.status === "running")) {
+      return {
+        eligible: true as const,
+        jobId: existing._id,
+        fallbackReason,
+      };
+    }
+
+    const now = new Date().toISOString();
+    const contextJson = JSON.stringify({
+      propertyId: args.propertyId,
+      sourceUrl: args.sourceUrl,
+      portal: args.portal,
+      reason: fallbackReason,
+      originatingErrorCode: args.extractorErrorCode,
+      note: args.operatorNote,
+    });
+
+    const jobId = await ctx.db.insert("enrichmentJobs", {
+      propertyId: args.propertyId,
+      source: "browser_use_fallback" as const,
+      status: "pending" as const,
+      attempt: 0,
+      maxAttempts: maxFallbackAttempts,
+      priority: SOURCE_PRIORITY.browser_use_fallback,
+      requestedAt: now,
+      dedupeKey,
+      contextJson,
+    });
+
+    await ctx.db.insert("auditLog", {
+      action: "browser_use_fallback_enqueued",
+      entityType: "enrichmentJobs",
+      entityId: jobId,
+      details: JSON.stringify({
+        propertyId: args.propertyId,
+        sourceUrl: args.sourceUrl,
+        portal: args.portal,
+        fallbackReason,
+        originatingErrorCode: args.extractorErrorCode,
+        priorAttempts: priorFallbackAttempts,
+      }),
+      timestamp: now,
+    });
+
+    return {
+      eligible: true as const,
+      jobId,
+      fallbackReason,
+    };
+  },
+});
+
+/** Cheap non-crypto hash — same formula as src/lib/enrichment/fallback.ts. */
+function simpleHash(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
 
 /** Atomic claim: only advance pending → running. A second worker racing on
  *  the same pending row observes status !== "pending" and throws, so the
