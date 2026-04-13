@@ -1,6 +1,9 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  agreementArtifact,
+  agreementStatus,
+  agreementType,
   authProvider,
   assignmentStatus,
   availabilityOwnerType,
@@ -275,20 +278,20 @@ export default defineSchema({
   agreements: defineTable({
     dealRoomId: v.id("dealRooms"),
     buyerId: v.id("users"),
-    type: v.union(
-      v.literal("tour_pass"),
-      v.literal("full_representation")
-    ),
-    status: v.union(
-      v.literal("draft"),
-      v.literal("sent"),
-      v.literal("signed"),
-      v.literal("canceled"),
-      v.literal("replaced")
-    ),
+    type: agreementType,
+    status: agreementStatus,
     documentStorageId: v.optional(v.id("_storage")),
+    signedArtifact: v.optional(agreementArtifact),
+    effectiveStartAt: v.optional(v.string()),
+    effectiveEndAt: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    createdByUserId: v.optional(v.id("users")),
+    lastUpdatedByUserId: v.optional(v.id("users")),
+    sentAt: v.optional(v.string()),
     signedAt: v.optional(v.string()),
     canceledAt: v.optional(v.string()),
+    canceledReason: v.optional(v.string()),
     supersededAt: v.optional(v.string()),
     supersessionReason: v.optional(v.union(
       v.literal("upgrade_to_full_representation"),

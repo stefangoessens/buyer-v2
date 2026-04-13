@@ -39,6 +39,19 @@ export const agreementStatus = v.union(
   v.literal("replaced")
 );
 
+export const agreementAccessScope = v.union(
+  v.literal("touring"),
+  v.literal("offers")
+);
+
+export const agreementArtifact = v.object({
+  storageId: v.id("_storage"),
+  fileName: v.optional(v.string()),
+  contentType: v.optional(v.string()),
+  checksumSha256: v.optional(v.string()),
+  uploadedAt: v.string(),
+});
+
 export const supersessionReason = v.union(
   v.literal("upgrade_to_full_representation"),
   v.literal("correction"),

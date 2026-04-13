@@ -457,12 +457,17 @@ export const initiateUpgrade = mutation({
     }
 
     // Create new full_representation draft scoped to same buyer/deal room
+    const now = new Date().toISOString();
     const newId = await ctx.db.insert("agreements", {
       dealRoomId: currentTourPass.dealRoomId,
       buyerId: currentTourPass.buyerId,
       type: "full_representation",
       status: "draft",
       documentStorageId: args.documentStorageId,
+      createdAt: now,
+      updatedAt: now,
+      createdByUserId: user._id,
+      lastUpdatedByUserId: user._id,
     });
 
     const successor = await ctx.db.get(newId);
@@ -489,7 +494,7 @@ export const initiateUpgrade = mutation({
         newAgreementId: newId,
         reason: "upgrade_to_full_representation",
       }),
-      timestamp: new Date().toISOString(),
+      timestamp: now,
     });
 
     // Recompute eligibility — the buyer just moved from "tour_pass_only"

@@ -174,6 +174,8 @@ export async function applySupersessionState(
     canceledAt: supersededAt,
     supersededAt,
     supersessionReason: args.reason,
+    updatedAt: supersededAt,
+    lastUpdatedByUserId: args.actorUserId,
   });
 
   await ctx.db.insert("auditLog", {

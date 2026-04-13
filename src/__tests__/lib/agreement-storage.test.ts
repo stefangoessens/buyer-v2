@@ -1,0 +1,302 @@
+import { describe, expect, it } from "vitest"
+
+import {
+  buildAgreementAccessAudit,
+  buildAgreementCanceledAudit,
+  buildAgreementCanceledPatch,
+  buildAgreementCreatedAudit,
+  buildAgreementDraft,
+  buildAgreementReplacedAudit,
+  buildAgreementSignedAudit,
+  buildAgreementSignedPatch,
+  buildReplacementDraftInput,
+  canReadAgreement,
+  resolveCurrentAgreementReadModel,
+  type AgreementActor,
+  type AgreementRecordLike,
+} from "../../../convex/lib/agreements"
+
+const NOW = "2026-04-12T12:00:00.000Z"
+
+function actor(
+  overrides: Partial<AgreementActor> = {},
+): AgreementActor {
+  return {
+    _id: "user_broker",
+    role: "broker",
+    ...overrides,
+  }
+}
+
+function agreement(
+  overrides: Partial<AgreementRecordLike> = {},
+): AgreementRecordLike {
+  return {
+    _id: "agreement_1",
+    dealRoomId: "deal_1",
+    buyerId: "buyer_1",
+    type: "tour_pass",
+    status: "draft",
+    createdAt: "2026-04-10T09:00:00.000Z",
+    updatedAt: "2026-04-10T09:00:00.000Z",
+    ...overrides,
+  }
+}
+
+describe("agreement storage helpers", () => {
+  it("builds typed draft state and create audit metadata", () => {
+    const broker = actor()
+    const draft = buildAgreementDraft(
+      broker,
+      {
+        dealRoomId: "deal_1",
+        buyerId: "buyer_1",
+        type: "full_representation",
+        documentStorageId: "storage_draft",
+        effectiveStartAt: "2026-04-15",
+        effectiveEndAt: "2027-04-15",
+      },
+      NOW,
+    )
+
+    expect(draft).toMatchObject({
+      dealRoomId: "deal_1",
+      buyerId: "buyer_1",
+      type: "full_representation",
+      status: "draft",
+      documentStorageId: "storage_draft",
+      effectiveStartAt: "2026-04-15",
+      effectiveEndAt: "2027-04-15",
+      createdAt: NOW,
+      updatedAt: NOW,
+      createdByUserId: "user_broker",
+      lastUpdatedByUserId: "user_broker",
+    })
+
+    const audit = buildAgreementCreatedAudit(
+      broker,
+      "agreement_1",
+      {
+        dealRoomId: "deal_1",
+        buyerId: "buyer_1",
+        type: "full_representation",
+        documentStorageId: "storage_draft",
+        effectiveStartAt: "2026-04-15",
+        effectiveEndAt: "2027-04-15",
+      },
+      NOW,
+    )
+
+    expect(audit).toMatchObject({
+      userId: "user_broker",
+      action: "agreement_created",
+      entityId: "agreement_1",
+      timestamp: NOW,
+    })
+    expect(JSON.parse(audit.details ?? "{}")).toMatchObject({
+      buyerId: "buyer_1",
+      type: "full_representation",
+      hasDocumentStorageId: true,
+    })
+  })
+
+  it("records signature artifacts and normalizes effective dates", () => {
+    const broker = actor()
+    const sentAgreement = agreement({
+      status: "sent",
+      type: "full_representation",
+      effectiveStartAt: "2026-04-14",
+    })
+
+    const patch = buildAgreementSignedPatch(
+      sentAgreement,
+      broker,
+      {
+        signedArtifact: {
+          storageId: "storage_signed",
+          fileName: "buyer-agreement.pdf",
+          contentType: "application/pdf",
+          checksumSha256: "abc123",
+        },
+        effectiveEndAt: "2027-04-14",
+      },
+      NOW,
+    )
+
+    expect(patch).toMatchObject({
+      status: "signed",
+      documentStorageId: "storage_signed",
+      signedAt: NOW,
+      effectiveStartAt: "2026-04-14",
+      effectiveEndAt: "2027-04-14",
+    })
+    expect(patch.signedArtifact).toMatchObject({
+      storageId: "storage_signed",
+      fileName: "buyer-agreement.pdf",
+      contentType: "application/pdf",
+      checksumSha256: "abc123",
+      uploadedAt: NOW,
+    })
+
+    const audit = buildAgreementSignedAudit(
+      broker,
+      sentAgreement,
+      {
+        signedArtifact: {
+          storageId: "storage_signed",
+          fileName: "buyer-agreement.pdf",
+        },
+      },
+      NOW,
+    )
+    expect(audit.action).toBe("agreement_signed")
+    expect(JSON.parse(audit.details ?? "{}")).toMatchObject({
+      signedStorageId: "storage_signed",
+      type: "full_representation",
+    })
+  })
+
+  it("records cancel metadata and closes the effective window", () => {
+    const patch = buildAgreementCanceledPatch(
+      agreement({
+        status: "signed",
+        type: "full_representation",
+        effectiveStartAt: "2026-04-14",
+      }),
+      actor(),
+      {
+        reason: "buyer opted out",
+      },
+      NOW,
+    )
+
+    expect(patch).toMatchObject({
+      status: "canceled",
+      canceledAt: NOW,
+      canceledReason: "buyer opted out",
+      effectiveEndAt: NOW,
+    })
+
+    const audit = buildAgreementCanceledAudit(
+      actor(),
+      agreement({
+        _id: "agreement_cancel",
+        status: "signed",
+      }),
+      { reason: "buyer opted out" },
+      NOW,
+    )
+    expect(audit.action).toBe("agreement_canceled")
+    expect(JSON.parse(audit.details ?? "{}")).toMatchObject({
+      reason: "buyer opted out",
+      effectiveEndAt: NOW,
+    })
+  })
+
+  it("builds replacement drafts and resolves the current governing agreement deterministically", () => {
+    const predecessor = agreement({
+      _id: "agreement_old",
+      type: "tour_pass",
+      status: "replaced",
+      signedAt: "2026-04-01T09:00:00.000Z",
+      replacedById: "agreement_new",
+      supersededAt: "2026-04-12T10:00:00.000Z",
+    })
+
+    const replacementInput = buildReplacementDraftInput(
+      predecessor,
+      "full_representation",
+      "storage_new_draft",
+    )
+    expect(replacementInput).toMatchObject({
+      dealRoomId: "deal_1",
+      buyerId: "buyer_1",
+      type: "full_representation",
+      documentStorageId: "storage_new_draft",
+    })
+
+    const successor = agreement({
+      _id: "agreement_new",
+      type: "full_representation",
+      status: "signed",
+      documentStorageId: "storage_signed",
+      signedArtifact: {
+        storageId: "storage_signed",
+        uploadedAt: NOW,
+      },
+      signedAt: "2026-04-12T11:00:00.000Z",
+      effectiveStartAt: "2026-04-12",
+    })
+
+    const resolved = resolveCurrentAgreementReadModel([predecessor, successor])
+    expect(resolved).toMatchObject({
+      agreementId: "agreement_new",
+      type: "full_representation",
+      accessScope: "offers",
+      signedAt: "2026-04-12T11:00:00.000Z",
+    })
+
+    const pendingResolved = resolveCurrentAgreementReadModel([
+      predecessor,
+      agreement({
+        _id: "agreement_new",
+        type: "full_representation",
+        status: "draft",
+      }),
+    ])
+    expect(pendingResolved).toBeNull()
+
+    const replaceAudit = buildAgreementReplacedAudit(
+      actor(),
+      predecessor,
+      "agreement_new",
+      "full_representation",
+      "upgrade_to_full_representation",
+      NOW,
+    )
+    expect(replaceAudit.action).toBe("agreement_replaced")
+    expect(JSON.parse(replaceAudit.details ?? "{}")).toMatchObject({
+      replacedById: "agreement_new",
+      previousType: "tour_pass",
+      newType: "full_representation",
+      reason: "upgrade_to_full_representation",
+    })
+  })
+
+  it("enforces role-aware reads and audits signed artifact access", () => {
+    const agreementRow = agreement({
+      _id: "agreement_access",
+      status: "signed",
+      documentStorageId: "storage_signed",
+      signedArtifact: {
+        storageId: "storage_signed",
+        uploadedAt: NOW,
+      },
+    })
+
+    expect(canReadAgreement(actor({ role: "buyer", _id: "buyer_1" }), "buyer_1")).toBe(true)
+    expect(canReadAgreement(actor({ role: "buyer", _id: "buyer_2" }), "buyer_1")).toBe(false)
+    expect(canReadAgreement(actor({ role: "broker", _id: "broker_1" }), "buyer_1")).toBe(true)
+    expect(canReadAgreement(actor({ role: "admin", _id: "admin_1" }), "buyer_1")).toBe(true)
+
+    const grantedAudit = buildAgreementAccessAudit(
+      actor({ role: "broker", _id: "broker_1" }),
+      agreementRow,
+      NOW,
+      "granted",
+    )
+    expect(grantedAudit.action).toBe("agreement_artifact_accessed")
+
+    const deniedAudit = buildAgreementAccessAudit(
+      actor({ role: "buyer", _id: "buyer_2" }),
+      agreementRow,
+      NOW,
+      "denied",
+    )
+    expect(deniedAudit.action).toBe("agreement_artifact_access_denied")
+    expect(JSON.parse(deniedAudit.details ?? "{}")).toMatchObject({
+      outcome: "denied",
+      artifactStorageId: "storage_signed",
+    })
+  })
+})
