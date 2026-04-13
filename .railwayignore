@@ -13,7 +13,6 @@ test-results
 *.log
 .DS_Store
 .vercel
-convex/_generated
 docs
 packages/*/node_modules
 packages/*/dist
