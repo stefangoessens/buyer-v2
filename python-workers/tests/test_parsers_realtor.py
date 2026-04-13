@@ -1201,3 +1201,106 @@ class TestNextStubBlobFallsThrough:
         prop = RealtorExtractor().extract(html=html, source_url=url)
         assert prop.listing_id == "META999"
         assert prop.price_usd == 550_000
+
+
+class TestSiblingKeysCheckedBeforeRejection:
+    """Regression: stub `pageProps.property` must not hide real `pageProps.listing`.
+
+    The previous `_find_listing_in_page_props` returned the first dict
+    under direct_keys without validating it. A stub under `property`
+    would be returned, then rejected by `_next_blob_has_listing_fields`,
+    which caused `_extract_next_data` to skip the entire script — even
+    when `pageProps.listing` held the real payload as a sibling. Fix
+    walks all sibling keys first and only falls back to the first-seen
+    stub when nothing matches.
+    """
+
+    def test_stub_property_falls_back_to_real_listing_sibling(self) -> None:
+        # Single __NEXT_DATA__ blob containing BOTH an empty `property`
+        # stub AND a real `listing` under the same pageProps.
+        payload = (
+            '{"props":{"pageProps":{'
+            '"property":{},'  # empty stub
+            '"listing":{'
+            '"listing_id": "SIBLING001",'
+            '"list_price": 825000,'
+            '"description": {'
+            '"beds": 4,'
+            '"baths": 3,'
+            '"sqft": 2400'
+            '},'
+            '"address": {'
+            '"line": "300 Sibling Pl",'
+            '"city": "Weston",'
+            '"state_code": "FL",'
+            '"postal_code": "33326"'
+            '}'
+            '}}}}'
+        )
+        html = (
+            "<!DOCTYPE html><html><head>"
+            f'<script id="__NEXT_DATA__" type="application/json">{payload}</script>'
+            "</head><body></body></html>"
+        )
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "300-Sibling-Pl_Weston_FL_33326_M88888-99999"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        # The real listing sibling must have been found despite the
+        # empty property stub being checked first.
+        assert prop.listing_id == "SIBLING001"
+        assert prop.price_usd == 825_000
+        assert prop.beds == 4.0
+        assert prop.city == "Weston"
+
+
+class TestIdOnlyBlobIsRejected:
+    """Regression: a blob with only listing_id must not short-circuit the scanner.
+
+    `_next_blob_has_listing_fields` used to accept any non-empty
+    `listing_id` or `property_id` as sufficient. A metadata-only first
+    blob with just an ID but no address/price would then block
+    `_extract_next_data` from scanning later `__NEXT_DATA__` scripts,
+    causing required-field SchemaShiftError even when later blobs
+    carried the full listing.
+    """
+
+    def test_id_only_blob_falls_through_to_full_blob(self) -> None:
+        id_only = (
+            '{"props":{"pageProps":{"listing":{'
+            '"listing_id": "IDONLY001",'
+            '"status": "active"'
+            '}}}}'
+        )
+        full = (
+            '{"props":{"pageProps":{"listing":{'
+            '"listing_id": "FULL001",'
+            '"list_price": 675000,'
+            '"description": {'
+            '"beds": 3,'
+            '"baths": 2.5,'
+            '"sqft": 1950'
+            '},'
+            '"address": {'
+            '"line": "400 Full St",'
+            '"city": "Miami",'
+            '"state_code": "FL",'
+            '"postal_code": "33131"'
+            '}}}}}'
+        )
+        html = (
+            "<!DOCTYPE html><html><head>"
+            f'<script id="__NEXT_DATA__" type="application/json">{id_only}</script>'
+            f'<script id="__NEXT_DATA__" type="application/json">{full}</script>'
+            "</head><body></body></html>"
+        )
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "400-Full-St_Miami_FL_33131_M10101-20202"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        # Must use the full blob, not the ID-only one that came first.
+        assert prop.listing_id == "FULL001"
+        assert prop.price_usd == 675_000
+        assert prop.baths == 2.5

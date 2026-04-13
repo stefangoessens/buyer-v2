@@ -270,24 +270,23 @@ class RealtorExtractor:
     def _next_blob_has_listing_fields(prop: dict[str, Any]) -> bool:
         """Return True if a __NEXT_DATA__ dict carries real listing data.
 
-        A stub with only metadata (e.g. ``{"status": "sold"}``) should not
-        be accepted as the real listing blob. We consider the dict
-        populated if any of the core identity / price / address fields
-        are present AND non-empty.
+        An ID by itself is NOT sufficient — a metadata-only blob with
+        just a `listing_id` or `property_id` (no address, price, or
+        description) would otherwise short-circuit extraction of later
+        scripts that carry the full payload. We require at least one
+        *substantive* field (price / address / description) alongside
+        any ID. Stubs like ``{"status": "sold"}`` or
+        ``{"listing_id": "X"}`` now correctly fall through.
         """
-        core_fields = (
+        substantive_fields = (
             "list_price",
             "price",
             "current_price",
-            "listing_id",
-            "property_id",
-            "mls_number",
-            "mls_id",
             "address",
             "location",
             "description",
         )
-        for key in core_fields:
+        for key in substantive_fields:
             value = prop.get(key)
             if value is None:
                 continue
@@ -298,22 +297,46 @@ class RealtorExtractor:
             return True
         return False
 
-    @staticmethod
-    def _find_listing_in_page_props(page_props: dict[str, Any]) -> dict[str, Any] | None:
-        """Locate the listing dict under `pageProps` across page templates."""
+    @classmethod
+    def _find_listing_in_page_props(
+        cls, page_props: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Locate the real listing dict under ``pageProps`` across templates.
+
+        Walks all known locations (direct `property`/`listing`/`home`,
+        then the Redux-nested variant) and returns the first dict that
+        actually carries listing data. Crucially, a stub
+        ``pageProps.property`` does NOT block us from reaching a populated
+        ``pageProps.listing`` sibling — the old "return first dict"
+        behaviour caused `_extract_next_data` to reject the script
+        outright and emit a false `SchemaShiftError` when later siblings
+        carried the real payload.
+        """
         direct_keys = ("property", "listing", "home")
+        first_stub: dict[str, Any] | None = None
         for key in direct_keys:
             candidate = page_props.get(key)
-            if isinstance(candidate, dict):
+            if not isinstance(candidate, dict):
+                continue
+            if cls._next_blob_has_listing_fields(candidate):
                 return candidate
+            if first_stub is None:
+                first_stub = candidate
         # Redux-style nesting: pageProps.initialReduxState.propertyDetails.{listing,property}
         redux = _safe_dict(page_props, "initialReduxState", "propertyDetails")
         if redux is not None:
             for key in ("listing", "property", "home"):
                 candidate = redux.get(key)
-                if isinstance(candidate, dict):
+                if not isinstance(candidate, dict):
+                    continue
+                if cls._next_blob_has_listing_fields(candidate):
                     return candidate
-        return None
+                if first_stub is None:
+                    first_stub = candidate
+        # Nothing matched — return the first stub seen so the caller can
+        # decide (it will then reject via `_next_blob_has_listing_fields`
+        # and keep scanning later `__NEXT_DATA__` scripts).
+        return first_stub
 
     @staticmethod
     def _next_to_raw(prop: dict[str, Any]) -> dict[str, Any]:
