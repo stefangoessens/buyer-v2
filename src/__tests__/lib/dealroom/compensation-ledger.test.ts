@@ -6,6 +6,9 @@ import {
   canTransitionCompensationStatus,
   computeCompensationLedgerSnapshot,
   computeCompensationReconciliation,
+  filterLedgerEntriesForViewer,
+  projectBuyerCompensationStatus,
+  projectBuyerLedgerEntry,
 } from "@/lib/dealroom/compensation-ledger";
 
 describe("canTransitionCompensationStatus", () => {
@@ -112,6 +115,102 @@ describe("computeCompensationLedgerSnapshot", () => {
     expect(snapshot.expectedBuyerFee).toBe(9_500);
     expect(snapshot.projectedClosingCredit).toBe(1_750);
     expect(snapshot.remainingFeeBalance).toBe(9_500);
+  });
+});
+
+describe("buyer-safe projections", () => {
+  it("filters internal-only entries out of buyer-visible summaries", () => {
+    const entries = filterLedgerEntriesForViewer(
+      [
+        { visibility: "buyer_visible", id: "a" },
+        { visibility: "internal_only", id: "b" },
+        { id: "c" },
+      ],
+      "buyer",
+    );
+
+    expect(entries).toEqual([
+      { visibility: "buyer_visible", id: "a" },
+      { id: "c" },
+    ]);
+  });
+
+  it("strips internal provenance and review fields from buyer ledger rows", () => {
+    const entry = projectBuyerLedgerEntry({
+      _id: "ledger_1",
+      _creationTime: 1,
+      dealRoomId: "deal_1",
+      entryType: "projected_closing_credit",
+      amount: 4_200,
+      description: "Projected buyer closing credit",
+      source: "offer_term",
+      lifecycleEvent: "offer_terms_submitted",
+      provenance: {
+        actorId: "user_broker",
+        triggeredBy: "ledger.recordLifecycleEventInternal",
+        sourceDocument: "email-thread.pdf",
+        timestamp: "2026-04-12T12:00:00.000Z",
+      },
+      internalReviewState: "pending",
+      visibility: "buyer_visible",
+      financingType: "conventional",
+      ipcLimitPercent: 0.06,
+      createdAt: "2026-04-12T12:00:00.000Z",
+    });
+
+    expect(entry).toEqual({
+      _id: "ledger_1",
+      _creationTime: 1,
+      dealRoomId: "deal_1",
+      entryType: "projected_closing_credit",
+      amount: 4_200,
+      description: "Projected buyer closing credit",
+      source: "offer_term",
+      lifecycleEvent: "offer_terms_submitted",
+      provenance: {
+        timestamp: "2026-04-12T12:00:00.000Z",
+      },
+      createdAt: "2026-04-12T12:00:00.000Z",
+    });
+  });
+
+  it("strips internal status metadata from buyer compensation status rows", () => {
+    const row = projectBuyerCompensationStatus({
+      _id: "status_1",
+      _creationTime: 1,
+      dealRoomId: "deal_1",
+      status: "negotiated_in_offer",
+      previousStatus: "seller_disclosed_off_mls",
+      transitionReason: "broker review",
+      transitionActorId: "user_broker",
+      lastLifecycleEvent: "offer_terms_submitted",
+      buyerPromptKey: "offer_terms_recorded",
+      offerId: "offer_1",
+      contractId: "contract_1",
+      internalReviewState: "pending",
+      sourceDocument: "offer.pdf",
+      lastTransitionAt: "2026-04-12T12:30:00.000Z",
+      sellerDisclosedAmount: 3_000,
+      negotiatedAmount: 4_200,
+      buyerPaidAmount: 0,
+      createdAt: "2026-04-12T10:00:00.000Z",
+      updatedAt: "2026-04-12T12:30:00.000Z",
+    });
+
+    expect(row).toEqual({
+      _id: "status_1",
+      _creationTime: 1,
+      dealRoomId: "deal_1",
+      status: "negotiated_in_offer",
+      lastLifecycleEvent: "offer_terms_submitted",
+      buyerPromptKey: "offer_terms_recorded",
+      lastTransitionAt: "2026-04-12T12:30:00.000Z",
+      sellerDisclosedAmount: 3_000,
+      negotiatedAmount: 4_200,
+      buyerPaidAmount: 0,
+      createdAt: "2026-04-12T10:00:00.000Z",
+      updatedAt: "2026-04-12T12:30:00.000Z",
+    });
   });
 });
 

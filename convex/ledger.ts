@@ -7,6 +7,7 @@ import {
   buildCompensationPrompt,
   canTransitionCompensationStatus,
   computeCompensationLedgerSnapshot,
+  filterLedgerEntriesForViewer,
 } from "./lib/compensationLedger";
 import {
   compensationStatus,
@@ -125,7 +126,7 @@ function toSnapshotEntries(entries: Array<Doc<"feeLedgerEntries">>) {
   }));
 }
 
-function toBuyerSafeEntry(entry: Doc<"feeLedgerEntries">) {
+function toBuyerViewEntry(entry: Doc<"feeLedgerEntries">) {
   return {
     _id: entry._id,
     entryType: entry.entryType,
@@ -134,6 +135,40 @@ function toBuyerSafeEntry(entry: Doc<"feeLedgerEntries">) {
     source: entry.source,
     lifecycleEvent: entry.lifecycleEvent,
     createdAt: entry.createdAt,
+  };
+}
+
+function toBuyerSafeLedgerEntry(entry: Doc<"feeLedgerEntries">) {
+  return {
+    _id: entry._id,
+    _creationTime: entry._creationTime,
+    dealRoomId: entry.dealRoomId,
+    entryType: entry.entryType,
+    amount: entry.amount,
+    description: entry.description,
+    source: entry.source,
+    lifecycleEvent: entry.lifecycleEvent,
+    provenance: {
+      timestamp: entry.provenance.timestamp,
+    },
+    createdAt: entry.createdAt,
+  };
+}
+
+function toBuyerSafeCompensationStatus(row: Doc<"compensationStatus">) {
+  return {
+    _id: row._id,
+    _creationTime: row._creationTime,
+    dealRoomId: row.dealRoomId,
+    status: row.status,
+    lastLifecycleEvent: row.lastLifecycleEvent,
+    buyerPromptKey: row.buyerPromptKey,
+    lastTransitionAt: row.lastTransitionAt,
+    sellerDisclosedAmount: row.sellerDisclosedAmount,
+    negotiatedAmount: row.negotiatedAmount,
+    buyerPaidAmount: row.buyerPaidAmount,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -617,9 +652,12 @@ export const getByDealRoom = query({
     const dealRoom = await ensureViewerCanReadDealRoom(ctx, user, args.dealRoomId);
     if (!dealRoom) return [];
 
-    const entries = await getEntriesForDealRoom(ctx, args.dealRoomId);
+    const entries = filterLedgerEntriesForViewer(
+      await getEntriesForDealRoom(ctx, args.dealRoomId),
+      user.role,
+    );
     if (user.role === "buyer") {
-      return entries.filter((entry) => entry.visibility !== "internal_only");
+      return entries.map(toBuyerSafeLedgerEntry);
     }
     return entries;
   },
@@ -645,7 +683,10 @@ export const getLedgerSummary = query({
       };
     }
 
-    const entries = await getEntriesForDealRoom(ctx, args.dealRoomId);
+    const entries = filterLedgerEntriesForViewer(
+      await getEntriesForDealRoom(ctx, args.dealRoomId),
+      user.role,
+    );
     const snapshot = computeCompensationLedgerSnapshot(toSnapshotEntries(entries));
     return {
       dealRoomId: args.dealRoomId,
@@ -662,7 +703,9 @@ export const getCompensationStatus = query({
     const user = await requireAuth(ctx);
     const dealRoom = await ensureViewerCanReadDealRoom(ctx, user, args.dealRoomId);
     if (!dealRoom) return null;
-    return await getCompensationStatusRowInternal(ctx, args.dealRoomId);
+    const statusRow = await getCompensationStatusRowInternal(ctx, args.dealRoomId);
+    if (!statusRow || user.role !== "buyer") return statusRow;
+    return toBuyerSafeCompensationStatus(statusRow);
   },
 });
 
@@ -675,8 +718,9 @@ export const getBuyerView = query({
     if (!dealRoom) return null;
 
     const statusRow = await getCompensationStatusRowInternal(ctx, args.dealRoomId);
-    const entries = (await getEntriesForDealRoom(ctx, args.dealRoomId)).filter(
-      (entry) => entry.visibility !== "internal_only",
+    const entries = filterLedgerEntriesForViewer(
+      await getEntriesForDealRoom(ctx, args.dealRoomId),
+      "buyer",
     );
     const snapshot = computeCompensationLedgerSnapshot(toSnapshotEntries(entries));
     const summary = {
@@ -695,7 +739,7 @@ export const getBuyerView = query({
       status: statusRow?.status ?? "unknown",
       summary,
       prompt,
-      entries: entries.map(toBuyerSafeEntry),
+      entries: entries.map(toBuyerViewEntry),
     };
   },
 });

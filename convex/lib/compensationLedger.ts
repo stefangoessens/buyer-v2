@@ -39,11 +39,70 @@ export type CompensationLifecycleEvent =
   | "closing_statement_recorded"
   | "manual_override";
 
+export type LedgerReviewState =
+  | "not_required"
+  | "pending"
+  | "approved"
+  | "rejected";
+
+export type LedgerVisibility = "buyer_visible" | "internal_only";
+export type CompensationViewerRole = "buyer" | "broker" | "admin";
+
 export interface CompensationLedgerEntryLike {
   entryType: FeeLedgerEntryType;
   amount: number;
   createdAt: string;
   adjustmentTarget?: LedgerAdjustmentTarget;
+}
+
+export interface RawCompensationLedgerEntry {
+  _id: string;
+  _creationTime: number;
+  dealRoomId: string;
+  entryType: FeeLedgerEntryType;
+  amount: number;
+  description: string;
+  source: string;
+  lifecycleEvent?: CompensationLifecycleEvent;
+  provenance: {
+    actorId?: string;
+    triggeredBy?: string;
+    sourceDocument?: string;
+    timestamp: string;
+  };
+  offerId?: string;
+  contractId?: string;
+  dealStatusAtChange?: string;
+  offerStatusAtChange?: string;
+  compensationStatusAtChange?: CompensationStatus;
+  internalReviewState?: LedgerReviewState;
+  visibility?: LedgerVisibility;
+  financingType?: string;
+  ipcLimitPercent?: number;
+  adjustmentTarget?: LedgerAdjustmentTarget;
+  createdAt: string;
+}
+
+export interface RawCompensationStatusRow {
+  _id: string;
+  _creationTime: number;
+  dealRoomId: string;
+  status: CompensationStatus;
+  previousStatus?: CompensationStatus;
+  transitionReason?: string;
+  transitionActorId?: string;
+  lastLifecycleEvent?: CompensationLifecycleEvent;
+  buyerPromptKey?: string;
+  offerId?: string;
+  contractId?: string;
+  internalReviewState?: LedgerReviewState;
+  sourceDocument?: string;
+  lastTransitionAt: string;
+  sellerDisclosedAmount?: number;
+  negotiatedAmount?: number;
+  buyerPaidAmount?: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CompensationLedgerSnapshot {
@@ -85,6 +144,54 @@ export function canTransitionCompensationStatus(
   to: CompensationStatus,
 ): boolean {
   return ALLOWED_COMPENSATION_TRANSITIONS[from].includes(to);
+}
+
+export function filterLedgerEntriesForViewer<T extends { visibility?: LedgerVisibility }>(
+  entries: T[],
+  role: CompensationViewerRole,
+): T[] {
+  if (role === "buyer") {
+    return entries.filter((entry) => entry.visibility !== "internal_only");
+  }
+  return entries;
+}
+
+export function projectBuyerLedgerEntry(
+  entry: RawCompensationLedgerEntry,
+): RawCompensationLedgerEntry {
+  return {
+    _id: entry._id,
+    _creationTime: entry._creationTime,
+    dealRoomId: entry.dealRoomId,
+    entryType: entry.entryType,
+    amount: entry.amount,
+    description: entry.description,
+    source: entry.source,
+    lifecycleEvent: entry.lifecycleEvent,
+    provenance: {
+      timestamp: entry.provenance.timestamp,
+    },
+    createdAt: entry.createdAt,
+  };
+}
+
+export function projectBuyerCompensationStatus(
+  row: RawCompensationStatusRow,
+): RawCompensationStatusRow {
+  return {
+    _id: row._id,
+    _creationTime: row._creationTime,
+    dealRoomId: row.dealRoomId,
+    status: row.status,
+    lastLifecycleEvent: row.lastLifecycleEvent,
+    buyerPromptKey: row.buyerPromptKey,
+    lastTransitionAt: row.lastTransitionAt,
+    sellerDisclosedAmount: row.sellerDisclosedAmount,
+    negotiatedAmount: row.negotiatedAmount,
+    buyerPaidAmount: row.buyerPaidAmount,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 }
 
 export function normalizeLedgerBucket(
