@@ -45,18 +45,17 @@ class ExtractionRuntime(Protocol):
     async def aclose(self) -> None: ...
 
 
-def _ensure_python_workers_path() -> Path:
+def _ensure_python_workers_path() -> Path | None:
     current = Path(__file__).resolve()
     for parent in current.parents:
-        candidate = parent / "python-workers"
-        if candidate.is_dir():
-            candidate_str = str(candidate)
-            if candidate_str not in sys.path:
-                sys.path.insert(0, candidate_str)
-            return candidate
-    raise RuntimeError(
-        "python-workers directory not found relative to services/extraction"
-    )
+        for name in ("python-workers", "python-workers-vendored"):
+            candidate = parent / name
+            if candidate.is_dir():
+                candidate_str = str(candidate)
+                if candidate_str not in sys.path:
+                    sys.path.insert(0, candidate_str)
+                return candidate
+    return None
 
 
 @lru_cache(maxsize=1)
