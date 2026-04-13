@@ -2181,4 +2181,37 @@ export default defineSchema({
     .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
     .index("by_ownerUserId", ["ownerUserId"])
     .index("by_contractId", ["contractId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SHOWING COORDINATOR NOTES (KIN-803)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Internal-only notes attached to tour requests by coordinators during
+  // triage. Never visible to buyers — only brokers/admins can read or
+  // write. Stored separately from tourRequests so we can keep an
+  // append-only audit trail without mutating the request row.
+
+  showingCoordinatorNotes: defineTable({
+    tourRequestId: v.id("tourRequests"),
+    dealRoomId: v.id("dealRooms"),
+    authorId: v.id("users"),
+    authorRole: v.union(
+      v.literal("buyer"),
+      v.literal("broker"),
+      v.literal("admin"),
+    ),
+    category: v.union(
+      v.literal("triage"),
+      v.literal("coverage"),
+      v.literal("handoff"),
+      v.literal("escalation"),
+      v.literal("other"),
+    ),
+    body: v.string(),
+    createdAt: v.string(),
+  })
+    .index("by_tourRequestId", ["tourRequestId"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_authorId", ["authorId"])
+    .index("by_category_and_createdAt", ["category", "createdAt"]),
 });
