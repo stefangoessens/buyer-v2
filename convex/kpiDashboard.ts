@@ -22,6 +22,7 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { type QueryCtx } from "./_generated/server";
+import { buildLeadAttributionReadModel } from "./lib/leadAttribution";
 import { requireAuth } from "./lib/session";
 
 // ─── range + metric validators ──────────────────────────────────────────────
@@ -197,9 +198,10 @@ async function computeMetric(
 ): Promise<number | null> {
   switch (metric.key) {
     case "funnel.visits": {
-      // Use leadAttribution rows as proxy — every distinct session has one.
       const rows = await ctx.db.query("leadAttribution").collect();
-      return rows.filter((r) => withinRange(r.createdAt, startMs, endMs)).length;
+      const visits = rows.map((row) => buildLeadAttributionReadModel(row));
+      return visits.filter((visit) => withinRange(visit.createdAt, startMs, endMs))
+        .length;
     }
     case "funnel.paste_link_submissions": {
       // sourceListings created during the window approximate paste-a-link
@@ -212,18 +214,22 @@ async function computeMetric(
     }
     case "funnel.registrations": {
       const rows = await ctx.db.query("leadAttribution").collect();
-      return rows.filter(
-        (r) =>
-          r.status !== "anonymous" &&
-          r.registeredAt !== undefined &&
-          withinRange(r.registeredAt, startMs, endMs),
+      const visits = rows.map((row) => buildLeadAttributionReadModel(row));
+      return visits.filter(
+        (visit) =>
+          visit.status !== "anonymous" &&
+          visit.registeredAt !== undefined &&
+          withinRange(visit.registeredAt, startMs, endMs),
       ).length;
     }
     case "funnel.registration_rate": {
       const rows = await ctx.db.query("leadAttribution").collect();
-      const inWindow = rows.filter((r) => withinRange(r.createdAt, startMs, endMs));
+      const visits = rows.map((row) => buildLeadAttributionReadModel(row));
+      const inWindow = visits.filter((visit) =>
+        withinRange(visit.createdAt, startMs, endMs)
+      );
       const registered = inWindow.filter(
-        (r) => r.status !== "anonymous",
+        (visit) => visit.status !== "anonymous",
       ).length;
       if (inWindow.length === 0) return 0;
       return registered / inWindow.length;
