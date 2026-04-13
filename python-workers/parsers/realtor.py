@@ -249,9 +249,21 @@ class RealtorExtractor:
     # Strategy 2: __NEXT_DATA__ JSON blob
     # ------------------------------------------------------------------
     def _extract_next_data(self, html: str) -> dict[str, Any]:
-        # Walk *every* __NEXT_DATA__ script tag, not just the first — a decoy
-        # or malformed early blob must fall through to later valid ones
-        # (see Redfin/Zillow codex lessons).
+        # Walk *every* __NEXT_DATA__ script tag and collect every candidate
+        # dict across every blob, then pick the richest. A decoy/malformed
+        # first blob (Redfin/Zillow codex lesson) OR a partial-shape early
+        # candidate (modern Realtor pages that expose propertyDetails as a
+        # thin wrapper before the real data hydrates) must fall through to
+        # a later, richer candidate instead of short-circuiting extraction.
+        best: dict[str, Any] | None = None
+        best_score: tuple[int, int] = (0, 0)
+        # Diagnostic fallback: when *no* candidate clears the two-signal
+        # bar but at least one carries some usable substance, project the
+        # richest sub-threshold candidate so `_assemble` can raise a
+        # field-specific SchemaShiftError (e.g. missing price) instead of
+        # a generic "no strategy succeeded" error.
+        diagnostic: dict[str, Any] | None = None
+        diagnostic_score: tuple[int, int] = (0, 0)
         for match in _NEXT_DATA_RE.finditer(html):
             blob = (match.group("body") or "").strip()
             if not blob:
@@ -265,117 +277,146 @@ class RealtorExtractor:
             page_props = _safe_dict(payload, "props", "pageProps")
             if page_props is None:
                 continue
-            prop = self._find_listing_in_page_props(page_props)
-            if prop is None:
-                continue
-            # Don't short-circuit on an empty/stub dict: when a page has
-            # multiple __NEXT_DATA__ scripts, an early placeholder (e.g.
-            # a fallback / SSR hydration stub) that is structurally valid
-            # but carries no listing fields would previously block the
-            # scanner from reaching the later blob with the real payload.
-            # Require at least one recognisable listing field before
-            # returning.
-            if not self._next_blob_has_listing_fields(prop):
-                continue
-            return self._next_to_raw(prop)
-        return {}
+            for candidate in self._iter_next_candidates(page_props):
+                score = self._score_next_candidate(candidate)
+                if score[0] >= 2:
+                    # Primary rank: distinct signal categories. Secondary
+                    # rank (tiebreaker): richness — count of populated
+                    # extractable fields plus photo count. A later blob
+                    # at the same category count but with materially
+                    # more populated fields wins. True ties preserve the
+                    # earlier candidate via strict `>`.
+                    if score > best_score:
+                        best = candidate
+                        best_score = score
+                    continue
+                if score[0] >= 1 and score > diagnostic_score:
+                    diagnostic = candidate
+                    diagnostic_score = score
+        winner = best if best is not None else diagnostic
+        if winner is None:
+            return {}
+        return self._next_to_raw(winner)
 
     @staticmethod
-    def _next_blob_has_listing_fields(prop: dict[str, Any]) -> bool:
-        """Return True if a __NEXT_DATA__ dict carries real listing data.
+    def _score_next_candidate(prop: dict[str, Any]) -> tuple[int, int]:
+        """Rank a __NEXT_DATA__ candidate as ``(bucket, richness)``.
 
-        An ID by itself is NOT sufficient — a metadata-only blob with
-        just a `listing_id` or `property_id` (no address, price, or
-        description) would otherwise short-circuit extraction of later
-        scripts that carry the full payload. We require at least one
-        *substantive* field (price / address / description) alongside
-        any ID. Stubs like ``{"status": "sold"}`` or
-        ``{"listing_id": "X"}`` now correctly fall through.
+        Primary score (``bucket``): distinct signal categories.
+          * ``price``           — non-None list_price/price/current_price
+          * ``usable_address``  — address dict with >=2 of line/city/state/zip,
+                                  OR a usable location.address
+          * ``structured_facts``— nested description dict (with beds/baths/sqft
+                                  fields) OR top-level beds/baths/sqft/lot/
+                                  year_built/year aliases
+        A plain ``description`` STRING alone is NOT a structured fact — it is
+        remarks text only.
+
+        Secondary score (``richness``): count of extractable fields plus
+        photo count. Used as a tiebreaker so a later equal-category blob
+        that is materially richer wins over an earlier thinner one.
         """
-        substantive_fields = (
-            "list_price",
-            "price",
-            "current_price",
-            "address",
-            "location",
-            "description",
-        )
-        for key in substantive_fields:
-            value = prop.get(key)
-            if value is None:
-                continue
-            if isinstance(value, dict) and not value:
-                continue
-            if isinstance(value, str) and not value.strip():
-                continue
-            return True
-        return False
+        bucket = 0
+        if _has_price_signal(prop):
+            bucket += 1
+        if _has_usable_address(prop):
+            bucket += 1
+        if _has_structured_facts(prop):
+            bucket += 1
+        return (bucket, _count_richness(prop))
 
     @classmethod
-    def _find_listing_in_page_props(
-        cls, page_props: dict[str, Any]
-    ) -> dict[str, Any] | None:
-        """Locate the real listing dict under ``pageProps`` across templates.
+    def _next_blob_has_listing_fields(cls, prop: dict[str, Any]) -> bool:
+        """Return True if a __NEXT_DATA__ dict carries real listing data.
 
-        Walks all known locations (direct `property`/`listing`/`home`,
-        then the Redux-nested variant) and returns the first dict that
-        actually carries listing data. Crucially, a stub
-        ``pageProps.property`` does NOT block us from reaching a populated
-        ``pageProps.listing`` sibling — the old "return first dict"
-        behaviour caused `_extract_next_data` to reject the script
-        outright and emit a false `SchemaShiftError` when later siblings
-        carried the real payload.
+        Retained for clarity and for tests that exercise the gate in
+        isolation — now implemented via the stricter two-signal rule.
+        A single hit (e.g. a lone address, or a plain description string)
+        is NOT sufficient. A stub like ``{"listing_id": "X"}`` still
+        correctly falls through.
         """
-        direct_keys = ("property", "listing", "home")
-        first_stub: dict[str, Any] | None = None
-        for key in direct_keys:
+        return cls._score_next_candidate(prop)[0] >= 2
+
+    @classmethod
+    def _iter_next_candidates(cls, page_props: dict[str, Any]):
+        """Yield candidate listing dicts under ``pageProps`` in priority order.
+
+        Priority (first entries are preferred at equal score):
+
+        1. ``pageProps.property`` / ``pageProps.listing`` / ``pageProps.home``
+           — the old template.
+        2. ``initialReduxState.propertyDetails.listing`` / ``.property`` /
+           ``.home`` — child-wrapper form of the Redux template.
+        3. ``initialReduxState.propertyDetails`` directly — modern pages
+           where propertyDetails IS the listing dict. Only yielded if it
+           scores >= 2 on its own; this prevents a thin wrapper around a
+           description string from masking a richer nested child.
+        """
+        for key in ("property", "listing", "home"):
             candidate = page_props.get(key)
-            if not isinstance(candidate, dict):
-                continue
-            if cls._next_blob_has_listing_fields(candidate):
-                return candidate
-            if first_stub is None:
-                first_stub = candidate
-        # Redux-style nesting: pageProps.initialReduxState.propertyDetails.{listing,property}
-        # AND the current template where propertyDetails IS the listing dict
-        # (the full object lives directly at propertyDetails with fields like
-        # description/photos/address/list_price on it — no child wrapper).
+            if isinstance(candidate, dict):
+                yield candidate
         redux = _safe_dict(page_props, "initialReduxState", "propertyDetails")
-        if redux is not None:
-            for key in ("listing", "property", "home"):
-                candidate = redux.get(key)
-                if not isinstance(candidate, dict):
-                    continue
-                if cls._next_blob_has_listing_fields(candidate):
-                    return candidate
-                if first_stub is None:
-                    first_stub = candidate
-            # propertyDetails itself carries the listing payload on modern
-            # Realtor pages — treat it as the listing dict when it has real
-            # fields (address/description/list_price). This MUST be gated on
-            # has_listing_fields, otherwise we'd capture a metadata-only stub
-            # on pages where the real data still lives under a child key.
-            if cls._next_blob_has_listing_fields(redux):
-                return redux
-            if first_stub is None:
-                first_stub = redux
-        # Nothing matched — return the first stub seen so the caller can
-        # decide (it will then reject via `_next_blob_has_listing_fields`
-        # and keep scanning later `__NEXT_DATA__` scripts).
-        return first_stub
+        if redux is None:
+            return
+        for key in ("listing", "property", "home"):
+            candidate = redux.get(key)
+            if isinstance(candidate, dict):
+                yield candidate
+        # Always expose direct propertyDetails as a candidate. The ranker
+        # in `_extract_next_data` handles rejection via the two-signal
+        # gate and uses bucket-1 candidates as diagnostic fallbacks, so a
+        # partial direct propertyDetails still surfaces a field-specific
+        # SchemaShiftError instead of being silently dropped here.
+        yield redux
 
     @staticmethod
     def _next_to_raw(prop: dict[str, Any]) -> dict[str, Any]:
         """Project a Realtor `__NEXT_DATA__` listing dict onto raw fields.
+
+        Supports two shapes of ``description``:
+          * **dict** (classic Realtor) — beds/baths/sqft/year_built live
+            under the nested dict.
+          * **string** (modern Realtor) — ``description`` is remarks text
+            and the structured facts live at the top level as ``beds``,
+            ``baths``, ``sqft``/``sqrft``, ``lot_sqft``/``lot_size``, and
+            ``year_built``/``year``. In that case the string feeds the
+            ``description`` (public_remarks) field.
 
         Uses `_first_present` instead of Python's `or` chain to preserve
         legitimate zero values (e.g. `days_on_market=0` for a new listing,
         studio beds, zero HOA) that would otherwise be silently coerced
         to `None` and skew downstream filtering and ranking.
         """
-        description = prop.get("description")
-        if not isinstance(description, dict):
-            description = {}
+        raw_description = prop.get("description")
+        if isinstance(raw_description, dict):
+            description_dict: dict[str, Any] = raw_description
+            description_text: Any = None
+        else:
+            description_dict = {}
+            description_text = raw_description if isinstance(raw_description, str) else None
+
+        # Facts are read from the description dict first (classic Realtor)
+        # then from top-level flat fields (modern Realtor). We use
+        # `_first_present` on both shapes so legitimate zeros survive.
+        beds = _first_present(description_dict, "beds", "beds_max", "beds_min")
+        if beds is None:
+            beds = _first_present(prop, "beds", "beds_max", "beds_min")
+        baths = _first_present(
+            description_dict, "baths", "baths_total", "baths_full"
+        )
+        if baths is None:
+            baths = _first_present(prop, "baths", "baths_total", "baths_full")
+        sqft = _first_present(description_dict, "sqft", "sqft_max", "sqft_min")
+        if sqft is None:
+            sqft = _first_present(prop, "sqft", "sqrft", "sqft_max", "sqft_min")
+        lot = _first_present(description_dict, "lot_sqft", "lot_size")
+        if lot is None:
+            lot = _first_present(prop, "lot_sqft", "lot_size")
+        year_built = description_dict.get("year_built")
+        if year_built is None:
+            year_built = _first_present(prop, "year_built", "year")
+
         hoa = prop.get("hoa")
         hoa_fee = hoa.get("fee") if isinstance(hoa, dict) else None
 
@@ -392,31 +433,26 @@ class RealtorExtractor:
             "price_usd": _to_int(
                 _first_present(prop, "list_price", "price", "current_price")
             ),
-            "beds": _to_float(
-                _first_present(description, "beds", "beds_max", "beds_min")
-            ),
+            "beds": _to_float(beds),
             # `baths` is the decimal total (2.5); `baths_full` is only the
             # integer full-bath count (2). Preferring `baths_full` over
             # `baths_total` silently truncates half baths — a 2 full + 1
             # half listing becomes `baths=2.0` instead of `2.5`. Prefer the
             # decimal total first, fall back to full only when total is
             # absent.
-            "baths": _to_float(
-                _first_present(description, "baths", "baths_total", "baths_full")
-            ),
-            "living_area_sqft": _to_int(
-                _first_present(description, "sqft", "sqft_max", "sqft_min")
-            ),
-            "lot_size_sqft": _to_int(
-                _first_present(description, "lot_sqft", "lot_size")
-            ),
-            "year_built": _to_int(description.get("year_built")),
+            "baths": _to_float(baths),
+            "living_area_sqft": _to_int(sqft),
+            "lot_size_sqft": _to_int(lot),
+            "year_built": _to_int(year_built),
             "days_on_market": _to_int(
                 _first_present(prop, "days_on_market", "list_date_days")
             ),
             "hoa_monthly_usd": _to_int(hoa_fee),
+            # public_remarks / description_text win; otherwise fall back to a
+            # bare ``description`` string when that shape is in use.
             "description": _clean_str(
                 _first_present(prop, "public_remarks", "description_text")
+                or description_text
             ),
         }
         coordinate = prop.get("coordinate")
@@ -611,6 +647,141 @@ def _safe_dict(source: dict[str, Any], *keys: str) -> dict[str, Any] | None:
             return None
         cursor = cursor.get(key)
     return cursor if isinstance(cursor, dict) else None
+
+
+def _has_price_signal(prop: dict[str, Any]) -> bool:
+    """True iff ``prop`` carries a positive list_price / price / current_price."""
+    for key in ("list_price", "price", "current_price"):
+        value = prop.get(key)
+        if value is None:
+            continue
+        parsed = _to_int(value)
+        if parsed is not None and parsed > 0:
+            return True
+    return False
+
+
+def _has_usable_address(prop: dict[str, Any]) -> bool:
+    """True iff ``prop`` exposes >=2 populated address components.
+
+    Accepts both the direct ``address`` dict and the ``location.address``
+    nesting used by some Realtor templates. A lone city or a lone zip is
+    treated as insufficient — we want at least two of line/city/state/zip
+    to avoid scoring an obvious stub as usable.
+    """
+    for address in (prop.get("address"), _safe_dict(prop, "location", "address")):
+        if not isinstance(address, dict):
+            continue
+        components = 0
+        if _clean_str(_first_present(address, "line", "street_address", "line1")):
+            components += 1
+        if _clean_str(address.get("city")):
+            components += 1
+        if _clean_str(_first_present(address, "state_code", "state")):
+            components += 1
+        if _clean_str(
+            _first_present(address, "postal_code", "zip", "zip_code")
+        ):
+            components += 1
+        if components >= 2:
+            return True
+    return False
+
+
+def _has_structured_facts(prop: dict[str, Any]) -> bool:
+    """True iff ``prop`` carries structured beds/baths/sqft/lot/year facts.
+
+    Looks under the nested ``description`` dict first, then at the
+    top-level flat fields. A plain ``description`` STRING is NOT a
+    structured fact — it is remarks text only and must not score here.
+    """
+    description = prop.get("description")
+    if isinstance(description, dict):
+        for key in (
+            "beds",
+            "beds_max",
+            "beds_min",
+            "baths",
+            "baths_total",
+            "baths_full",
+            "sqft",
+            "sqft_max",
+            "sqft_min",
+            "lot_sqft",
+            "lot_size",
+            "year_built",
+        ):
+            if description.get(key) is not None:
+                return True
+    for key in (
+        "beds",
+        "beds_max",
+        "beds_min",
+        "baths",
+        "baths_total",
+        "baths_full",
+        "sqft",
+        "sqrft",
+        "sqft_max",
+        "sqft_min",
+        "lot_sqft",
+        "lot_size",
+        "year_built",
+        "year",
+    ):
+        if prop.get(key) is not None:
+            return True
+    return False
+
+
+def _count_richness(prop: dict[str, Any]) -> int:
+    """Secondary rank score: count populated extractable fields + photos.
+
+    Used as a tiebreaker when two candidates carry the same number of
+    signal categories. Counting the concrete field coverage prevents a
+    thin early blob from masking a materially richer later blob that
+    happens to cover the same categories.
+    """
+    count = 0
+    for key in (
+        "list_price",
+        "price",
+        "current_price",
+        "address",
+        "location",
+        "beds",
+        "beds_max",
+        "beds_min",
+        "baths",
+        "baths_total",
+        "baths_full",
+        "sqft",
+        "sqrft",
+        "sqft_max",
+        "sqft_min",
+        "lot_sqft",
+        "lot_size",
+        "year_built",
+        "year",
+        "description",
+        "public_remarks",
+        "description_text",
+        "listing_id",
+        "property_id",
+        "mls_number",
+        "mls_id",
+        "days_on_market",
+        "hoa",
+        "coordinate",
+    ):
+        value = prop.get(key)
+        if value is None or value == "" or value == [] or value == {}:
+            continue
+        count += 1
+    photos = prop.get("photos")
+    if isinstance(photos, list):
+        count += len(photos)
+    return count
 
 
 def _clean_str(value: Any) -> str | None:

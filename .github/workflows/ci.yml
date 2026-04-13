@@ -200,6 +200,21 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Verify python-workers vendored parity
+        if: matrix.workspace == 'python-workers'
+        run: |
+          diff -qr python-workers services/extraction/python-workers-vendored \
+            -x '__pycache__' \
+            -x '*.pyc' \
+            -x '.pytest_cache' \
+            -x '.ruff_cache' \
+            -x '.mypy_cache' \
+            -x '.venv' \
+            -x 'dist' \
+            -x 'build' \
+            -x '*.egg-info' \
+            || { echo "::error::Vendored worker drift detected. Run 'pnpm workers:sync-vendored' and commit the result."; exit 1; }
+
       - name: Install dependencies and run tests
         run: |
           cd "${{ matrix.workspace }}"

@@ -189,60 +189,83 @@ class RedfinExtractor:
         # outer level only carries `offers.price` + a single hero image,
         # while beds/baths/sqft/yearBuilt/geo and the full photo array live
         # inside `mainEntity` (typed SingleFamilyResidence, Apartment, ...).
-        # Treat `mainEntity` as the authoritative residence sub-node and
-        # overlay outer-node fields on top of it where they exist.
+        # Residence-first precedence across ALL fields: `mainEntity` is
+        # authoritative when present; outer-node values only backfill any
+        # leaves that the residence sub-node left as None.
         residence = node.get("mainEntity") if isinstance(node, dict) else None
         if not isinstance(residence, dict):
             residence = node
 
-        address = residence.get("address") or node.get("address")
+        # Address and geo: merge per-leaf so e.g. `addressLocality` from
+        # residence and `postalCode` from outer can both survive.
+        address = _merge_leaves(residence.get("address"), node.get("address"))
         if isinstance(address, dict):
             out["address_line1"] = _clean_str(address.get("streetAddress"))
             out["city"] = _clean_str(address.get("addressLocality"))
             out["state"] = _clean_str(address.get("addressRegion"))
             out["postal_code"] = _clean_str(address.get("postalCode"))
-        geo = residence.get("geo") or node.get("geo")
+        geo = _merge_leaves(residence.get("geo"), node.get("geo"))
         if isinstance(geo, dict):
-            out["latitude"] = _to_float(geo.get("latitude"))
-            out["longitude"] = _to_float(geo.get("longitude"))
-        offers = node.get("offers") or residence.get("offers")
+            out["latitude"] = _to_float(
+                _first_non_none(geo.get("latitude"))
+            )
+            out["longitude"] = _to_float(
+                _first_non_none(geo.get("longitude"))
+            )
+
+        # Offers: residence-first per the design rule. Normalise both
+        # sides to ``dict | None`` so an empty or scalar-only list on the
+        # residence side falls back to outer offers instead of leaving
+        # ``price_usd`` unset.
+        residence_offers = _normalize_offers(residence.get("offers"))
+        outer_offers = (
+            _normalize_offers(node.get("offers")) if residence is not node else None
+        )
+        offers = _merge_leaves(residence_offers, outer_offers)
         if isinstance(offers, dict):
             out["price_usd"] = _to_int(offers.get("price"))
-        elif isinstance(offers, list) and offers and isinstance(offers[0], dict):
-            out["price_usd"] = _to_int(offers[0].get("price"))
+
         # Redfin uses `numberOfBedrooms` on the residence sub-node, but
         # older pages still emit the schema.org `numberOfRooms` alias on
-        # the outer node — accept both.
-        beds_raw = (
-            residence.get("numberOfBedrooms")
-            or residence.get("numberOfRooms")
-            or node.get("numberOfBedrooms")
-            or node.get("numberOfRooms")
+        # the outer node — accept both. Explicit None checks preserve 0.
+        out["beds"] = _to_float(
+            _first_non_none(
+                residence.get("numberOfBedrooms"),
+                residence.get("numberOfRooms"),
+                node.get("numberOfBedrooms"),
+                node.get("numberOfRooms"),
+            )
         )
-        out["beds"] = _to_float(beds_raw)
-        baths_raw = (
-            residence.get("numberOfBathroomsTotal")
-            or residence.get("numberOfBathrooms")
-            or node.get("numberOfBathroomsTotal")
-            or node.get("numberOfBathrooms")
+        out["baths"] = _to_float(
+            _first_non_none(
+                residence.get("numberOfBathroomsTotal"),
+                residence.get("numberOfBathrooms"),
+                node.get("numberOfBathroomsTotal"),
+                node.get("numberOfBathrooms"),
+            )
         )
-        out["baths"] = _to_float(baths_raw)
-        floor_size = residence.get("floorSize") or node.get("floorSize")
+        floor_size = _merge_leaves(
+            residence.get("floorSize"), node.get("floorSize")
+        )
         if isinstance(floor_size, dict):
-            out["living_area_sqft"] = _to_int(floor_size.get("value"))
+            out["living_area_sqft"] = _to_int(
+                _first_non_none(floor_size.get("value"))
+            )
         out["year_built"] = _to_int(
-            residence.get("yearBuilt") or node.get("yearBuilt")
+            _first_non_none(residence.get("yearBuilt"), node.get("yearBuilt"))
         )
         out["description"] = _clean_str(
-            node.get("description") or residence.get("description")
+            _first_non_none(
+                residence.get("description"), node.get("description")
+            )
         )
         # `additionalType` is the specific sub-type (e.g. SingleFamilyResidence).
         # Only fall back to `@type` if it actually carries a residential type —
         # otherwise we'd store generic schema.org values like "RealEstateListing"
         # as `property_type`, which then blocks later Redux data from correcting
         # it because the merge uses `setdefault`.
-        additional_type = residence.get("additionalType") or node.get(
-            "additionalType"
+        additional_type = _first_non_none(
+            residence.get("additionalType"), node.get("additionalType")
         )
         if additional_type is None:
             at_type = _pick_residential_type(
@@ -257,35 +280,23 @@ class RedfinExtractor:
         out["property_type"] = _normalize_property_type(
             _pick_residential_type(additional_type)
         )
-        # Prefer the residence-level image array when it has more entries
-        # than the outer hero image, since that's where the real photo
-        # gallery lives on modern Redfin pages. Images can be either bare
-        # URL strings OR schema.org ImageObject dicts with a ``url`` key.
-        def _normalize_images(raw: Any) -> list[str]:
-            if isinstance(raw, str):
-                return [raw]
-            if isinstance(raw, dict):
-                href = raw.get("url") or raw.get("contentUrl")
-                return [str(href)] if isinstance(href, str) and href else []
-            if isinstance(raw, list):
-                urls: list[str] = []
-                for entry in raw:
-                    if isinstance(entry, str):
-                        urls.append(entry)
-                    elif isinstance(entry, dict):
-                        href = entry.get("url") or entry.get("contentUrl")
-                        if isinstance(href, str) and href:
-                            urls.append(href)
-                return urls
-            return []
 
-        residence_photos = _normalize_images(residence.get("image"))
-        outer_photos = _normalize_images(node.get("image"))
-        photos_raw = (
-            residence_photos if len(residence_photos) >= len(outer_photos) else outer_photos
+        # Image gallery: always build a deduped union, residence-first. A
+        # larger-wins heuristic corrupts disjoint sets; instead we preserve
+        # residence order (since residence is authoritative) and append any
+        # outer URLs not already present.
+        residence_urls = _image_urls(residence.get("image"))
+        outer_urls = (
+            _image_urls(node.get("image")) if residence is not node else []
         )
-        if photos_raw:
-            out["photos"] = tuple(PropertyPhoto(url=u) for u in photos_raw)
+        seen: set[str] = set()
+        merged_urls: list[str] = []
+        for url in residence_urls + outer_urls:
+            if url not in seen:
+                seen.add(url)
+                merged_urls.append(url)
+        if merged_urls:
+            out["photos"] = tuple(PropertyPhoto(url=u) for u in merged_urls)
         return out
 
     # ------------------------------------------------------------------
@@ -532,6 +543,95 @@ def _first_present(source: dict[str, Any], *keys: str) -> Any:
     for key in keys:
         if key in source and source[key] is not None:
             return source[key]
+    return None
+
+
+def _first_non_none(*values: Any) -> Any:
+    """Return the first value that is not None, preserving 0/False/"".
+
+    Unlike Python's ``a or b`` chain, this only skips None — legitimate
+    falsy leaves (studio beds at 0, empty description, ``False`` flags)
+    round-trip correctly.
+    """
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def _merge_leaves(primary: Any, fallback: Any) -> Any:
+    """Merge two candidate leaves with residence-first precedence.
+
+    If both are dicts, return a shallow merged dict where each key prefers
+    the primary leaf unless that leaf is None (in which case the fallback
+    leaf fills in). If either side is None, return the other. Non-dict
+    scalars return primary when not None, else fallback. Used to ensure
+    e.g. `addressLocality` from residence and `postalCode` from the outer
+    node both survive, rather than one dict wholesale winning over another.
+    """
+    if primary is None:
+        return fallback
+    if fallback is None:
+        return primary
+    if isinstance(primary, dict) and isinstance(fallback, dict):
+        merged: dict[str, Any] = dict(fallback)
+        for key, value in primary.items():
+            if value is not None:
+                merged[key] = value
+            elif key not in merged:
+                merged[key] = value
+        return merged
+    return primary
+
+
+def _image_urls(raw: Any) -> list[str]:
+    """Normalise a JSON-LD ``image`` value to an ordered list of URL strings.
+
+    Accepts bare URL strings, schema.org ImageObject dicts (preferring
+    ``url`` then ``contentUrl``), or lists of either. Returns ``[]`` when
+    nothing extractable is present. Order is preserved so callers can
+    dedupe while keeping the residence-first gallery ordering.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw] if raw else []
+    if isinstance(raw, dict):
+        href = raw.get("url")
+        if not (isinstance(href, str) and href):
+            href = raw.get("contentUrl")
+        return [href] if isinstance(href, str) and href else []
+    if isinstance(raw, list):
+        urls: list[str] = []
+        for entry in raw:
+            if isinstance(entry, str):
+                if entry:
+                    urls.append(entry)
+            elif isinstance(entry, dict):
+                href = entry.get("url")
+                if not (isinstance(href, str) and href):
+                    href = entry.get("contentUrl")
+                if isinstance(href, str) and href:
+                    urls.append(href)
+        return urls
+    return []
+
+
+def _normalize_offers(raw: Any) -> dict[str, Any] | None:
+    """Normalise a JSON-LD ``offers`` value to a single dict or ``None``.
+
+    schema.org allows ``offers`` to be a single Offer dict, a list of
+    Offer dicts, or a list that mixes dicts and scalars. Return the first
+    dict entry, or ``None`` when no usable dict is present — never an
+    empty list. This prevents ``_merge_leaves([], outer_offers)`` from
+    collapsing to ``[]`` and silently dropping the outer price.
+    """
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list):
+        for entry in raw:
+            if isinstance(entry, dict):
+                return entry
     return None
 
 

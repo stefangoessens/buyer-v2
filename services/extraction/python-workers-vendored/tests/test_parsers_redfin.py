@@ -544,3 +544,252 @@ class TestHtmlFallbackLotSize:
         prop = RedfinExtractor().extract(html=html, source_url=url)
         # 0.5 acres × 43,560 sqft/acre = 21,780 sqft.
         assert prop.lot_size_sqft == 21_780
+
+
+class TestJsonLdMainEntityEdgeCases:
+    """Regression: JSON-LD ``mainEntity`` (residence) overlay edge cases.
+
+    The parser must perform a per-leaf merge where the residence node
+    (``SingleFamilyResidence``, ``Apartment``, etc.) beats the outer
+    ``Product``/listing node, while outer leaves that residence omits
+    are still preserved. Image galleries from residence and outer are
+    unioned, ``ImageObject`` dict entries must be resolved via ``url``
+    or ``contentUrl``, and zero-valued numeric fields (e.g. studio with
+    ``numberOfBedrooms: 0``) must round-trip instead of being dropped.
+    """
+
+    @staticmethod
+    def _html_with_json_ld(payload: dict[str, object]) -> str:
+        import json
+
+        return (
+            "<!DOCTYPE html><html><head>"
+            '<script type="application/ld+json">'
+            f"{json.dumps(payload)}"
+            "</script></head><body></body></html>"
+        )
+
+    def test_main_entity_overlay_preserves_residence_fields(self) -> None:
+        payload = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 875000},
+            "image": "https://img.redfin.com/hero.jpg",
+            "mainEntity": {
+                "@type": "SingleFamilyResidence",
+                "numberOfBedrooms": 4,
+                "numberOfBathroomsTotal": 3,
+                "floorSize": {
+                    "@type": "QuantitativeValue",
+                    "value": 2800,
+                    "unitText": "sqft",
+                },
+                "yearBuilt": 2018,
+                "geo": {
+                    "@type": "GeoCoordinates",
+                    "latitude": 25.77,
+                    "longitude": -80.19,
+                },
+                "address": {
+                    "@type": "PostalAddress",
+                    "streetAddress": "123 Coral Way",
+                    "addressLocality": "Miami",
+                    "addressRegion": "FL",
+                    "postalCode": "33145",
+                },
+                "image": [
+                    "https://img.redfin.com/p1.jpg",
+                    "https://img.redfin.com/p2.jpg",
+                    "https://img.redfin.com/p3.jpg",
+                ],
+            },
+        }
+        html = self._html_with_json_ld(payload)
+        url = "https://www.redfin.com/FL/Miami/123-coral-way/home/30000001"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+
+        assert prop.price_usd == 875_000
+        assert prop.beds == 4.0
+        assert prop.baths == 3.0
+        assert prop.living_area_sqft == 2_800
+        assert prop.year_built == 2018
+        assert prop.latitude is not None
+        assert prop.longitude is not None
+        assert prop.address_line1 == "123 Coral Way"
+        assert prop.city == "Miami"
+        assert prop.state == "FL"
+        assert prop.postal_code == "33145"
+
+        photo_urls = {photo.url for photo in prop.photos}
+        assert "https://img.redfin.com/p1.jpg" in photo_urls
+        assert "https://img.redfin.com/p2.jpg" in photo_urls
+        assert "https://img.redfin.com/p3.jpg" in photo_urls
+        assert "https://img.redfin.com/hero.jpg" in photo_urls
+        assert len(photo_urls) == 4
+
+    def test_main_entity_image_union_prefers_residence_gallery_when_outer_is_smaller(
+        self,
+    ) -> None:
+        residence_images = [
+            f"https://img.redfin.com/r{i:02d}.jpg" for i in range(40)
+        ]
+        payload = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 950000},
+            "image": ["https://img.redfin.com/hero-outer.jpg"],
+            "mainEntity": {
+                "@type": "SingleFamilyResidence",
+                "numberOfBedrooms": 5,
+                "numberOfBathroomsTotal": 4,
+                "floorSize": {
+                    "@type": "QuantitativeValue",
+                    "value": 3200,
+                    "unitText": "sqft",
+                },
+                "address": {
+                    "@type": "PostalAddress",
+                    "streetAddress": "200 Gallery Ln",
+                    "addressLocality": "Coral Gables",
+                    "addressRegion": "FL",
+                    "postalCode": "33134",
+                },
+                "image": residence_images,
+            },
+        }
+        html = self._html_with_json_ld(payload)
+        url = "https://www.redfin.com/FL/Coral-Gables/200-gallery-ln/home/30000002"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+
+        assert len(prop.photos) == 41
+        ordered_urls = [photo.url for photo in prop.photos]
+        # Dedupe order must preserve residence URLs before the outer hero.
+        residence_positions = [
+            ordered_urls.index(u) for u in residence_images if u in ordered_urls
+        ]
+        assert residence_positions == sorted(residence_positions)
+        assert "https://img.redfin.com/hero-outer.jpg" in ordered_urls
+        assert ordered_urls.index(
+            "https://img.redfin.com/hero-outer.jpg"
+        ) > residence_positions[-1]
+
+    def test_main_entity_outer_gallery_wins_when_residence_has_no_images(
+        self,
+    ) -> None:
+        payload = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 725000},
+            "image": [
+                "https://img.redfin.com/h1.jpg",
+                "https://img.redfin.com/h2.jpg",
+                "https://img.redfin.com/h3.jpg",
+            ],
+            "mainEntity": {
+                "@type": "SingleFamilyResidence",
+                "numberOfBedrooms": 3,
+                "numberOfBathroomsTotal": 2,
+                "floorSize": {
+                    "@type": "QuantitativeValue",
+                    "value": 1800,
+                    "unitText": "sqft",
+                },
+                "address": {
+                    "@type": "PostalAddress",
+                    "streetAddress": "300 Outer St",
+                    "addressLocality": "Boca Raton",
+                    "addressRegion": "FL",
+                    "postalCode": "33432",
+                },
+                "image": [],
+            },
+        }
+        html = self._html_with_json_ld(payload)
+        url = "https://www.redfin.com/FL/Boca-Raton/300-outer-st/home/30000003"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+
+        photo_urls = {photo.url for photo in prop.photos}
+        assert photo_urls == {
+            "https://img.redfin.com/h1.jpg",
+            "https://img.redfin.com/h2.jpg",
+            "https://img.redfin.com/h3.jpg",
+        }
+
+    def test_main_entity_imageobject_gallery_extracts_urls(self) -> None:
+        payload = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 650000},
+            "mainEntity": {
+                "@type": "SingleFamilyResidence",
+                "numberOfBedrooms": 3,
+                "numberOfBathroomsTotal": 2,
+                "floorSize": {
+                    "@type": "QuantitativeValue",
+                    "value": 1600,
+                    "unitText": "sqft",
+                },
+                "address": {
+                    "@type": "PostalAddress",
+                    "streetAddress": "400 Image Ave",
+                    "addressLocality": "Hollywood",
+                    "addressRegion": "FL",
+                    "postalCode": "33020",
+                },
+                "image": [
+                    {
+                        "@type": "ImageObject",
+                        "url": "https://img.redfin.com/a.jpg",
+                    },
+                    {
+                        "@type": "ImageObject",
+                        "contentUrl": "https://img.redfin.com/b.jpg",
+                    },
+                ],
+            },
+        }
+        html = self._html_with_json_ld(payload)
+        url = "https://www.redfin.com/FL/Hollywood/400-image-ave/home/30000004"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+
+        photo_urls = {photo.url for photo in prop.photos}
+        assert "https://img.redfin.com/a.jpg" in photo_urls
+        assert "https://img.redfin.com/b.jpg" in photo_urls
+
+    def test_main_entity_overlay_preserves_zero_beds_and_outer_address_leafs(
+        self,
+    ) -> None:
+        payload = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 410000},
+            "address": {
+                "@type": "PostalAddress",
+                "postalCode": "33139",
+            },
+            "mainEntity": {
+                "@type": "Apartment",
+                "numberOfBedrooms": 0,  # studio — must NOT be dropped as falsy
+                "numberOfBathroomsTotal": 1,
+                "floorSize": {
+                    "@type": "QuantitativeValue",
+                    "value": 480,
+                    "unitText": "sqft",
+                },
+                "address": {
+                    "@type": "PostalAddress",
+                    "streetAddress": "1 Ocean Dr",
+                    "addressLocality": "Miami",
+                    "addressRegion": "FL",
+                },
+            },
+        }
+        html = self._html_with_json_ld(payload)
+        url = "https://www.redfin.com/FL/Miami/1-ocean-dr/home/30000005"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+
+        assert prop.beds == 0.0
+        assert prop.address_line1 == "1 Ocean Dr"
+        assert prop.city == "Miami"
+        assert prop.state == "FL"
+        assert prop.postal_code == "33139"

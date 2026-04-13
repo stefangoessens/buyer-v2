@@ -7,6 +7,7 @@ run for real and we assert on the :class:`CanonicalProperty` output.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -1304,3 +1305,211 @@ class TestIdOnlyBlobIsRejected:
         assert prop.listing_id == "FULL001"
         assert prop.price_usd == 675_000
         assert prop.baths == 2.5
+
+
+def _html_with_next_data(*page_props_list: object) -> str:
+    """Wrap one or more ``pageProps`` dicts into a minimal HTML page.
+
+    Each entry becomes its own ``<script id="__NEXT_DATA__">`` tag under
+    ``props.pageProps``, so tests can exercise the multi-blob scanner.
+    """
+    scripts = "".join(
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps({"props": {"pageProps": page_props}})
+        + "</script>"
+        for page_props in page_props_list
+    )
+    return f"<!DOCTYPE html><html><head>{scripts}</head><body></body></html>"
+
+
+class TestNextDataPropertyDetailsEdgeCases:
+    """Regression: ``propertyDetails`` candidate ranking, gate tightening, and flat-field fallback."""
+
+    def test_propertydetails_listing_dict_extracts_full_row_from_direct_dict(self) -> None:
+        page_props = {
+            "initialReduxState": {
+                "propertyDetails": {
+                    "list_price": 850000,
+                    "address": {
+                        "line": "100 Ocean Drive",
+                        "city": "Miami Beach",
+                        "state_code": "FL",
+                        "postal_code": "33139",
+                    },
+                    "description": "Oceanfront condo with stunning views",
+                    "beds": 3,
+                    "baths": 2.5,
+                    "sqft": 1800,
+                    "year_built": 2017,
+                    "photos": [
+                        {"href": "https://ap.rdcpix.com/p1.jpg"},
+                        {"href": "https://ap.rdcpix.com/p2.jpg"},
+                    ],
+                }
+            }
+        }
+        html = _html_with_next_data(page_props)
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "100-Ocean-Drive_Miami-Beach_FL_33139_M12345-67890"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 850_000
+        assert prop.city == "Miami Beach"
+        assert prop.state == "FL"
+        assert prop.beds == 3.0
+        assert prop.baths == 2.5
+        assert prop.living_area_sqft == 1_800
+        assert prop.year_built == 2017
+        assert len(prop.photos) == 2
+        assert prop.photos[0].url == "https://ap.rdcpix.com/p1.jpg"
+        assert prop.photos[1].url == "https://ap.rdcpix.com/p2.jpg"
+        # String `description` should surface on the canonical description field.
+        assert prop.description == "Oceanfront condo with stunning views"
+
+    def test_propertydetails_second_blob_wins_over_metadata_stub(self) -> None:
+        stub = {
+            "initialReduxState": {
+                "propertyDetails": {
+                    "status": "for_sale",
+                    "listing_id": "xyz",
+                }
+            }
+        }
+        full = {
+            "initialReduxState": {
+                "propertyDetails": {
+                    "list_price": 850000,
+                    "address": {
+                        "line": "100 Ocean Drive",
+                        "city": "Miami Beach",
+                        "state_code": "FL",
+                        "postal_code": "33139",
+                    },
+                    "description": "Oceanfront condo with stunning views",
+                    "beds": 3,
+                    "baths": 2.5,
+                    "sqft": 1800,
+                    "year_built": 2017,
+                    "photos": [
+                        {"href": "https://ap.rdcpix.com/p1.jpg"},
+                        {"href": "https://ap.rdcpix.com/p2.jpg"},
+                    ],
+                }
+            }
+        }
+        html = _html_with_next_data(stub, full)
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "100-Ocean-Drive_Miami-Beach_FL_33139_M12345-67890"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        # The second, richer blob must beat the weak metadata stub.
+        assert prop.price_usd == 850_000
+        assert prop.city == "Miami Beach"
+        assert prop.beds == 3.0
+        assert prop.baths == 2.5
+        assert prop.living_area_sqft == 1_800
+
+    def test_propertydetails_child_listing_wins_over_root_wrapper_fields(self) -> None:
+        page_props = {
+            "initialReduxState": {
+                "propertyDetails": {
+                    "list_price": 99,
+                    "address": {"line": "BOGUS"},
+                    "listing": {
+                        "list_price": 750000,
+                        "address": {
+                            "line": "500 Real St",
+                            "city": "Tampa",
+                            "state_code": "FL",
+                            "postal_code": "33602",
+                        },
+                        "description": {
+                            "beds": 4,
+                            "baths": 3,
+                            "sqft": 2200,
+                        },
+                        "photos": [],
+                    },
+                }
+            }
+        }
+        html = _html_with_next_data(page_props)
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "500-Real-St_Tampa_FL_33602_M22222-33333"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        # The nested `.listing` child should win over the root wrapper fields.
+        assert prop.price_usd == 750_000
+        assert prop.city == "Tampa"
+        assert prop.beds == 4.0
+
+    def test_propertydetails_weak_description_only_blob_does_not_short_circuit(self) -> None:
+        weak = {
+            "initialReduxState": {
+                "propertyDetails": {
+                    "description": "something",
+                }
+            }
+        }
+        full = {
+            "initialReduxState": {
+                "propertyDetails": {
+                    "list_price": 850000,
+                    "address": {
+                        "line": "100 Ocean Drive",
+                        "city": "Miami Beach",
+                        "state_code": "FL",
+                        "postal_code": "33139",
+                    },
+                    "description": "Oceanfront condo with stunning views",
+                    "beds": 3,
+                    "baths": 2.5,
+                    "sqft": 1800,
+                    "year_built": 2017,
+                    "photos": [
+                        {"href": "https://ap.rdcpix.com/p1.jpg"},
+                        {"href": "https://ap.rdcpix.com/p2.jpg"},
+                    ],
+                }
+            }
+        }
+        html = _html_with_next_data(weak, full)
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "100-Ocean-Drive_Miami-Beach_FL_33139_M12345-67890"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        # The tightened gate must reject a description-only blob and walk on.
+        assert prop.price_usd == 850_000
+        assert prop.city == "Miami Beach"
+        assert prop.beds == 3.0
+
+    def test_propertydetails_preserves_zero_year_built(self) -> None:
+        page_props = {
+            "initialReduxState": {
+                "propertyDetails": {
+                    "list_price": 600000,
+                    "address": {
+                        "line": "200 Zero Year Ln",
+                        "city": "Orlando",
+                        "state_code": "FL",
+                        "postal_code": "32801",
+                    },
+                    "beds": 3,
+                    "baths": 2,
+                    "sqft": 1500,
+                    "year_built": 0,
+                }
+            }
+        }
+        html = _html_with_next_data(page_props)
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "200-Zero-Year-Ln_Orlando_FL_32801_M44444-55555"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        # Zero must be preserved — not coerced to None or dropped.
+        assert prop.year_built == 0

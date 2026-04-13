@@ -31,6 +31,7 @@
     "workers:lib:test": "cd python-workers && python -m pytest",
     "workers:service:dev": "cd services/extraction && python -m uvicorn src.main:app --reload",
     "workers:service:test": "cd services/extraction && python -m pytest",
+    "workers:sync-vendored": "bash scripts/sync-vendored-workers.sh",
     "workers:test": "pnpm workers:lib:test && pnpm workers:service:test",
     "ci:web": "pnpm lint && pnpm typecheck:web && pnpm test && pnpm build:web",
     "ci:backend": "pnpm typecheck:backend",
