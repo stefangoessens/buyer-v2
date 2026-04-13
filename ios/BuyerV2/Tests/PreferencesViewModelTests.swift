@@ -360,6 +360,65 @@ struct MessagePreferencesServiceSignedOutTests {
         #expect(vm.display() == .signedOut)
     }
 
+    @Test("service update() failure overlay reads live service.preferences, never the failed optimistic value")
+    func testOverlayUsesPostRollbackServiceStateNotOptimistic() async {
+        // Codex round 2 P2: if the view caches every `.loaded`
+        // emission, the optimistic update value gets pinned as the
+        // rollback snapshot. On write failure, the service rolls its
+        // OWN state back but the view still renders the stale cached
+        // value, giving a "reverted change still appears on" illusion.
+        // Reading `service.preferences` post-failure should give the
+        // true pre-update state instead.
+        final class FailingUpsertBackend: MessagePreferencesBackend, @unchecked Sendable {
+            func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
+                // Load returns the committed (all-defaults) state.
+                return (MessagePreferences.default, false)
+            }
+            func upsert(_: MessagePreferencesPatch) async throws -> MessagePreferences {
+                throw MessagePreferencesError.httpError(statusCode: 500)
+            }
+            func optOutAll() async throws -> MessagePreferences { .default }
+            func resetToDefaults() async throws -> MessagePreferences { .default }
+        }
+
+        let backend = FailingUpsertBackend()
+        let service = MessagePreferencesService(backend: backend)
+        await service.load()
+
+        // Attempt an update that will fail — optimistic path flips
+        // `service.preferences.channels.sms = true` momentarily.
+        await service.update(MessagePreferencesPatch(smsEnabled: true))
+
+        // Post-failure, the service must report the pre-update value.
+        #expect(service.preferences.channels.sms == false)
+        #expect(service.hasStoredPreferences == false)
+
+        // The view reads live service state into the overlay mapper.
+        let vm = PreferencesViewModel(
+            authState: .signedIn(user: AuthUser(
+                id: "u1",
+                email: "e@example.com",
+                name: "E",
+                role: .buyer
+            )),
+            serviceState: service.state
+        )
+        let display = vm.displayWithOverlay(
+            lastKnownPreferences: service.preferences,
+            lastKnownHasStored: service.hasStoredPreferences,
+            hasSuccessfullyLoaded: true
+        )
+        guard case .content(let shown, let hasStored, let saveError) = display else {
+            Issue.record("Expected overlay .content, got \(display)")
+            return
+        }
+        // The banner should say "save failed" but the toggles must
+        // reflect the committed state, NOT the failed optimistic one.
+        #expect(shown.channels.sms == false)
+        #expect(hasStored == false)
+        #expect(saveError != nil)
+    }
+
     @Test("service update() failure after load() keeps toggles + banner via rollback overlay")
     func testUpdateFailureRollsBackWithOverlay() async {
         // Build a backend that succeeds on fetch but fails on upsert.

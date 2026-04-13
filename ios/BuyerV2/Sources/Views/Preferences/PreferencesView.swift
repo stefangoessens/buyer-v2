@@ -11,16 +11,17 @@ struct PreferencesView: View {
     @Environment(AuthService.self) private var authService
     @Environment(\.dismiss) private var dismiss
 
-    // Local snapshots so an optimistic service.update() rolling back
-    // keeps the screen in the "content + error banner" shape rather
-    // than jumping straight to the hard error state. The boolean gate
-    // is driven by whether we've ever seen a successful `.loaded`,
-    // NOT by comparing the cached prefs to `.default` — otherwise a
-    // first-time user whose first load returned `(.default, false)`
-    // would fall through to the hard error screen on their first
-    // failed write (codex P2 on PR #83).
-    @State private var lastKnownPreferences: MessagePreferences = .default
-    @State private var lastKnownHasStored: Bool = false
+    // One-shot gate that flips true on the first `.loaded` emission
+    // after `.load()` completes, so a pre-load network failure still
+    // renders the hard error screen. After that, we DON'T cache
+    // preferences locally — we read `service.preferences` and
+    // `service.hasStoredPreferences` directly in `currentDisplay()`
+    // because `MessagePreferencesService.update()` emits an optimistic
+    // `.loaded` before each write and only rolls back on failure.
+    // Caching every `.loaded` emission would capture the optimistic
+    // (soon-to-be-reverted) value and leave the overlay showing a
+    // toggle that the backend never committed (codex round 2 P2 on
+    // PR #83).
     @State private var hasSuccessfullyLoaded: Bool = false
 
     var body: some View {
@@ -50,11 +51,12 @@ struct PreferencesView: View {
             await service.load()
         }
         .onChange(of: service.state) { _, newState in
-            // Cache the latest loaded snapshot so a rollback still
-            // renders toggles instead of a blank error screen.
-            if case .loaded(let prefs, let hasStored) = newState {
-                lastKnownPreferences = prefs
-                lastKnownHasStored = hasStored
+            // Flip the gate once, on the first `.loaded` after the
+            // cold load resolves. Don't flip it again for subsequent
+            // optimistic emissions — we don't need to, and we must
+            // NOT cache preferences here because update() emits an
+            // optimistic .loaded before the backend round-trip.
+            if case .loaded = newState, !hasSuccessfullyLoaded {
                 hasSuccessfullyLoaded = true
             }
         }
@@ -67,9 +69,13 @@ struct PreferencesView: View {
             authState: authService.state,
             serviceState: service.state
         )
+        // Read live service state: the service rolls both
+        // `preferences` and `hasStoredPreferences` back on a failed
+        // write, so reading them inside the error branch gives the
+        // committed values — never the failed optimistic ones.
         return vm.displayWithOverlay(
-            lastKnownPreferences: lastKnownPreferences,
-            lastKnownHasStored: lastKnownHasStored,
+            lastKnownPreferences: service.preferences,
+            lastKnownHasStored: service.hasStoredPreferences,
             hasSuccessfullyLoaded: hasSuccessfullyLoaded
         )
     }
