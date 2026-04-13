@@ -6,7 +6,11 @@ import {
   publicArticles,
 } from "@/lib/articles/selectors";
 import { ArticleTemplate } from "@/components/marketing/articles/ArticleTemplate";
-import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
+import {
+  metadataForArticle,
+  metadataForMissingPage,
+  structuredDataForArticle,
+} from "@/lib/seo/pageDefinitions";
 
 type PageParams = { slug: string };
 
@@ -24,37 +28,15 @@ export async function generateMetadata({
 
   if (!article) {
     // Unknown slug → noindex (same pattern as /legal/[slug])
-    return buildMetadata({
+    return metadataForMissingPage({
       title: "Article not found",
       description:
         "The article you're looking for doesn't exist, is still in draft, or has moved.",
       path: "/blog/not-found",
-      visibility: "gated",
-      kind: "system",
     });
   }
 
-  return buildMetadata({
-    title: article.title,
-    description: article.summary,
-    path: `/blog/${article.slug}`,
-    visibility: "public",
-    kind: "article",
-    // publishedAt is the ORIGINAL publication date — never changes
-    // after launch. lastModified is the most recent edit and may
-    // equal publishedAt for unedited articles. Passing both lets
-    // the builder emit distinct OG/JSON-LD fields.
-    publishedAt: article.publishedAt,
-    lastModified: article.updatedAt,
-    social: article.coverImage
-      ? {
-          title: article.title,
-          description: article.summary,
-          imageUrl: article.coverImage.src,
-          imageAlt: article.coverImage.alt,
-        }
-      : undefined,
-  });
+  return metadataForArticle(article);
 }
 
 export default async function BlogArticlePage({
@@ -69,18 +51,7 @@ export default async function BlogArticlePage({
     notFound();
   }
 
-  const jsonLd = buildStructuredData(
-    {
-      title: article.title,
-      description: article.summary,
-      path: `/blog/${article.slug}`,
-      visibility: "public",
-      kind: "article",
-      publishedAt: article.publishedAt,
-      lastModified: article.updatedAt,
-    },
-    { articleAuthor: article.author.name }
-  );
+  const jsonLd = structuredDataForArticle(article);
 
   return (
     <>

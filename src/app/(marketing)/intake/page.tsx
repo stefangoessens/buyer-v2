@@ -21,12 +21,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { parseListingUrl } from "@/lib/intake/parser";
+import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
-export const metadata: Metadata = {
-  title: "Importing listing — buyer-v2",
-  description: "Importing a listing into buyer-v2.",
-  robots: { index: false, follow: false },
-};
+export const metadata: Metadata = metadataForStaticPage("intake");
 
 interface IntakePageProps {
   searchParams: Promise<{ url?: string; source?: string }>;

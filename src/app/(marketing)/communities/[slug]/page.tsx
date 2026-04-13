@@ -7,7 +7,11 @@ import {
   findPublicCommunity,
 } from "@/lib/locations/selectors";
 import { CommunityPageTemplate } from "@/components/marketing/locations/CommunityPageTemplate";
-import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
+import {
+  metadataForCommunity,
+  metadataForMissingPage,
+  structuredDataForCommunity,
+} from "@/lib/seo/pageDefinitions";
 
 /**
  * Dynamic community (neighborhood) landing page route (KIN-818).
@@ -33,24 +37,15 @@ export async function generateMetadata({
   const community = findPublicCommunity(LOCATION_CATALOG, slug);
 
   if (!community) {
-    return buildMetadata({
+    return metadataForMissingPage({
       title: "Community not found",
       description:
         "The community guide you're looking for doesn't exist, is still in draft, or has moved.",
       path: "/communities/not-found",
-      visibility: "gated",
-      kind: "system",
     });
   }
 
-  return buildMetadata({
-    title: community.pageTitle,
-    description: community.summary,
-    path: `/communities/${community.slug}`,
-    visibility: "public",
-    kind: "marketing",
-    lastModified: community.lastUpdated,
-  });
+  return metadataForCommunity(community);
 }
 
 export default async function CommunityPage({
@@ -73,14 +68,7 @@ export default async function CommunityPage({
   // only be missing when the parent is in draft visibility.
   const parentCity = findPublicCity(LOCATION_CATALOG, community.citySlug);
 
-  const jsonLd = buildStructuredData({
-    title: community.pageTitle,
-    description: community.summary,
-    path: `/communities/${community.slug}`,
-    visibility: "public",
-    kind: "marketing",
-    lastModified: community.lastUpdated,
-  });
+  const jsonLd = structuredDataForCommunity(community);
 
   return (
     <>

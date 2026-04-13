@@ -7,7 +7,11 @@ import {
   findPublicCommunity,
 } from "@/lib/newConstruction/selectors";
 import { NewConstructionCommunityPageTemplate } from "@/components/marketing/newConstruction/NewConstructionCommunityPageTemplate";
-import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
+import {
+  metadataForMissingPage,
+  metadataForNewConstructionCommunity,
+  structuredDataForNewConstructionCommunity,
+} from "@/lib/seo/pageDefinitions";
 
 /**
  * Dynamic new-construction community landing page (KIN-823).
@@ -41,24 +45,15 @@ export async function generateMetadata({
   const community = findPublicCommunity(NEW_CONSTRUCTION_CATALOG, slug);
 
   if (!community) {
-    return buildMetadata({
+    return metadataForMissingPage({
       title: "Community not found",
       description:
         "The community guide you're looking for doesn't exist, is still in draft, or has moved.",
       path: "/new-construction/not-found",
-      visibility: "gated",
-      kind: "system",
     });
   }
 
-  return buildMetadata({
-    title: community.pageTitle,
-    description: community.summary,
-    path: `/new-construction/${community.slug}`,
-    visibility: "public",
-    kind: "marketing",
-    lastModified: community.lastUpdated,
-  });
+  return metadataForNewConstructionCommunity(community);
 }
 
 export default async function NewConstructionCommunityPage({
@@ -81,14 +76,7 @@ export default async function NewConstructionCommunityPage({
     community.builderSlug
   );
 
-  const jsonLd = buildStructuredData({
-    title: community.pageTitle,
-    description: community.summary,
-    path: `/new-construction/${community.slug}`,
-    visibility: "public",
-    kind: "marketing",
-    lastModified: community.lastUpdated,
-  });
+  const jsonLd = structuredDataForNewConstructionCommunity(community);
 
   return (
     <>

@@ -11,6 +11,11 @@
  * indexable from gated/canonicalized variants.
  */
 
+import {
+  STATIC_SEO_PAGES,
+  type StaticSeoPageDefinition,
+  type SitemapChangeFrequency,
+} from "./pageDefinitions";
 import type { SeoContentKind, RouteVisibility } from "./types";
 
 /**
@@ -32,14 +37,7 @@ export interface SeoRoute {
    * How often the content typically changes. Used only by sitemap
    * consumers that still honor it (most don't, but it doesn't hurt).
    */
-  changeFrequency:
-    | "always"
-    | "hourly"
-    | "daily"
-    | "weekly"
-    | "monthly"
-    | "yearly"
-    | "never";
+  changeFrequency: SitemapChangeFrequency;
   /**
    * Optional ISO-8601 `<lastmod>` timestamp. Pages that track their
    * own effective date (legal docs) supply this; others omit it and
@@ -48,53 +46,18 @@ export interface SeoRoute {
   lastModified?: string;
 }
 
-/**
- * Declared public and gated routes. The sitemap generator filters
- * to `visibility === "public"` and emits the rest.
- *
- * Gated routes are listed here so robots.txt can emit explicit
- * Disallow rules for them — belt and suspenders on top of the
- * per-page noindex meta tag.
- */
-export const SEO_ROUTES: SeoRoute[] = [
-  // ─── Marketing (public, indexable) ──────────────────────────────
-  {
-    path: "/",
-    visibility: "public",
-    kind: "marketing",
-    priority: 1.0,
-    changeFrequency: "weekly",
-  },
-  {
-    path: "/pricing",
-    visibility: "public",
-    kind: "marketing",
-    priority: 0.9,
-    changeFrequency: "monthly",
-  },
-  {
-    path: "/savings",
-    visibility: "public",
-    kind: "marketing",
-    priority: 0.85,
-    changeFrequency: "monthly",
-  },
-  {
-    path: "/faq",
-    visibility: "public",
-    kind: "faq",
-    priority: 0.7,
-    changeFrequency: "monthly",
-  },
-  {
-    path: "/blog",
-    visibility: "public",
-    kind: "marketing",
-    priority: 0.6,
-    changeFrequency: "weekly",
-  },
+const STATIC_ROUTE_ENTRIES: SeoRoute[] = (
+  Object.values(STATIC_SEO_PAGES) as StaticSeoPageDefinition[]
+).map((page) => ({
+  path: page.seo.path,
+  visibility: page.seo.visibility,
+  kind: page.seo.kind,
+  priority: page.sitemap?.priority ?? 0,
+  changeFrequency: page.sitemap?.changeFrequency ?? "never",
+  lastModified: page.sitemap?.lastModified ?? page.seo.lastModified,
+}));
 
-  // ─── Legal (public, indexable, low churn) ───────────────────────
+const LEGAL_ROUTE_ENTRIES: SeoRoute[] = [
   {
     path: "/legal/terms",
     visibility: "public",
@@ -119,17 +82,9 @@ export const SEO_ROUTES: SeoRoute[] = [
     changeFrequency: "yearly",
     lastModified: "2026-04-01",
   },
+];
 
-  // ─── Gated routes (not indexable — excluded from sitemap) ───────
-  // These are declared so robots.txt can emit Disallow rules for
-  // them. The sitemap generator filters them out automatically.
-  {
-    path: "/dashboard",
-    visibility: "gated",
-    kind: "product",
-    priority: 0,
-    changeFrequency: "never",
-  },
+const GATED_AND_PRIVATE_PREFIX_ENTRIES: SeoRoute[] = [
   {
     path: "/property",
     visibility: "gated",
@@ -137,8 +92,13 @@ export const SEO_ROUTES: SeoRoute[] = [
     priority: 0,
     changeFrequency: "never",
   },
-
-  // ─── Private routes (internal tools — not indexable) ────────────
+  {
+    path: "/dealroom",
+    visibility: "gated",
+    kind: "product",
+    priority: 0,
+    changeFrequency: "never",
+  },
   {
     path: "/console",
     visibility: "private",
@@ -146,6 +106,62 @@ export const SEO_ROUTES: SeoRoute[] = [
     priority: 0,
     changeFrequency: "never",
   },
+  {
+    path: "/metrics",
+    visibility: "private",
+    kind: "product",
+    priority: 0,
+    changeFrequency: "never",
+  },
+  {
+    path: "/notes",
+    visibility: "private",
+    kind: "product",
+    priority: 0,
+    changeFrequency: "never",
+  },
+  {
+    path: "/overrides",
+    visibility: "private",
+    kind: "product",
+    priority: 0,
+    changeFrequency: "never",
+  },
+  {
+    path: "/preview",
+    visibility: "private",
+    kind: "product",
+    priority: 0,
+    changeFrequency: "never",
+  },
+  {
+    path: "/queues",
+    visibility: "private",
+    kind: "product",
+    priority: 0,
+    changeFrequency: "never",
+  },
+  {
+    path: "/settings",
+    visibility: "private",
+    kind: "product",
+    priority: 0,
+    changeFrequency: "never",
+  },
+];
+
+/**
+ * Declared public and gated routes. The sitemap generator filters
+ * to `visibility === "public"` and emits the rest.
+ *
+ * Gated routes are listed here so robots.txt can emit explicit
+ * Disallow rules for them — belt and suspenders on top of the
+ * per-page noindex meta tag.
+ */
+export const SEO_ROUTES: SeoRoute[] = [
+  ...STATIC_ROUTE_ENTRIES,
+  ...LEGAL_ROUTE_ENTRIES,
+  ...GATED_AND_PRIVATE_PREFIX_ENTRIES,
 ];
 
 // MARK: - Selectors

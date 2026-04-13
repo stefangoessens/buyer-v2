@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { Card, CardContent } from "@/components/ui/card";
+import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
-export const metadata: Metadata = {
-  title: "Favourites | buyer-v2",
-  description: "Your starred properties and saved searches.",
-};
+export const metadata: Metadata = metadataForStaticPage("favourites");
 
 export default function FavouritesPage() {
   return (

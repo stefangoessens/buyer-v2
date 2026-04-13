@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { Card, CardContent } from "@/components/ui/card";
+import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
-export const metadata: Metadata = {
-  title: "Compare | buyer-v2",
-  description: "Compare your shortlisted properties side-by-side.",
-};
+export const metadata: Metadata = metadataForStaticPage("compare");
 
 export default function ComparePage() {
   return (

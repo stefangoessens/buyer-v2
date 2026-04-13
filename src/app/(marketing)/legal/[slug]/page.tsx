@@ -11,7 +11,11 @@ import {
 } from "@/components/marketing/content/LegalDocumentTemplate";
 import type { ContentPageMeta } from "@/lib/content/types";
 import { filterPublic } from "@/lib/content/publicFilter";
-import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
+import {
+  metadataForLegalDocument,
+  metadataForMissingPage,
+  structuredDataForLegalDocument,
+} from "@/lib/seo/pageDefinitions";
 
 type PageParams = { slug: string };
 
@@ -32,23 +36,14 @@ export async function generateMetadata({
     // notFound() below which surfaces the 404, but the metadata is
     // computed before that runs, so we need the explicit guard here
     // to prevent indexing of stray /legal/<wrong-slug> URLs.
-    return buildMetadata({
+    return metadataForMissingPage({
       title: "Not found",
       description:
         "The legal document you're looking for doesn't exist or has moved.",
       path: "/legal/not-found",
-      visibility: "gated",
-      kind: "system",
     });
   }
-  return buildMetadata({
-    title: doc.title,
-    description: doc.summary,
-    path: `/legal/${doc.slug}`,
-    visibility: "public",
-    kind: "legal",
-    lastModified: doc.effectiveDate,
-  });
+  return metadataForLegalDocument(doc);
 }
 
 export default async function LegalDocumentPage({
@@ -73,14 +68,7 @@ export default async function LegalDocumentPage({
   const publicSections = filterPublic(doc.sections);
   const hasContent = publicSections.length > 0;
 
-  const jsonLd = buildStructuredData({
-    title: doc.title,
-    description: doc.summary,
-    path: `/legal/${doc.slug}`,
-    visibility: "public",
-    kind: "legal",
-    lastModified: doc.effectiveDate,
-  });
+  const jsonLd = structuredDataForLegalDocument(doc);
 
   return (
     <>

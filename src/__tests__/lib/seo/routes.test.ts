@@ -15,6 +15,7 @@ describe("SEO_ROUTES registry", () => {
     expect(findRouteByPath("/pricing")).toBeDefined();
     expect(findRouteByPath("/savings")).toBeDefined();
     expect(findRouteByPath("/faq")).toBeDefined();
+    expect(findRouteByPath("/blog")).toBeDefined();
   });
 
   it("contains the three legal routes", () => {
@@ -24,9 +25,21 @@ describe("SEO_ROUTES registry", () => {
   });
 
   it("contains gated/private routes so robots.txt can disallow them", () => {
+    expect(findRouteByPath("/intake")).toBeDefined();
     expect(findRouteByPath("/dashboard")).toBeDefined();
+    expect(findRouteByPath("/compare")).toBeDefined();
+    expect(findRouteByPath("/favourites")).toBeDefined();
+    expect(findRouteByPath("/profile")).toBeDefined();
+    expect(findRouteByPath("/reports")).toBeDefined();
     expect(findRouteByPath("/property")).toBeDefined();
+    expect(findRouteByPath("/dealroom")).toBeDefined();
     expect(findRouteByPath("/console")).toBeDefined();
+    expect(findRouteByPath("/metrics")).toBeDefined();
+    expect(findRouteByPath("/notes")).toBeDefined();
+    expect(findRouteByPath("/overrides")).toBeDefined();
+    expect(findRouteByPath("/preview")).toBeDefined();
+    expect(findRouteByPath("/queues")).toBeDefined();
+    expect(findRouteByPath("/settings")).toBeDefined();
   });
 
   it("every route starts with /", () => {
@@ -65,8 +78,14 @@ describe("publicSitemapRoutes", () => {
 
   it("does not include gated or private routes", () => {
     const paths = publicSitemapRoutes().map((r) => r.path);
+    expect(paths).not.toContain("/intake");
     expect(paths).not.toContain("/dashboard");
+    expect(paths).not.toContain("/compare");
+    expect(paths).not.toContain("/favourites");
+    expect(paths).not.toContain("/profile");
+    expect(paths).not.toContain("/reports");
     expect(paths).not.toContain("/property");
+    expect(paths).not.toContain("/dealroom");
     expect(paths).not.toContain("/console");
   });
 
@@ -85,9 +104,21 @@ describe("publicSitemapRoutes", () => {
 describe("gatedRouteDisallowPaths", () => {
   it("returns only gated/private paths", () => {
     const disallow = gatedRouteDisallowPaths();
+    expect(disallow).toContain("/intake");
     expect(disallow).toContain("/dashboard");
+    expect(disallow).toContain("/compare");
+    expect(disallow).toContain("/favourites");
+    expect(disallow).toContain("/profile");
+    expect(disallow).toContain("/reports");
     expect(disallow).toContain("/property");
+    expect(disallow).toContain("/dealroom");
     expect(disallow).toContain("/console");
+    expect(disallow).toContain("/metrics");
+    expect(disallow).toContain("/notes");
+    expect(disallow).toContain("/overrides");
+    expect(disallow).toContain("/preview");
+    expect(disallow).toContain("/queues");
+    expect(disallow).toContain("/settings");
   });
 
   it("does not include public paths", () => {
