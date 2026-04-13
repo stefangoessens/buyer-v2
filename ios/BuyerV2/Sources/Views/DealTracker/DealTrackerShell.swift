@@ -64,7 +64,7 @@ struct DealTrackerShell: View {
         .onChange(of: authService.state) { _, newState in
             Task {
                 switch newState {
-                case .signedOut, .expired:
+                case .signedOut, .expired, .authUnavailable:
                     await cacheCoordinator.clearForSignOut(userId: user.id)
                 case .signedIn, .restoring:
                     break

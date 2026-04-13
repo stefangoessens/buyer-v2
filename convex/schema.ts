@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  authProvider,
   assignmentStatus,
   availabilityOwnerType,
   availabilityStatus,
@@ -51,10 +52,17 @@ export default defineSchema({
     role: v.union(v.literal("buyer"), v.literal("broker"), v.literal("admin")),
     phone: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
+    authProvider: v.optional(authProvider),
+    authIssuer: v.optional(v.string()),
     authSubject: v.optional(v.string()),
+    authTokenIdentifier: v.optional(v.string()),
+    sessionVersion: v.optional(v.number()),
+    lastAuthenticatedAt: v.optional(v.string()),
   })
     .index("by_email", ["email"])
     .index("by_role", ["role"])
+    .index("by_authTokenIdentifier", ["authTokenIdentifier"])
+    .index("by_authIssuer_and_authSubject", ["authIssuer", "authSubject"])
     .index("by_authSubject", ["authSubject"]),
 
   buyerProfiles: defineTable({

@@ -274,6 +274,12 @@ final class ShareImportService {
             pendingUrl = url
             state = .sessionExpired(pendingUrl: url)
             return
+        case .authUnavailable:
+            pendingUrl = url
+            state = .error(
+                message: "Authentication is temporarily unavailable. Please try again."
+            )
+            return
         case .signedIn:
             break
         }

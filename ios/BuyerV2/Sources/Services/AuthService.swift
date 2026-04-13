@@ -11,6 +11,9 @@ protocol AuthProvider: Sendable {
 
 // MARK: - ConvexAuthProvider
 
+/// Transitional auth transport boundary. The session contract is provider-neutral
+/// so this can be replaced by Clerk/Auth0 integration without changing the rest
+/// of the app.
 final class ConvexAuthProvider: AuthProvider, Sendable {
 
     private let baseURL: URL
@@ -135,7 +138,11 @@ final class AuthService {
             state = .signedIn(user: user)
         } catch {
             // Access token invalid/expired — attempt refresh before signing out
-            await restoreSession()
+            if isUnauthorized(error) {
+                await restoreSession()
+                return
+            }
+            state = .authUnavailable
         }
     }
 
@@ -168,7 +175,7 @@ final class AuthService {
             let user = try await provider.validateToken(tokens.accessToken)
             state = .signedIn(user: user)
         } catch {
-            state = .signedOut
+            state = isUnauthorized(error) ? .signedOut : .authUnavailable
         }
     }
 
@@ -182,5 +189,15 @@ final class AuthService {
         }
         try await keychain.save(key: Self.accessTokenKey, data: accessData)
         try await keychain.save(key: Self.refreshTokenKey, data: refreshData)
+    }
+
+    private func isUnauthorized(_ error: Error) -> Bool {
+        guard let authError = error as? AuthError else {
+            return false
+        }
+        if case .unauthorized = authError {
+            return true
+        }
+        return false
     }
 }

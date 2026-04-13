@@ -1,19 +1,13 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { requireAuth } from "./lib/session";
+import { getCurrentUser, requireAuth } from "./lib/session";
 
 /** Get buyer profile for the authenticated user */
 export const getMyProfile = query({
   args: {},
   returns: v.any(),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) => q.eq("authSubject", identity.subject))
-      .unique();
+    const user = await getCurrentUser(ctx);
     if (!user) return null;
 
     const profile = await ctx.db
@@ -38,13 +32,7 @@ export const getByUserId = query({
   args: { userId: v.id("users") },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const currentUser = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) => q.eq("authSubject", identity.subject))
-      .unique();
+    const currentUser = await getCurrentUser(ctx);
 
     // Only the profile owner or broker/admin can view
     if (!currentUser) return null;

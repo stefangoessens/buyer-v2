@@ -142,6 +142,25 @@ struct AuthServiceTests {
         }
     }
 
+    @Test("initialize() transitions to .authUnavailable on non-auth provider failure")
+    func testInitializeWithProviderOutage() async {
+        let provider = MockAuthProvider()
+        provider.authenticateResult = .success(testTokens)
+        provider.validateResult = .success(testUser)
+        let service = AuthService(provider: provider)
+
+        try? await service.signIn(email: "buyer@example.com", password: "pass")
+
+        provider.validateResult = .failure(AuthError.invalidResponse)
+        let freshService = AuthService(provider: provider)
+        await freshService.initialize()
+
+        guard case .authUnavailable = freshService.state else {
+            Issue.record("Expected .authUnavailable, got \(freshService.state)")
+            return
+        }
+    }
+
     @Test("initialize() refreshes successfully when access token expired but refresh token valid")
     func testInitializeWithExpiredAccessButValidRefresh() async {
         let provider = MockAuthProvider()
