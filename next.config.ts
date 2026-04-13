@@ -1,7 +1,9 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {};
+const nextConfig: NextConfig = {
+  transpilePackages: ["@buyer-v2/shared"],
+};
 
 export default withSentryConfig(nextConfig, {
   org: process.env.SENTRY_ORG,

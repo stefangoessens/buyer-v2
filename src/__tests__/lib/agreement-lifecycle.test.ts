@@ -1,49 +1,73 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import {
+  buildChains,
+  resolveCurrentGoverning,
+  type AgreementRecord,
+} from "@/lib/agreements/supersession";
+
+function agreement(
+  overrides: Partial<AgreementRecord> & { _id: string },
+): AgreementRecord {
+  return {
+    buyerId: "buyer_1",
+    type: "tour_pass",
+    status: "signed",
+    signedAt: "2028-01-01T12:00:00Z",
+    ...overrides,
+  };
+}
 
 describe("agreement lifecycle", () => {
-  const validTransitions = {
-    draft: ["sent"],
-    sent: ["signed"],
-    signed: ["canceled", "replaced"],
-    canceled: [],
-    replaced: [],
-  };
+  it("keeps typed supersession metadata on the replaced predecessor", () => {
+    const predecessor = agreement({
+      _id: "agreement_v1",
+      status: "replaced",
+      replacedById: "agreement_v2",
+      supersededAt: "2028-02-01T10:00:00Z",
+      supersessionReason: "renewal",
+    });
+    const successor = agreement({
+      _id: "agreement_v2",
+      status: "draft",
+      signedAt: undefined,
+    });
 
-  it("defines valid status transitions", () => {
-    expect(validTransitions.draft).toContain("sent");
-    expect(validTransitions.sent).toContain("signed");
-    expect(validTransitions.signed).toContain("canceled");
-    expect(validTransitions.signed).toContain("replaced");
+    const [chain] = buildChains([predecessor, successor]);
+
+    expect(chain.lineage.map((row) => row._id)).toEqual([
+      "agreement_v1",
+      "agreement_v2",
+    ]);
+    expect(chain.head.supersededAt).toBe("2028-02-01T10:00:00Z");
+    expect(chain.head.supersessionReason).toBe("renewal");
   });
 
-  it("terminal states have no transitions", () => {
-    expect(validTransitions.canceled).toHaveLength(0);
-    expect(validTransitions.replaced).toHaveLength(0);
-  });
+  it("drops the superseded agreement from current resolution until the successor is signed", () => {
+    const predecessor = agreement({
+      _id: "agreement_v1",
+      type: "full_representation",
+      status: "replaced",
+      replacedById: "agreement_v2",
+      supersededAt: "2028-02-01T10:00:00Z",
+      supersessionReason: "correction",
+    });
+    const successorDraft = agreement({
+      _id: "agreement_v2",
+      type: "full_representation",
+      status: "draft",
+      signedAt: undefined,
+    });
 
-  it("agreement types are valid", () => {
-    const types = ["tour_pass", "full_representation"];
-    expect(types).toHaveLength(2);
-  });
+    expect(resolveCurrentGoverning([predecessor, successorDraft])).toBeNull();
 
-  it("governing agreement is the most recent signed", () => {
-    const agreements = [
-      { status: "canceled", signedAt: "2024-01-01" },
-      { status: "signed", signedAt: "2024-06-01" },
-      { status: "signed", signedAt: "2024-03-01" },
-    ];
-    const governing = agreements
-      .filter((a) => a.status === "signed")
-      .sort((a, b) => b.signedAt.localeCompare(a.signedAt))
-      .at(0);
-    expect(governing?.signedAt).toBe("2024-06-01");
-  });
+    const successorSigned = {
+      ...successorDraft,
+      status: "signed" as const,
+      signedAt: "2028-02-02T10:00:00Z",
+    };
 
-  it("replacement creates a chain", () => {
-    // Simulates: agreement A (signed) → replaced by B (draft)
-    const a = { id: "a", status: "replaced", replacedById: "b" };
-    const b = { id: "b", status: "draft", replacedById: undefined };
-    expect(a.replacedById).toBe(b.id);
-    expect(b.status).toBe("draft");
+    expect(resolveCurrentGoverning([predecessor, successorSigned])?._id).toBe(
+      "agreement_v2",
+    );
   });
 });
