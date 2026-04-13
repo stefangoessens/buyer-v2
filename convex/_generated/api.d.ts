@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as _seedDealRoom from "../_seedDealRoom.js";
 import type * as addressIntake from "../addressIntake.js";
 import type * as adminShell from "../adminShell.js";
 import type * as agentCoverage from "../agentCoverage.js";
@@ -37,6 +36,8 @@ import type * as engines_comps from "../engines/comps.js";
 import type * as engines_cost from "../engines/cost.js";
 import type * as engines_leverage from "../engines/leverage.js";
 import type * as engines_offer from "../engines/offer.js";
+import type * as engines_orchestrate from "../engines/orchestrate.js";
+import type * as engines_orchestrateMutations from "../engines/orchestrateMutations.js";
 import type * as engines_pricing from "../engines/pricing.js";
 import type * as enrichment from "../enrichment.js";
 import type * as enrichmentJobs from "../enrichmentJobs.js";
@@ -120,7 +121,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  _seedDealRoom: typeof _seedDealRoom;
   addressIntake: typeof addressIntake;
   adminShell: typeof adminShell;
   agentCoverage: typeof agentCoverage;
@@ -149,6 +149,8 @@ declare const fullApi: ApiFromModules<{
   "engines/cost": typeof engines_cost;
   "engines/leverage": typeof engines_leverage;
   "engines/offer": typeof engines_offer;
+  "engines/orchestrate": typeof engines_orchestrate;
+  "engines/orchestrateMutations": typeof engines_orchestrateMutations;
   "engines/pricing": typeof engines_pricing;
   enrichment: typeof enrichment;
   enrichmentJobs: typeof enrichmentJobs;

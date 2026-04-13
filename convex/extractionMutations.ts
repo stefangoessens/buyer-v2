@@ -8,6 +8,7 @@
 
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 
 // Mirrors services/extraction/src/contracts.py::CanonicalPropertyResponse
@@ -204,6 +205,14 @@ export const recordSuccess = internalMutation({
       }),
       timestamp: now,
     });
+
+    // Fire-and-forget: scheduler hands off to the orchestrator action
+    // since mutations cannot call actions directly.
+    await ctx.scheduler.runAfter(
+      0,
+      internal.engines.orchestrate.runAllEnginesForProperty,
+      { propertyId },
+    );
 
     return propertyId;
   },
