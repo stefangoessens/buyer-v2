@@ -10,6 +10,7 @@
     "./auth": "./src/auth.ts",
     "./config": "./src/config.ts",
     "./contracts": "./src/contracts.ts",
+    "./external-access": "./src/external-access.ts",
     "./launch-events": "./src/launch-events.ts",
     "./utils": "./src/utils.ts"
   },
