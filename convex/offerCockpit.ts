@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { getCurrentUser, requireAuth } from "./lib/session";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { buildOfferCompensationLedgerPayload } from "../src/lib/dealroom/offer-cockpit-ledger";
 
 /**
  * Offer cockpit backend for KIN-791.
@@ -294,18 +295,23 @@ export const submitForReview = mutation({
       timestamp: now,
     });
 
+    const ledgerPayload = buildOfferCompensationLedgerPayload({
+      buyerCredits: draft.buyerCredits,
+      sellerCredits: draft.sellerCredits,
+    });
+
     await ctx.runMutation(internal.ledger.recordLifecycleEventInternal, {
       dealRoomId: args.dealRoomId,
       lifecycleEvent: "offer_terms_submitted",
       actorUserId: user._id,
       offerId: draft.offerId,
-      negotiatedAmount: draft.sellerCredits,
-      projectedClosingCredit: draft.buyerCredits,
+      negotiatedAmount: ledgerPayload.negotiatedAmount,
+      projectedClosingCredit: ledgerPayload.projectedClosingCredit,
       internalReviewState: "pending",
       dealStatusAtChange: "offer_prep",
       offerStatusAtChange: "pending_review",
-      ipcProjectedSellerCredit: draft.sellerCredits,
-      ipcProjectedBuyerCredit: 0,
+      ipcProjectedSellerCredit: ledgerPayload.ipcProjectedSellerCredit,
+      ipcProjectedBuyerCredit: ledgerPayload.ipcProjectedBuyerCredit,
     });
 
     return draft._id;

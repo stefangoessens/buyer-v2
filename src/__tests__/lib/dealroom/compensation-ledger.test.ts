@@ -145,6 +145,30 @@ describe("buildCompensationPrompt", () => {
     expect(prompt.key).toBe("offer_terms_recorded");
     expect(prompt.body).toContain("$3200.00");
   });
+
+  it("surfaces a closing-statement prompt once the final credit is recorded", () => {
+    const snapshot = computeCompensationLedgerSnapshot([
+      {
+        entryType: "projected_closing_credit",
+        amount: 4_000,
+        createdAt: "2026-04-12T10:00:00.000Z",
+      },
+      {
+        entryType: "actual_closing_credit",
+        amount: 3_950,
+        createdAt: "2026-04-12T16:00:00.000Z",
+      },
+    ]);
+
+    const prompt = buildCompensationPrompt({
+      status: "buyer_paid",
+      lastLifecycleEvent: "closing_statement_recorded",
+      snapshot,
+    });
+
+    expect(prompt.key).toBe("closing_credit_recorded");
+    expect(prompt.body).toContain("$3950.00");
+  });
 });
 
 describe("computeCompensationReconciliation", () => {

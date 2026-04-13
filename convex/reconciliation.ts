@@ -1,3 +1,4 @@
+import { internal } from "./_generated/api";
 import { internalMutation, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
@@ -217,6 +218,15 @@ export const recordActualClosing = mutation({
         sourceDocument: args.sourceDocument ?? null,
       }),
       timestamp: now,
+    });
+
+    await ctx.runMutation(internal.ledger.recordLifecycleEventInternal, {
+      dealRoomId: args.dealRoomId,
+      lifecycleEvent: "closing_statement_recorded",
+      actorUserId: user._id,
+      sourceDocument: args.sourceDocument,
+      dealStatusAtChange: dealRoom.status,
+      internalReviewState: "pending",
     });
 
     return await createReconciliationReport(ctx, {
