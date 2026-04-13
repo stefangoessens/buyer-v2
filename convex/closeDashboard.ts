@@ -26,6 +26,22 @@ async function dealRoomAccessLevel(
   return { user, level: null };
 }
 
+function projectMilestonesForViewer(milestones: any[], level: AccessLevel) {
+  const visibleMilestones =
+    level === "buyer"
+      ? milestones.filter((m) => m.status !== "needs_review")
+      : milestones;
+
+  return visibleMilestones.map((m) => ({
+    _id: m._id,
+    name: m.name,
+    workstream: m.workstream,
+    dueDate: m.dueDate,
+    status: m.status,
+    completedAt: m.completedAt ?? undefined,
+  }));
+}
+
 export const getDashboard = query({
   args: { dealRoomId: v.id("dealRooms") },
   returns: v.any(),
@@ -52,15 +68,7 @@ export const getDashboard = query({
       .query("contractMilestones")
       .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
       .collect();
-
-    const buyerSafeMilestones = milestones.map((m) => ({
-      _id: m._id,
-      name: m.name,
-      workstream: m.workstream,
-      dueDate: m.dueDate,
-      status: m.status,
-      completedAt: m.completedAt ?? undefined,
-    }));
+    const buyerSafeMilestones = projectMilestonesForViewer(milestones, level);
 
     const { buildCloseDashboard } = await import(
       "../src/lib/dealroom/close-dashboard-logic"
@@ -70,10 +78,10 @@ export const getDashboard = query({
     // legacy optional `activeContract.milestones` field (which is rarely
     // populated). Preference order: earliest pending "closing" workstream
     // milestone, then any pending milestone whose name contains "clos".
-    const closingWorkstreamMilestones = milestones
+    const closingWorkstreamMilestones = buyerSafeMilestones
       .filter((m) => m.workstream === "closing" && m.status !== "completed")
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-    const nameCloseMatch = milestones.find(
+    const nameCloseMatch = buyerSafeMilestones.find(
       (m) =>
         m.status !== "completed" &&
         typeof m.name === "string" &&
@@ -116,15 +124,7 @@ export const getWeeklyPlan = query({
       .query("contractMilestones")
       .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
       .collect();
-
-    const safe = milestones.map((m) => ({
-      _id: m._id,
-      name: m.name,
-      workstream: m.workstream,
-      dueDate: m.dueDate,
-      status: m.status,
-      completedAt: m.completedAt ?? undefined,
-    }));
+    const safe = projectMilestonesForViewer(milestones, level);
 
     const { buildWeeklyPlan, toCloseDashboardMilestone } = await import(
       "../src/lib/dealroom/close-dashboard-logic"

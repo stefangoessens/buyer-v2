@@ -1,11 +1,11 @@
 /**
  * Contract milestone extraction (KIN-806).
  *
- * Pure, deterministic parser that pulls standard milestones out of FL FAR/BAR
- * contract text. Every extracted milestone carries a confidence score, a
- * workstream label (inspection, financing, title, insurance, closing, etc.),
- * and optionally a snippet of the clause it came from so reviewers can audit
- * the extraction.
+ * Pure, deterministic helpers that pull standard milestones out of typed FL
+ * FAR/BAR contract data, with a legacy text parser kept for fallback coverage.
+ * Every extracted milestone carries a confidence score, a workstream label
+ * (inspection, financing, title, insurance, closing, etc.), and optionally a
+ * snippet of the clause it came from so reviewers can audit the extraction.
  *
  * This module is regex + date-math only — no LLM calls. Clauses that don't
  * match a known pattern, or that match ambiguously, get emitted with
@@ -21,6 +21,11 @@
 // ───────────────────────────────────────────────────────────────────────────
 // Types — shared by parser and Convex layer
 // ───────────────────────────────────────────────────────────────────────────
+
+import type {
+  ContractAdapterResult,
+} from "./formAdapter";
+import type { ContractFieldMap } from "./types";
 
 /** Workstream buckets for milestones. Matches the buyer close-dashboard rows. */
 export const WORKSTREAMS = [
@@ -81,6 +86,11 @@ export interface ExtractMilestonesOutput {
   overallConfidence: number;
   warnings: string[];
 }
+
+/** Typed contract adapter result or its field map, used for milestone derivation. */
+export type TypedContractMilestoneSource =
+  | ContractAdapterResult
+  | ContractFieldMap;
 
 // ───────────────────────────────────────────────────────────────────────────
 // The extractor — a handful of regex patterns + date math
@@ -157,27 +167,109 @@ export function extractMilestones(
     warnings.push("No closing date found; walkthrough/closing milestones omitted");
   }
 
-  // ─── Overall confidence = average, degraded if any milestone flagged
-  const overallConfidence =
-    milestones.length === 0
-      ? 0
-      : Number(
-          (
-            milestones.reduce((sum, m) => sum + m.confidence, 0) /
-            milestones.length
-          ).toFixed(2),
-        );
+  return finalizeMilestones(milestones, warnings);
+}
 
-  // ─── Check for past-due dates and re-flag
-  const now = new Date().toISOString().slice(0, 10);
-  for (const m of milestones) {
-    if (m.dueDate < now && !m.flaggedForReview) {
-      m.flaggedForReview = true;
-      m.reviewReason = "date_in_past";
+/**
+ * Derive closing milestones from typed contract adapter output or field map.
+ * This is the flow the backend should use once the adapter has populated the
+ * contract record.
+ */
+export function deriveContractMilestones(
+  input: TypedContractMilestoneSource,
+): ExtractMilestonesOutput {
+  const fieldMap = "fieldMap" in input ? input.fieldMap : input;
+  const warnings: string[] = [];
+  const milestones: ExtractedMilestone[] = [];
+
+  if ("warnings" in input) {
+    for (const warning of input.warnings) {
+      warnings.push(`${warning.code}: ${warning.message}`);
     }
   }
 
-  return { milestones, overallConfidence, warnings };
+  const agreementDate = readTypedDate(fieldMap.purchaseAgreementDate);
+  const closingField = fieldMap.projectedClosingDate;
+  const closingDate = readTypedDate(closingField);
+  const earnestMoneyField = fieldMap.earnestMoneyDueDate;
+
+  if (!agreementDate && !closingDate) {
+    warnings.push(
+      "purchaseAgreementDate and projectedClosingDate are missing or invalid; typed milestones could not be derived",
+    );
+    return { milestones: [], overallConfidence: 0, warnings };
+  }
+
+  if (agreementDate) {
+    const inspection = buildTypedInspectionMilestone(
+      agreementDate,
+      fieldMap.dueDiligenceDate,
+    );
+    if (inspection) {
+      milestones.push(inspection.milestone);
+      if (inspection.warning) warnings.push(inspection.warning);
+    }
+    const escrow = buildTypedEscrowMilestone(
+      agreementDate,
+      earnestMoneyField,
+    );
+    if (escrow) {
+      milestones.push(escrow.milestone);
+      if (escrow.warning) warnings.push(escrow.warning);
+    }
+  } else {
+    warnings.push(
+      "purchaseAgreementDate is missing or invalid; non-closing typed milestones were omitted",
+    );
+  }
+
+  const resolvedClosingDate = agreementDate ? addDays(agreementDate, 30) : undefined;
+
+  if (closingDate) {
+    milestones.push(
+      buildDerivedMilestone({
+        name: "Closing",
+        workstream: "closing",
+        dueDate: closingDate,
+        confidence: 1.0,
+      }),
+    );
+    milestones.push(
+      buildDerivedMilestone({
+        name: "Final walkthrough",
+        workstream: "walkthrough",
+        dueDate: addDays(closingDate, -1),
+        confidence: 0.9,
+      }),
+    );
+  } else if (resolvedClosingDate) {
+    const reviewReason = closingField === undefined || closingField === null || closingField === ""
+      ? "missing_required"
+      : "ambiguous_date";
+    warnings.push(
+      "projectedClosingDate is missing or invalid; using the standard 30-day closing default",
+    );
+    milestones.push(
+      buildDerivedMilestone({
+        name: "Closing",
+        workstream: "closing",
+        dueDate: resolvedClosingDate,
+        confidence: 0.68,
+        reviewReason,
+      }),
+    );
+    milestones.push(
+      buildDerivedMilestone({
+        name: "Final walkthrough",
+        workstream: "walkthrough",
+        dueDate: addDays(resolvedClosingDate, -1),
+        confidence: 0.68,
+        reviewReason,
+      }),
+    );
+  }
+
+  return finalizeMilestones(milestones, warnings);
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -320,6 +412,100 @@ function extractHoaDocs(
   };
 }
 
+function buildTypedInspectionMilestone(
+  agreementDate: string,
+  dueDiligenceDate: unknown,
+): { milestone: ExtractedMilestone; warning?: string } | undefined {
+  const typedDueDate =
+    typeof dueDiligenceDate === "string" ? parseIsoDate(dueDiligenceDate) : undefined;
+  if (typedDueDate) {
+    return {
+      milestone: buildDerivedMilestone({
+        name: "Inspection period end",
+        workstream: "inspection",
+        dueDate: typedDueDate,
+        confidence: 0.96,
+      }),
+    };
+  }
+
+  if (dueDiligenceDate === undefined || dueDiligenceDate === null || dueDiligenceDate === "") {
+    return {
+      milestone: buildDerivedMilestone({
+        name: "Inspection period end",
+        workstream: "inspection",
+        dueDate: addDays(agreementDate, 15),
+        confidence: 0.68,
+        reviewReason: "missing_required",
+      }),
+      warning:
+        "dueDiligenceDate is missing; using the standard 15-day inspection default",
+    };
+  }
+
+  return {
+    milestone: buildDerivedMilestone({
+      name: "Inspection period end",
+      workstream: "inspection",
+      dueDate: addDays(agreementDate, 15),
+      confidence: 0.68,
+      reviewReason: "ambiguous_date",
+    }),
+    warning:
+      "dueDiligenceDate is invalid; using the standard 15-day inspection default",
+  };
+}
+
+function buildTypedEscrowMilestone(
+  agreementDate: string,
+  earnestMoneyDueDate: unknown,
+): { milestone: ExtractedMilestone; warning?: string } | undefined {
+  const typedDueDate =
+    typeof earnestMoneyDueDate === "string"
+      ? parseIsoDate(earnestMoneyDueDate)
+      : undefined;
+  if (typedDueDate) {
+    return {
+      milestone: buildDerivedMilestone({
+        name: "Earnest money deposit",
+        workstream: "escrow",
+        dueDate: typedDueDate,
+        confidence: 0.96,
+      }),
+    };
+  }
+
+  if (
+    earnestMoneyDueDate === undefined ||
+    earnestMoneyDueDate === null ||
+    earnestMoneyDueDate === ""
+  ) {
+    return {
+      milestone: buildDerivedMilestone({
+        name: "Earnest money deposit",
+        workstream: "escrow",
+        dueDate: addDays(agreementDate, 3),
+        confidence: 0.68,
+        reviewReason: "missing_required",
+      }),
+      warning:
+        "earnestMoneyDueDate is missing; using the standard 3-day escrow default",
+    };
+  }
+
+  return {
+    milestone: buildDerivedMilestone({
+      name: "Earnest money deposit",
+      workstream: "escrow",
+      dueDate: addDays(agreementDate, 3),
+      confidence: 0.68,
+      reviewReason: "ambiguous_date",
+    }),
+    warning:
+      "earnestMoneyDueDate is invalid; using the standard 3-day escrow default",
+  };
+}
+
 const MONTH_NAMES: Record<string, number> = {
   january: 1, jan: 1,
   february: 2, feb: 2,
@@ -397,15 +583,49 @@ function buildDerivedMilestone(args: {
   workstream: Workstream;
   dueDate: string;
   confidence: number;
+  reviewReason?: ReviewReason;
 }): ExtractedMilestone {
+  const reviewReason =
+    args.reviewReason ??
+    (args.confidence < LOW_CONFIDENCE_THRESHOLD ? "low_confidence" : undefined);
   return {
     name: args.name,
     workstream: args.workstream,
     dueDate: args.dueDate,
     confidence: args.confidence,
-    flaggedForReview: args.confidence < LOW_CONFIDENCE_THRESHOLD,
-    reviewReason: args.confidence < LOW_CONFIDENCE_THRESHOLD ? "low_confidence" : undefined,
+    flaggedForReview: reviewReason !== undefined,
+    reviewReason,
   };
+}
+
+function finalizeMilestones(
+  milestones: ExtractedMilestone[],
+  warnings: string[],
+): ExtractMilestonesOutput {
+  const overallConfidence =
+    milestones.length === 0
+      ? 0
+      : Number(
+          (
+            milestones.reduce((sum, m) => sum + m.confidence, 0) /
+            milestones.length
+          ).toFixed(2),
+        );
+
+  const today = new Date().toISOString().slice(0, 10);
+  for (const milestone of milestones) {
+    if (milestone.dueDate < today && !milestone.flaggedForReview) {
+      milestone.flaggedForReview = true;
+      milestone.reviewReason = "date_in_past";
+    }
+  }
+
+  return { milestones, overallConfidence, warnings };
+}
+
+function readTypedDate(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return parseIsoDate(value);
 }
 
 /** Parse a YYYY-MM-DD string; returns the same string if valid, undefined otherwise. */

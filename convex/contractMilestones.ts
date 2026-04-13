@@ -18,6 +18,7 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
+import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
 
 // ═══ Shared validators ═══
@@ -48,6 +49,16 @@ const sourceValidator = v.union(
   v.literal("manual"),
   v.literal("amended"),
 );
+
+const extractedMilestoneValidator = v.object({
+  name: v.string(),
+  workstream: workstreamValidator,
+  dueDate: v.string(),
+  confidence: v.number(),
+  flaggedForReview: v.boolean(),
+  reviewReason: v.optional(reviewReasonValidator),
+  linkedClauseText: v.optional(v.string()),
+});
 
 // ═══ Internal helpers ═══
 
@@ -80,6 +91,91 @@ function stripInternal(milestone: Record<string, unknown>): Record<string, unkno
   return buyerVisible;
 }
 
+function isBuyerVisibleMilestone(milestone: { status: string }): boolean {
+  return milestone.status !== "needs_review";
+}
+
+async function persistExtractionBatch(
+  ctx: any,
+  args: {
+    contractId: Id<"contracts">;
+    milestones: Array<{
+      name: string;
+      workstream:
+        | "inspection"
+        | "financing"
+        | "appraisal"
+        | "title"
+        | "insurance"
+        | "escrow"
+        | "hoa"
+        | "walkthrough"
+        | "closing"
+        | "other";
+      dueDate: string;
+      confidence: number;
+      flaggedForReview: boolean;
+      reviewReason?: "low_confidence" | "ambiguous_date" | "missing_required" | "date_in_past" | "manual_flag";
+      linkedClauseText?: string;
+    }>;
+    actorUserId: Id<"users">;
+  },
+): Promise<Array<Id<"contractMilestones">>> {
+  const contract = await ctx.db.get(args.contractId);
+  if (!contract) throw new Error("Contract not found");
+
+  // Delete previously auto_extracted AND amended milestones for this
+  // contract — keeps manual ones intact. Amended rows came from an earlier
+  // auto-extraction that was reviewed and corrected; re-running extraction
+  // replaces them with fresh data from the new contract text. Without this,
+  // amended rows would accumulate and create duplicate milestones over time.
+  const existing = await ctx.db
+    .query("contractMilestones")
+    .withIndex("by_contractId", (q: any) => q.eq("contractId", args.contractId))
+    .collect();
+  for (const m of existing) {
+    if (m.source === "auto_extracted" || m.source === "amended") {
+      await ctx.db.delete(m._id);
+    }
+  }
+
+  const now = new Date().toISOString();
+  const insertedIds: Array<Id<"contractMilestones">> = [];
+  for (const input of args.milestones) {
+    const status = input.flaggedForReview ? "needs_review" : "pending";
+    const id = await ctx.db.insert("contractMilestones", {
+      contractId: args.contractId,
+      dealRoomId: contract.dealRoomId,
+      name: input.name,
+      workstream: input.workstream,
+      dueDate: input.dueDate,
+      status,
+      source: "auto_extracted",
+      confidence: input.confidence,
+      flaggedForReview: input.flaggedForReview,
+      reviewReason: input.reviewReason,
+      linkedClauseText: input.linkedClauseText,
+      createdAt: now,
+      updatedAt: now,
+    });
+    insertedIds.push(id);
+  }
+
+  await ctx.db.insert("auditLog", {
+    userId: args.actorUserId,
+    action: "contract_milestones_extracted",
+    entityType: "contracts",
+    entityId: args.contractId,
+    details: JSON.stringify({
+      count: args.milestones.length,
+      flaggedCount: args.milestones.filter((m) => m.flaggedForReview).length,
+    }),
+    timestamp: now,
+  });
+
+  return insertedIds;
+}
+
 // ═══ Queries ═══
 
 /** List milestones for a contract — access-level filtered. */
@@ -101,7 +197,9 @@ export const listByContract = query({
     const sorted = milestones.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
     if (accessLevel === "buyer") {
-      return sorted.map(stripInternal);
+      return sorted
+        .filter(isBuyerVisibleMilestone)
+        .map(stripInternal);
     }
     return sorted;
   },
@@ -123,7 +221,9 @@ export const listByDealRoom = query({
     const sorted = milestones.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
     if (accessLevel === "buyer") {
-      return sorted.map(stripInternal);
+      return sorted
+        .filter(isBuyerVisibleMilestone)
+        .map(stripInternal);
     }
     return sorted;
   },
@@ -156,17 +256,7 @@ export const listFlaggedForReview = query({
 export const createFromExtraction = mutation({
   args: {
     contractId: v.id("contracts"),
-    milestones: v.array(
-      v.object({
-        name: v.string(),
-        workstream: workstreamValidator,
-        dueDate: v.string(),
-        confidence: v.number(),
-        flaggedForReview: v.boolean(),
-        reviewReason: v.optional(reviewReasonValidator),
-        linkedClauseText: v.optional(v.string()),
-      }),
-    ),
+    milestones: v.array(extractedMilestoneValidator),
   },
   returns: v.array(v.id("contractMilestones")),
   handler: async (ctx, args) => {
@@ -175,59 +265,27 @@ export const createFromExtraction = mutation({
       throw new Error("Only brokers/admins can create contract milestones");
     }
 
-    const contract = await ctx.db.get(args.contractId);
-    if (!contract) throw new Error("Contract not found");
-
-    // Delete previously auto_extracted AND amended milestones for this
-    // contract — keeps manual ones intact. Amended rows came from an earlier
-    // auto-extraction that was reviewed and corrected; re-running extraction
-    // replaces them with fresh data from the new contract text. Without this,
-    // amended rows would accumulate and create duplicate milestones over time.
-    const existing = await ctx.db
-      .query("contractMilestones")
-      .withIndex("by_contractId", (q) => q.eq("contractId", args.contractId))
-      .collect();
-    for (const m of existing) {
-      if (m.source === "auto_extracted" || m.source === "amended") {
-        await ctx.db.delete(m._id);
-      }
-    }
-
-    const now = new Date().toISOString();
-    const insertedIds: string[] = [];
-    for (const input of args.milestones) {
-      const status = input.flaggedForReview ? "needs_review" : "pending";
-      const id = await ctx.db.insert("contractMilestones", {
-        contractId: args.contractId,
-        dealRoomId: contract.dealRoomId,
-        name: input.name,
-        workstream: input.workstream,
-        dueDate: input.dueDate,
-        status,
-        source: "auto_extracted",
-        confidence: input.confidence,
-        flaggedForReview: input.flaggedForReview,
-        reviewReason: input.reviewReason,
-        linkedClauseText: input.linkedClauseText,
-        createdAt: now,
-        updatedAt: now,
-      });
-      insertedIds.push(id);
-    }
-
-    await ctx.db.insert("auditLog", {
-      userId: user._id,
-      action: "contract_milestones_extracted",
-      entityType: "contracts",
-      entityId: args.contractId,
-      details: JSON.stringify({
-        count: args.milestones.length,
-        flaggedCount: args.milestones.filter((m) => m.flaggedForReview).length,
-      }),
-      timestamp: now,
+    return await persistExtractionBatch(ctx, {
+      contractId: args.contractId,
+      milestones: args.milestones,
+      actorUserId: user._id,
     });
+  },
+});
 
-    return insertedIds as never;
+export const createFromExtractionInternal = internalMutation({
+  args: {
+    contractId: v.id("contracts"),
+    actorUserId: v.id("users"),
+    milestones: v.array(extractedMilestoneValidator),
+  },
+  returns: v.array(v.id("contractMilestones")),
+  handler: async (ctx, args) => {
+    return await persistExtractionBatch(ctx, {
+      contractId: args.contractId,
+      milestones: args.milestones,
+      actorUserId: args.actorUserId,
+    });
   },
 });
 

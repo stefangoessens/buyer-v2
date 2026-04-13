@@ -1,10 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  deriveContractMilestones,
   extractMilestones,
   addDays,
   isOverdue,
   WORKSTREAMS,
 } from "@/lib/contracts/milestones";
+import { mapApprovedOfferToFloridaContract } from "@/lib/contracts/formAdapter";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Date helpers
@@ -39,6 +41,156 @@ describe("isOverdue", () => {
 
   it("returns false when due after today", () => {
     expect(isOverdue("2026-04-20", "2026-04-12")).toBe(false);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Typed contract adapter output
+// ───────────────────────────────────────────────────────────────────────────
+
+const TYPED_OFFER_SOURCE = {
+  dealRoomId: "deal-room-typed",
+  offerId: "offer-typed",
+  propertyId: "property-typed",
+  offerStatus: "approved" as const,
+  approvedAt: "2028-01-15T12:00:00.000Z",
+  purchasePrice: 550000,
+  earnestMoney: 11000,
+  closingDate: "2028-03-15",
+  contingencies: ["inspection", "financing"],
+  financingType: "conventional" as const,
+  property: {
+    street: "123 Main St",
+    city: "Miami",
+    state: "FL",
+    zip: "33101",
+    county: "Miami-Dade",
+    yearBuilt: 1972,
+    propertyType: "Condo",
+    listingAgentName: "Sally Seller",
+    listingBrokerage: "Listing Co",
+  },
+  buyer: {
+    fullName: "John Buyer",
+    email: "john@example.com",
+    phone: "3055551212",
+  },
+  seller: {
+    fullName: "Seller Example",
+  },
+} satisfies Parameters<typeof mapApprovedOfferToFloridaContract>[0];
+
+const TYPED_ADAPTER_RESULT = mapApprovedOfferToFloridaContract(
+  TYPED_OFFER_SOURCE,
+);
+
+describe("deriveContractMilestones — typed contract adapter output", () => {
+  it("derives field-driven milestones without raw contract text", () => {
+    const result = deriveContractMilestones(TYPED_ADAPTER_RESULT);
+
+    expect(result.warnings).toEqual([]);
+    expect(result.milestones.map((m) => m.workstream)).toEqual([
+      "inspection",
+      "escrow",
+      "closing",
+      "walkthrough",
+    ]);
+
+    expect(
+      result.milestones.every((m) => !m.flaggedForReview),
+    ).toBe(true);
+    expect(
+      result.milestones.find((m) => m.workstream === "inspection")?.dueDate,
+    ).toBe(TYPED_ADAPTER_RESULT.fieldMap.dueDiligenceDate);
+    expect(
+      result.milestones.find((m) => m.workstream === "escrow")?.dueDate,
+    ).toBe(TYPED_ADAPTER_RESULT.fieldMap.earnestMoneyDueDate);
+    expect(
+      result.milestones.find((m) => m.workstream === "closing")?.dueDate,
+    ).toBe(TYPED_ADAPTER_RESULT.fieldMap.projectedClosingDate);
+    expect(
+      result.milestones.find((m) => m.workstream === "walkthrough")?.dueDate,
+    ).toBe("2028-03-14");
+    expect(result.overallConfidence).toBeGreaterThan(0.9);
+  });
+
+  it("accepts a typed field map directly", () => {
+    const result = deriveContractMilestones({
+      purchaseAgreementDate: "2028-01-15",
+      dueDiligenceDate: "2028-01-30",
+      earnestMoneyDueDate: "2028-01-18",
+      projectedClosingDate: "2028-03-15",
+    });
+
+    expect(result.milestones.find((m) => m.workstream === "inspection")?.dueDate).toBe(
+      "2028-01-30",
+    );
+    expect(result.milestones.find((m) => m.workstream === "escrow")?.dueDate).toBe(
+      "2028-01-18",
+    );
+    expect(result.milestones.find((m) => m.workstream === "closing")?.dueDate).toBe(
+      "2028-03-15",
+    );
+  });
+});
+
+describe("deriveContractMilestones — typed edge cases", () => {
+  it("flags an invalid dueDiligenceDate instead of dropping inspection", () => {
+    const result = deriveContractMilestones({
+      purchaseAgreementDate: "2028-01-15",
+      dueDiligenceDate: "2028-02-30",
+      earnestMoneyDueDate: "2028-01-18",
+      projectedClosingDate: "2028-03-15",
+    });
+
+    const inspection = result.milestones.find(
+      (m) => m.workstream === "inspection",
+    );
+    expect(inspection?.dueDate).toBe("2028-01-30");
+    expect(inspection?.flaggedForReview).toBe(true);
+    expect(inspection?.reviewReason).toBe("ambiguous_date");
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("dueDiligenceDate"),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags a missing projectedClosingDate and still emits closing milestones", () => {
+    const result = deriveContractMilestones({
+      purchaseAgreementDate: "2028-01-15",
+      dueDiligenceDate: "2028-01-30",
+    });
+
+    const closing = result.milestones.find((m) => m.workstream === "closing");
+    const walkthrough = result.milestones.find(
+      (m) => m.workstream === "walkthrough",
+    );
+
+    expect(closing?.dueDate).toBe("2028-02-14");
+    expect(closing?.flaggedForReview).toBe(true);
+    expect(closing?.reviewReason).toBe("missing_required");
+    expect(walkthrough?.dueDate).toBe("2028-02-13");
+    expect(walkthrough?.flaggedForReview).toBe(true);
+    expect(walkthrough?.reviewReason).toBe("missing_required");
+  });
+
+  it("flags a missing earnestMoneyDueDate and still emits an escrow milestone", () => {
+    const result = deriveContractMilestones({
+      purchaseAgreementDate: "2028-01-15",
+      dueDiligenceDate: "2028-01-30",
+      projectedClosingDate: "2028-03-15",
+    });
+
+    const escrow = result.milestones.find((m) => m.workstream === "escrow");
+    expect(escrow?.dueDate).toBe("2028-01-18");
+    expect(escrow?.flaggedForReview).toBe(true);
+    expect(escrow?.reviewReason).toBe("missing_required");
+    expect(
+      result.warnings.some((warning) =>
+        warning.includes("earnestMoneyDueDate"),
+      ),
+    ).toBe(true);
   });
 });
 

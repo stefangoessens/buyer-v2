@@ -24,6 +24,10 @@ import {
   type FloridaContractFieldMap,
 } from "@buyer-v2/shared/contracts";
 import {
+  deriveContractMilestones,
+  extractMilestones,
+} from "../src/lib/contracts/milestones";
+import {
   createSabalSignatureEnvelope,
   normalizeSabalWebhookPayload,
   readContractProviderConfig,
@@ -78,6 +82,8 @@ type ContractContext = {
   buyerProfile: Doc<"buyerProfiles"> | null;
 };
 
+type ContractAdapterOutput = ReturnType<typeof mapApprovedOfferToFloridaContract>;
+
 type ContractHandoffResult = {
   runId: Id<"contractAdapterRuns">;
   contractId: Id<"contracts"> | null;
@@ -116,6 +122,100 @@ function toFieldMapRecord(
   return record;
 }
 
+function asIsoDate(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const iso = value.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : undefined;
+}
+
+function daysBetweenDates(startIso: string, endIso: string): number | undefined {
+  const start = Date.parse(`${startIso}T00:00:00Z`);
+  const end = Date.parse(`${endIso}T00:00:00Z`);
+  if (Number.isNaN(start) || Number.isNaN(end)) return undefined;
+  return Math.round((end - start) / 86_400_000);
+}
+
+function buildMilestoneExtractionText(
+  context: ContractContext,
+  adapter: ContractAdapterOutput,
+  nowIso: string,
+): { contractText: string; effectiveDate: string; closingDate?: string } {
+  const effectiveDate =
+    asIsoDate(adapter.fieldMap.purchaseAgreementDate) ?? nowIso.slice(0, 10);
+  const closingDate = asIsoDate(adapter.fieldMap.projectedClosingDate);
+  const dueDiligenceDate = asIsoDate(adapter.fieldMap.dueDiligenceDate);
+  const inspectionDays =
+    dueDiligenceDate && effectiveDate
+      ? daysBetweenDates(effectiveDate, dueDiligenceDate)
+      : undefined;
+  const hasFinancing = (context.offer.contingencies ?? []).includes(
+    "financing",
+  );
+  const hasHoa =
+    adapter.forms.some(
+      (form) =>
+        form.formKey === "fl_condominium_rider" ||
+        form.formKey === "fl_homeowners_association_addendum",
+    ) ||
+    (typeof context.property.hoaFee === "number" && context.property.hoaFee > 0);
+
+  const lines = [
+    "Florida Residential Contract For Sale And Purchase",
+    `Effective Date: ${effectiveDate}`,
+    `Inspection Period: ${inspectionDays ?? (context.offer.contingencies?.includes("inspection") ? 15 : 5)} calendar days from the effective date.`,
+    hasFinancing
+      ? "Financing Contingency: 30 calendar days for loan approval."
+      : undefined,
+    "Appraisal must be completed within 21 calendar days.",
+    "Title commitment shall be delivered within 20 days.",
+    "Insurance binder due 25 days from effective date.",
+    hasHoa ? "HOA documents to be reviewed within 10 days." : undefined,
+    closingDate ? `Closing Date: ${closingDate}` : undefined,
+  ].filter((line): line is string => typeof line === "string");
+
+  return {
+    contractText: lines.join("\n"),
+    effectiveDate,
+    closingDate,
+  };
+}
+
+async function syncContractMilestones(
+  ctx: {
+    runMutation: (ref: any, args: any) => Promise<any>;
+  },
+  args: {
+    contractId: Id<"contracts">;
+    actorUserId: Id<"users">;
+    milestones: ReturnType<typeof extractMilestones>["milestones"];
+  },
+): Promise<void> {
+  await ctx.runMutation(
+    (internal as any).contractMilestones.createFromExtractionInternal,
+    {
+      contractId: args.contractId,
+      actorUserId: args.actorUserId,
+      milestones: args.milestones,
+    },
+  );
+}
+
+function mergeMilestonesByWorkstream(
+  primary: ReturnType<typeof extractMilestones>["milestones"],
+  secondary: ReturnType<typeof extractMilestones>["milestones"],
+): ReturnType<typeof extractMilestones>["milestones"] {
+  const merged = [...primary];
+  const seen = new Set(primary.map((milestone) => milestone.workstream));
+
+  for (const milestone of secondary) {
+    if (seen.has(milestone.workstream)) continue;
+    merged.push(milestone);
+    seen.add(milestone.workstream);
+  }
+
+  return merged.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+}
+
 function buildAdapterSource(
   context: ContractContext,
   actor: Pick<Doc<"users">, "_id" | "name" | "email" | "phone">,
@@ -137,7 +237,7 @@ function buildAdapterSource(
     contingencies: context.offer.contingencies ?? [],
     buyerCredits: context.offer.buyerCredits,
     sellerCredits: context.offer.sellerCredits,
-    financingType: context.buyerProfile?.financingType,
+    financingType: context.buyerProfile?.financing?.financingType,
     property: {
       street: context.property.address.street,
       unit: context.property.address.unit,
@@ -639,6 +739,23 @@ export const createFromOffer = action({
         actorUserId: actor._id,
       },
     );
+
+    const typedMilestones = deriveContractMilestones(adapter);
+    const { contractText, effectiveDate, closingDate } =
+      buildMilestoneExtractionText(context, adapter, now);
+    const legacyMilestones = extractMilestones({
+      contractText,
+      effectiveDate,
+      closingDate,
+    });
+    await syncContractMilestones(ctx, {
+      contractId,
+      actorUserId: actor._id,
+      milestones: mergeMilestonesByWorkstream(
+        typedMilestones.milestones,
+        legacyMilestones.milestones,
+      ),
+    });
 
     try {
       const formResult = await submitToFormSimplicity(adapter, providerConfig.config);
