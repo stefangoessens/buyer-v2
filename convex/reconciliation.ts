@@ -53,6 +53,16 @@ async function getLedgerEntries(
     .collect()) as Array<Doc<"feeLedgerEntries">>;
 }
 
+async function getCompensationStatusContext(
+  ctx: { db: { query: (table: "compensationStatus") => any } },
+  dealRoomId: Id<"dealRooms">,
+) {
+  return (await ctx.db
+    .query("compensationStatus")
+    .withIndex("by_dealRoomId", (q: any) => q.eq("dealRoomId", dealRoomId))
+    .unique()) as Doc<"compensationStatus"> | null;
+}
+
 async function createReconciliationReport(
   ctx: any,
   args: {
@@ -199,6 +209,10 @@ export const recordActualClosing = mutation({
     const user = await requireRole(ctx, "broker");
     const dealRoom = await ctx.db.get(args.dealRoomId);
     if (!dealRoom) throw new Error("Deal room not found");
+    const compensationStatus = await getCompensationStatusContext(
+      ctx,
+      args.dealRoomId,
+    );
 
     const now = new Date().toISOString();
     const entryId = await ctx.db.insert("feeLedgerEntries", {
@@ -214,6 +228,10 @@ export const recordActualClosing = mutation({
         sourceDocument: args.sourceDocument,
         timestamp: now,
       },
+      offerId: compensationStatus?.offerId,
+      contractId: compensationStatus?.contractId,
+      dealStatusAtChange: dealRoom.status,
+      compensationStatusAtChange: compensationStatus?.status,
       internalReviewState: "pending",
       visibility: "buyer_visible",
       createdAt: now,
