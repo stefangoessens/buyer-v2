@@ -7,6 +7,12 @@ import {
   DISCREPANCY_THRESHOLD_DOLLARS,
   computeCompensationReconciliation,
 } from "./lib/compensationLedger";
+import {
+  collectMonthlyReconciliationDealRoomIds,
+  deriveReconciliationReviewStatus,
+  getReportMonthBounds,
+  latestReportsByDealRoom,
+} from "./lib/reconciliationReport";
 import { reconciliationReportType, reconciliationReviewStatus } from "./lib/validators";
 
 const reconciliationReportRow = v.object({
@@ -66,6 +72,7 @@ async function createReconciliationReport(
     })),
     DISCREPANCY_THRESHOLD_DOLLARS,
   );
+  const reviewStatus = deriveReconciliationReviewStatus(result.discrepancyFlag);
 
   const now = new Date().toISOString();
   const reportId = await ctx.db.insert("reconciliationReports", {
@@ -76,7 +83,7 @@ async function createReconciliationReport(
     discrepancyAmount: result.discrepancyAmount,
     discrepancyFlag: result.discrepancyFlag,
     discrepancyDetails: result.discrepancyDetails,
-    reviewStatus: "pending",
+    reviewStatus,
     reportMonth: args.reportMonth,
     generatedAt: now,
   });
@@ -117,10 +124,14 @@ export const getReportsByMonth = query({
   returns: v.array(reconciliationReportRow),
   handler: async (ctx, args) => {
     await requireRole(ctx, "broker");
-    return await ctx.db
+    const reports = (await ctx.db
       .query("reconciliationReports")
       .withIndex("by_reportMonth", (q) => q.eq("reportMonth", args.reportMonth))
-      .collect();
+      .collect()) as Array<Doc<"reconciliationReports">>;
+
+    return latestReportsByDealRoom(reports).sort((a, b) =>
+      b.generatedAt.localeCompare(a.generatedAt),
+    );
   },
 });
 
@@ -134,7 +145,7 @@ export const getMonthlyTransactionSummary = query({
       .withIndex("by_reportMonth", (q) => q.eq("reportMonth", args.reportMonth))
       .collect()) as Array<Doc<"reconciliationReports">>;
 
-    return reports
+    return latestReportsByDealRoom(reports)
       .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))
       .map((report) => ({
         dealRoomId: report.dealRoomId,
@@ -242,25 +253,27 @@ export const generateMonthlyReport = mutation({
   returns: v.array(v.id("reconciliationReports")),
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, "broker");
-    if (!/^\d{4}-\d{2}$/.test(args.reportMonth)) {
-      throw new Error("reportMonth must be in YYYY-MM format");
-    }
-
-    const dealRooms = (await ctx.db
-      .query("dealRooms")
-      .withIndex("by_buyerId_and_status")
-      .collect()) as Array<Doc<"dealRooms">>;
-    const closedRooms = dealRooms.filter(
-      (dealRoom) =>
-        dealRoom.status === "closed" &&
-        dealRoom.updatedAt.startsWith(args.reportMonth),
+    const { start, end } = getReportMonthBounds(args.reportMonth);
+    const monthLedgerEntries = (await ctx.db
+      .query("feeLedgerEntries")
+      .withIndex("by_createdAt", (q) =>
+        q.gte("createdAt", start).lt("createdAt", end),
+      )
+      .collect()) as Array<Doc<"feeLedgerEntries">>;
+    const dealRoomIds = collectMonthlyReconciliationDealRoomIds(
+      monthLedgerEntries.map((entry) => ({
+        dealRoomId: entry.dealRoomId,
+        entryType: entry.entryType,
+        createdAt: entry.createdAt,
+      })),
+      args.reportMonth,
     );
 
     const reportIds: Array<Id<"reconciliationReports">> = [];
-    for (const dealRoom of closedRooms) {
+    for (const dealRoomId of dealRoomIds) {
       reportIds.push(
         await createReconciliationReport(ctx, {
-          dealRoomId: dealRoom._id,
+          dealRoomId: dealRoomId as Id<"dealRooms">,
           reportType: "monthly",
           reportMonth: args.reportMonth,
           actorUserId: user._id,
