@@ -1,5 +1,10 @@
-import { mutation, internalMutation } from "./_generated/server";
+import { mutation, internalMutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import { getSessionContext } from "./lib/session";
+import {
+  checkAndPersistRateLimit,
+  recordRateLimitOutcome,
+} from "./lib/rateLimitBuckets";
 
 const PORTAL_PATTERNS = [
   {
@@ -19,30 +24,127 @@ const PORTAL_PATTERNS = [
   },
 ] as const;
 
+const publicIntakeSource = v.union(
+  v.literal("homepage"),
+  v.literal("extension"),
+  v.literal("share_import"),
+);
+
+const acceptedResultValidator = v.object({
+  kind: v.literal("accepted"),
+  disposition: v.union(v.literal("existing"), v.literal("created")),
+  sourceListingId: v.id("sourceListings"),
+  platform: v.union(
+    v.literal("zillow"),
+    v.literal("redfin"),
+    v.literal("realtor"),
+  ),
+});
+
+const deniedResultValidator = v.object({
+  kind: v.union(v.literal("retry_later"), v.literal("blocked")),
+  code: v.literal("rate_limited"),
+  error: v.string(),
+  retryAt: v.string(),
+});
+
+const errorResultValidator = v.object({
+  kind: v.literal("error"),
+  code: v.string(),
+  error: v.string(),
+});
+
+type PublicIntakeSource = "homepage" | "extension" | "share_import";
+
+function rateLimitMessage(kind: "retry_later" | "blocked"): string {
+  return kind === "blocked"
+    ? "This intake channel is temporarily blocked for this session."
+    : "Too many intake attempts. Please try again shortly.";
+}
+
+async function resolveThrottleIdentifier(
+  ctx: MutationCtx,
+  args: {
+    source: PublicIntakeSource;
+    throttleId?: string;
+  },
+): Promise<{ ok: true; identifier: string } | { ok: false; error: string; code: string }> {
+  if (args.source === "share_import") {
+    const session = await getSessionContext(ctx);
+    if (session.kind !== "authenticated") {
+      return {
+        ok: false,
+        error: "Authentication required for share import.",
+        code: "not_authenticated",
+      };
+    }
+
+    return {
+      ok: true,
+      identifier: session.user._id,
+    };
+  }
+
+  const identifier = args.throttleId?.trim();
+  if (!identifier) {
+    return {
+      ok: false,
+      error: "Missing throttle identifier for intake channel.",
+      code: "missing_throttle_id",
+    };
+  }
+
+  return { ok: true, identifier };
+}
+
 /**
  * Submit a listing URL for intake processing.
- * Public mutation — called from the paste-link hero and authenticated app.
+ * Public mutation — called from the homepage hero, extension forward
+ * flow, and authenticated share-import surfaces.
  */
 export const submitUrl = mutation({
   args: {
     url: v.string(),
+    source: v.optional(publicIntakeSource),
+    throttleId: v.optional(v.string()),
   },
   returns: v.union(
-    v.object({
-      success: v.literal(true),
-      sourceListingId: v.id("sourceListings"),
-      platform: v.string(),
-    }),
-    v.object({
-      success: v.literal(false),
-      error: v.string(),
-      code: v.string(),
-    })
+    acceptedResultValidator,
+    deniedResultValidator,
+    errorResultValidator,
   ),
   handler: async (ctx, args) => {
+    const source = (args.source ?? "homepage") as PublicIntakeSource;
+    const throttle = await resolveThrottleIdentifier(ctx, {
+      source,
+      throttleId: args.throttleId,
+    });
+
+    if (!throttle.ok) {
+      return {
+        kind: "error" as const,
+        error: throttle.error,
+        code: throttle.code,
+      };
+    }
+
+    const rateLimit = await checkAndPersistRateLimit(ctx, {
+      channel: source,
+      identifier: throttle.identifier,
+    });
+
+    if (!rateLimit.state.allowed) {
+      const callerState = rateLimit.callerState!;
+      return {
+        kind: callerState.status,
+        code: "rate_limited" as const,
+        error: rateLimitMessage(callerState.status),
+        retryAt: callerState.retryAt,
+      };
+    }
+
     const trimmed = args.url.trim();
 
-    // Parse URL
     let url: URL;
     try {
       const withProtocol = trimmed.startsWith("http")
@@ -50,8 +152,14 @@ export const submitUrl = mutation({
         : `https://${trimmed}`;
       url = new URL(withProtocol);
     } catch {
+      await recordRateLimitOutcome(ctx, {
+        channel: source,
+        identifier: throttle.identifier,
+        outcome: "failure",
+      });
+
       return {
-        success: false as const,
+        kind: "error" as const,
         error: "Invalid URL",
         code: "malformed_url",
       };
@@ -59,50 +167,76 @@ export const submitUrl = mutation({
 
     const hostname = url.hostname.toLowerCase();
 
-    // Find matching portal
     for (const portal of PORTAL_PATTERNS) {
-      if (!portal.domains.some((d) => hostname === d)) continue;
+      if (!portal.domains.some((domain) => hostname === domain)) {
+        continue;
+      }
 
       const match = url.pathname.match(portal.pattern);
       if (!match) {
+        await recordRateLimitOutcome(ctx, {
+          channel: source,
+          identifier: throttle.identifier,
+          outcome: "failure",
+        });
+
         return {
-          success: false as const,
+          kind: "error" as const,
           error: `No listing ID found in ${portal.platform} URL`,
           code: "missing_listing_id",
         };
       }
 
-      // Check for existing listing with this URL (use .first() since duplicates possible)
       const existing = await ctx.db
         .query("sourceListings")
         .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", trimmed))
         .first();
 
       if (existing) {
+        await recordRateLimitOutcome(ctx, {
+          channel: source,
+          identifier: throttle.identifier,
+          outcome: "success",
+        });
+
         return {
-          success: true as const,
+          kind: "accepted" as const,
+          disposition: "existing" as const,
           sourceListingId: existing._id,
           platform: portal.platform,
         };
       }
 
-      // Create new source listing
       const id = await ctx.db.insert("sourceListings", {
         sourcePlatform: portal.platform,
         sourceUrl: trimmed,
+        rawData: JSON.stringify({ source }),
         extractedAt: new Date().toISOString(),
         status: "pending",
       });
 
+      await recordRateLimitOutcome(ctx, {
+        channel: source,
+        identifier: throttle.identifier,
+        outcome: "success",
+      });
+
       return {
-        success: true as const,
+        kind: "accepted" as const,
+        disposition: "created" as const,
         sourceListingId: id,
         platform: portal.platform,
       };
     }
 
+    await recordRateLimitOutcome(ctx, {
+      channel: source,
+      identifier: throttle.identifier,
+      outcome: "failure",
+    });
+
     return {
-      success: false as const,
+      kind: "error" as const,
       error: `Unsupported portal: ${hostname}`,
       code: "unsupported_url",
     };
@@ -118,7 +252,7 @@ export const processUrl = internalMutation({
     source: v.union(
       v.literal("sms"),
       v.literal("share_import"),
-      v.literal("manual")
+      v.literal("manual"),
     ),
   },
   returns: v.union(v.id("sourceListings"), v.null()),
@@ -136,9 +270,13 @@ export const processUrl = internalMutation({
 
     const hostname = url.hostname.toLowerCase();
     for (const portal of PORTAL_PATTERNS) {
-      if (!portal.domains.some((d) => hostname === d)) continue;
+      if (!portal.domains.some((domain) => hostname === domain)) {
+        continue;
+      }
       const match = url.pathname.match(portal.pattern);
-      if (!match) return null;
+      if (!match) {
+        return null;
+      }
 
       return await ctx.db.insert("sourceListings", {
         sourcePlatform: portal.platform,

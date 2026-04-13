@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { LinkPastedSource } from "@buyer-v2/shared/launch-events";
 import { Input } from "@/components/ui/input";
 import { track } from "@/lib/analytics";
@@ -9,6 +9,7 @@ interface PasteLinkInputProps {
   onSubmit?: (url: string) => void;
   placeholder?: string;
   variant?: Extract<LinkPastedSource, "hero" | "compact">;
+  initialValue?: string;
 }
 
 function isValidPropertyUrl(url: string): boolean {
@@ -24,8 +25,13 @@ export function PasteLinkInput({
   onSubmit,
   placeholder = "Paste a Zillow, Redfin, or Realtor.com link...",
   variant = "hero",
+  initialValue = "",
 }: PasteLinkInputProps) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialValue);
+
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
 
   const isHero = variant === "hero";
   const canSubmit = isValidPropertyUrl(value);

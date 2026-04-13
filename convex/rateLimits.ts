@@ -43,14 +43,14 @@ import { requireRole } from "./lib/session";
 import { rateLimitChannel } from "./lib/validators";
 import {
   CHANNEL_CONFIGS,
-  FAILURE_BLOCK_THRESHOLD,
-  checkRateLimit,
-  recordFailure,
-  recordSuccess,
-  type BucketSnapshot,
   type Channel,
   type RateLimitState,
 } from "./lib/rateLimiter";
+import {
+  checkAndPersistRateLimit,
+  makeThrottleKey,
+  recordRateLimitOutcome,
+} from "./lib/rateLimitBuckets";
 
 // ─── Validators shared across queries/mutations ─────────────────────────
 
@@ -75,15 +75,6 @@ const outcomeValidator = v.union(v.literal("success"), v.literal("failure"));
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
 /**
- * Canonical `<channel>:<identifier>` key. Built here rather than at
- * every call site so the encoding is consistent across all intake
- * surfaces.
- */
-function makeThrottleKey(channel: Channel, identifier: string): string {
-  return `${channel}:${identifier}`;
-}
-
-/**
  * Re-hydrate a `BucketSnapshot` from the persisted row. The Convex
  * document has extra bookkeeping fields (`createdAt`, `updatedAt`,
  * etc.) that the pure functions don't care about, so we strip them
@@ -93,7 +84,11 @@ function toSnapshot(doc: {
   requestTimestamps: string[];
   consecutiveFailures: number;
   blockedUntil?: string;
-}): BucketSnapshot {
+}): {
+  requestTimestamps: string[];
+  consecutiveFailures: number;
+  blockedUntil?: string;
+} {
   return {
     requestTimestamps: doc.requestTimestamps,
     consecutiveFailures: doc.consecutiveFailures,
@@ -118,131 +113,11 @@ export const checkAndRecord = mutation({
   },
   returns: rateLimitStateValidator,
   handler: async (ctx, args) => {
-    const now = new Date();
-    const nowIso = now.toISOString();
-    const throttleKey = makeThrottleKey(args.channel, args.identifier);
-
-    // --- 1. Upsert the bucket -------------------------------------------------
-    const existing = await ctx.db
-      .query("rateLimitBuckets")
-      .withIndex("by_throttleKey", (q) => q.eq("throttleKey", throttleKey))
-      .unique();
-
-    // Track whether the previous bucket HAD a block that has since
-    // expired, so we can emit a `block_lifted` event on the recovery
-    // transition. The predicate must be "had a blockedUntil AND it's
-    // now in the past" — if the block is still active, checkRateLimit
-    // returns allowed:false and we never hit the recovery branch.
-    const previouslyBlocked =
-      existing?.blockedUntil !== undefined &&
-      new Date(existing.blockedUntil).getTime() <= now.getTime();
-
-    const bucketBefore: BucketSnapshot = existing
-      ? toSnapshot(existing)
-      : {
-          requestTimestamps: [],
-          consecutiveFailures: 0,
-          blockedUntil: undefined,
-        };
-
-    // --- 2. Run the pure decision logic --------------------------------------
-    const { state, nextBucket } = checkRateLimit(
-      bucketBefore,
-      args.channel,
-      now
-    );
-
-    // --- 3. Persist the next bucket state ------------------------------------
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        requestTimestamps: nextBucket.requestTimestamps,
-        consecutiveFailures: nextBucket.consecutiveFailures,
-        blockedUntil: nextBucket.blockedUntil,
-        lastRequestAt: nowIso,
-        updatedAt: nowIso,
-      });
-    } else {
-      await ctx.db.insert("rateLimitBuckets", {
-        throttleKey,
-        channel: args.channel,
-        requestTimestamps: nextBucket.requestTimestamps,
-        consecutiveFailures: nextBucket.consecutiveFailures,
-        blockedUntil: nextBucket.blockedUntil,
-        lastRequestAt: nowIso,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      });
-    }
-
-    // --- 4. Emit abuse telemetry on denial or block transitions -------------
-    if (!state.allowed) {
-      if (state.reason === "window_exceeded") {
-        // Hitting the sliding window is a "rate_limit_exceeded" event
-        // AND a "block_applied" event, because the window hit stamps
-        // a new blockedUntil via the escalating backoff formula.
-        await ctx.db.insert("abuseEvents", {
-          throttleKey,
-          channel: args.channel,
-          eventType: "rate_limit_exceeded",
-          details: JSON.stringify({
-            maxRequests: CHANNEL_CONFIGS[args.channel].maxRequests,
-            windowMs: CHANNEL_CONFIGS[args.channel].windowMs,
-            consecutiveFailures: nextBucket.consecutiveFailures,
-          }),
-          timestamp: nowIso,
-        });
-        await ctx.db.insert("abuseEvents", {
-          throttleKey,
-          channel: args.channel,
-          eventType: "block_applied",
-          details: JSON.stringify({
-            blockedUntil: state.blockedUntil,
-            reason: state.reason,
-          }),
-          timestamp: nowIso,
-        });
-        await ctx.db.insert("auditLog", {
-          action: "rate_limit_block_applied",
-          entityType: "rateLimitBucket",
-          entityId: throttleKey,
-          details: JSON.stringify({
-            channel: args.channel,
-            reason: state.reason,
-            blockedUntil: state.blockedUntil,
-          }),
-          timestamp: nowIso,
-        });
-      } else {
-        // Still blocked from a previous hit — record that we're seeing
-        // continued probe traffic. Helps ops spot sustained abuse
-        // vs. a one-off burst.
-        await ctx.db.insert("abuseEvents", {
-          throttleKey,
-          channel: args.channel,
-          eventType: "rate_limit_exceeded",
-          details: JSON.stringify({
-            blockedUntil: state.blockedUntil,
-            reason: state.reason,
-          }),
-          timestamp: nowIso,
-        });
-      }
-    } else if (previouslyBlocked) {
-      // The bucket was previously blocked and is now eligible again —
-      // worth an explicit telemetry event so dashboards can show the
-      // recovery, not just the initial block.
-      await ctx.db.insert("abuseEvents", {
-        throttleKey,
-        channel: args.channel,
-        eventType: "block_lifted",
-        details: JSON.stringify({
-          previouslyBlockedUntil: existing?.blockedUntil,
-        }),
-        timestamp: nowIso,
-      });
-    }
-
-    return state;
+    const result = await checkAndPersistRateLimit(ctx, {
+      channel: args.channel,
+      identifier: args.identifier,
+    });
+    return result.state;
   },
 });
 
@@ -267,79 +142,11 @@ export const recordRequestOutcome = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const now = new Date();
-    const nowIso = now.toISOString();
-    const throttleKey = makeThrottleKey(args.channel, args.identifier);
-
-    const existing = await ctx.db
-      .query("rateLimitBuckets")
-      .withIndex("by_throttleKey", (q) => q.eq("throttleKey", throttleKey))
-      .unique();
-
-    // If the bucket doesn't exist, `checkAndRecord` was never called
-    // for this key — nothing to update. No-op instead of throwing so a
-    // missing outcome signal can never break the caller.
-    if (!existing) return null;
-
-    const before = toSnapshot(existing);
-
-    const nextSnapshot =
-      args.outcome === "success"
-        ? recordSuccess(before, now)
-        : recordFailure(before, args.channel, now);
-
-    await ctx.db.patch(existing._id, {
-      requestTimestamps: nextSnapshot.requestTimestamps,
-      consecutiveFailures: nextSnapshot.consecutiveFailures,
-      blockedUntil: nextSnapshot.blockedUntil,
-      lastRequestAt: nowIso,
-      updatedAt: nowIso,
+    await recordRateLimitOutcome(ctx, {
+      channel: args.channel,
+      identifier: args.identifier,
+      outcome: args.outcome,
     });
-
-    // --- Emit telemetry on threshold crossing ---
-    // We only emit the "repeated_failure" event the moment the counter
-    // crosses the threshold — subsequent failures while blocked are
-    // recorded as `rate_limit_exceeded` by `checkAndRecord` instead.
-    if (
-      args.outcome === "failure" &&
-      before.consecutiveFailures < FAILURE_BLOCK_THRESHOLD &&
-      nextSnapshot.consecutiveFailures >= FAILURE_BLOCK_THRESHOLD
-    ) {
-      await ctx.db.insert("abuseEvents", {
-        throttleKey,
-        channel: args.channel,
-        eventType: "repeated_failure",
-        details: JSON.stringify({
-          consecutiveFailures: nextSnapshot.consecutiveFailures,
-          blockedUntil: nextSnapshot.blockedUntil,
-        }),
-        timestamp: nowIso,
-      });
-      if (nextSnapshot.blockedUntil) {
-        await ctx.db.insert("abuseEvents", {
-          throttleKey,
-          channel: args.channel,
-          eventType: "block_applied",
-          details: JSON.stringify({
-            blockedUntil: nextSnapshot.blockedUntil,
-            reason: "repeated_failure",
-          }),
-          timestamp: nowIso,
-        });
-      }
-      await ctx.db.insert("auditLog", {
-        action: "repeated_failure_block_applied",
-        entityType: "rateLimitBucket",
-        entityId: throttleKey,
-        details: JSON.stringify({
-          channel: args.channel,
-          consecutiveFailures: nextSnapshot.consecutiveFailures,
-          blockedUntil: nextSnapshot.blockedUntil,
-        }),
-        timestamp: nowIso,
-      });
-    }
-
     return null;
   },
 });

@@ -78,6 +78,9 @@ export default async function IntakePage({ searchParams }: IntakePageProps) {
       : parsed.data.platform === "redfin"
         ? "Redfin"
         : "Realtor.com";
+  const continuationHref = source
+    ? `/?intake=${encodeURIComponent(parsed.data.normalizedUrl)}&source=${encodeURIComponent(source)}`
+    : `/?intake=${encodeURIComponent(parsed.data.normalizedUrl)}`;
 
   return (
     <main className="mx-auto max-w-xl px-6 py-16">
@@ -103,7 +106,7 @@ export default async function IntakePage({ searchParams }: IntakePageProps) {
         ) : null}
       </dl>
       <Link
-        href={`/?intake=${encodeURIComponent(parsed.data.normalizedUrl)}`}
+        href={continuationHref}
         className="mt-6 inline-block rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white"
       >
         Continue to buyer-v2

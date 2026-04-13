@@ -501,6 +501,7 @@ export const smsIntakeOutcome = v.union(
   v.literal("start_received"),   // START / UNSTOP — re-opted in
   v.literal("invalid_url"),      // message has text but no supported URL
   v.literal("unsupported_url"),  // URL is valid but not from a supported portal
+  v.literal("rate_limited"),     // abuse controls denied processing
   v.literal("suppressed"),       // user is in opted_out or suppressed state
   v.literal("duplicate"),        // messageSid already processed
   v.literal("empty_body")        // no body at all
