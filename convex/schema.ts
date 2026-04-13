@@ -2568,10 +2568,10 @@ export default defineSchema({
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_createdByUserId", ["createdByUserId"]),
 
-  // Audit events for the share-link lifecycle. One row per create /
-  // resolve / revoke / denied-access attempt. Kept separately from
-  // `auditLog` because the collaborator who resolves a link has no
-  // user row — the event identity is the link itself.
+  // Audit events for the share-link lifecycle keyed to a known link:
+  // create / resolve / revoke / denied access on an existing slug.
+  // Unknown-slug probes go to `auditLog` instead because there is no
+  // share-link row to reference.
   dealRoomShareLinkEvents: defineTable({
     linkId: v.id("dealRoomShareLinks"),
     dealRoomId: v.id("dealRooms"),
@@ -2581,7 +2581,6 @@ export default defineSchema({
       v.literal("revoked"),
       v.literal("denied_expired"),
       v.literal("denied_revoked"),
-      v.literal("denied_not_found"),
     ),
     actorUserId: v.optional(v.id("users")),
     timestamp: v.string(),
