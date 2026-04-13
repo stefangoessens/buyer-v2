@@ -209,14 +209,9 @@ function composePricingSection(
       reason: "Pricing engine has not produced output for this deal room.",
     };
   }
-  if (raw.reviewState === "pending") {
-    return {
-      status: "pending",
-      data: null,
-      reason: "Pricing analysis is under review.",
-      confidence: raw.confidence,
-    };
-  }
+  // Note: reviewState "pending" outputs fall through to the parse/render
+  // block below. Buyers see the engine's current output; broker review
+  // state is still tracked in the DB for the admin queue.
   if (raw.reviewState === "rejected") {
     return {
       status: "unavailable",
@@ -266,14 +261,7 @@ function composeLeverageSection(
       reason: "Leverage engine has not produced output for this deal room.",
     };
   }
-  if (raw.reviewState === "pending") {
-    return {
-      status: "pending",
-      data: null,
-      reason: "Leverage analysis is under review.",
-      confidence: raw.confidence,
-    };
-  }
+  // reviewState "pending" falls through to render — see composePricingSection.
   if (raw.reviewState === "rejected") {
     return {
       status: "unavailable",
@@ -330,14 +318,7 @@ function composeCostSection(
       reason: "Cost engine has not produced output for this deal room.",
     };
   }
-  if (raw.reviewState === "pending") {
-    return {
-      status: "pending",
-      data: null,
-      reason: "Cost analysis is under review.",
-      confidence: raw.confidence,
-    };
-  }
+  // reviewState "pending" falls through to render — see composePricingSection.
   if (raw.reviewState === "rejected") {
     return {
       status: "unavailable",
@@ -400,14 +381,7 @@ function composeOfferSection(
       reason: "Offer engine has not produced scenarios for this deal room.",
     };
   }
-  if (raw.reviewState === "pending") {
-    return {
-      status: "pending",
-      data: null,
-      reason: "Offer scenarios are under review.",
-      confidence: raw.confidence,
-    };
-  }
+  // reviewState "pending" falls through to render — see composePricingSection.
   if (raw.reviewState === "rejected") {
     return {
       status: "unavailable",
