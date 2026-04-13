@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as _diag from "../_diag.js";
 import type * as addressIntake from "../addressIntake.js";
 import type * as adminShell from "../adminShell.js";
 import type * as agentCoverage from "../agentCoverage.js";
@@ -32,7 +33,10 @@ import type * as dealRoomShareLinks from "../dealRoomShareLinks.js";
 import type * as dealRooms from "../dealRooms.js";
 import type * as deviceTokens from "../deviceTokens.js";
 import type * as documentSummaries from "../documentSummaries.js";
+import type * as engines_compSeeder from "../engines/compSeeder.js";
+import type * as engines_compSeederMutations from "../engines/compSeederMutations.js";
 import type * as engines_comps from "../engines/comps.js";
+import type * as engines_compsQueries from "../engines/compsQueries.js";
 import type * as engines_cost from "../engines/cost.js";
 import type * as engines_insights from "../engines/insights.js";
 import type * as engines_insightsMutations from "../engines/insightsMutations.js";
@@ -124,6 +128,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  _diag: typeof _diag;
   addressIntake: typeof addressIntake;
   adminShell: typeof adminShell;
   agentCoverage: typeof agentCoverage;
@@ -148,7 +153,10 @@ declare const fullApi: ApiFromModules<{
   dealRooms: typeof dealRooms;
   deviceTokens: typeof deviceTokens;
   documentSummaries: typeof documentSummaries;
+  "engines/compSeeder": typeof engines_compSeeder;
+  "engines/compSeederMutations": typeof engines_compSeederMutations;
   "engines/comps": typeof engines_comps;
+  "engines/compsQueries": typeof engines_compsQueries;
   "engines/cost": typeof engines_cost;
   "engines/insights": typeof engines_insights;
   "engines/insightsMutations": typeof engines_insightsMutations;

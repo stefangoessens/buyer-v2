@@ -21,6 +21,9 @@ from .contracts import (
     Portal,
     PortalMetricsResponse,
     PropertyPhotoResponse,
+    SeedCompsRequest,
+    SeedCompsResponse,
+    SoldCompResponse,
 )
 
 _SERVICE_VERSION = "0.0.1"
@@ -82,6 +85,10 @@ def _worker_imports() -> SimpleNamespace:
     from parsers.redfin import RedfinExtractor  # type: ignore[import-not-found]
     from parsers.realtor import RealtorExtractor  # type: ignore[import-not-found]
     from parsers.zillow import ZillowExtractor  # type: ignore[import-not-found]
+    from parsers.zillow_search import (  # type: ignore[import-not-found]
+        parse_zillow_search_results,
+        search_url_for_zip,
+    )
 
     return SimpleNamespace(
         AntiBotFetchError=AntiBotFetchError,
@@ -102,6 +109,8 @@ def _worker_imports() -> SimpleNamespace:
         VendorFetchError=VendorFetchError,
         ZillowExtractor=ZillowExtractor,
         detect_portal=detect_portal,
+        parse_zillow_search_results=parse_zillow_search_results,
+        search_url_for_zip=search_url_for_zip,
     )
 
 
@@ -214,6 +223,65 @@ class DefaultExtractionRuntime:
                 average_latency_ms=average_latency_ms,
             ),
             per_portal=per_portal,
+        )
+
+    async def seed_comps(
+        self, request: SeedCompsRequest
+    ) -> SeedCompsResponse:
+        search_url = self._imports.search_url_for_zip(
+            request.zip_code,
+            beds_min=request.beds_min,
+            status=request.status,
+        )
+        fetch_request = self._imports.FetchRequest(
+            url=search_url,
+            portal="zillow",
+            timeout_s=45.0,
+            retries=2,
+        )
+        try:
+            fetch_result = await self._orchestrator.fetch(fetch_request)
+        except Exception as exc:
+            raise self._map_exception(exc) from exc
+
+        sold_comps = self._imports.parse_zillow_search_results(
+            fetch_result.html, fetch_result.url
+        )
+        limited = sold_comps[: max(1, request.limit)]
+        comps = [
+            SoldCompResponse(
+                zpid=c.zpid,
+                source_url=c.source_url,
+                address_line1=c.address_line1,
+                city=c.city,
+                state=c.state,
+                postal_code=c.postal_code,
+                latitude=c.latitude,
+                longitude=c.longitude,
+                sold_price_usd=c.sold_price_usd,
+                sold_date=c.sold_date,
+                beds=c.beds,
+                baths=c.baths,
+                living_area_sqft=c.living_area_sqft,
+                property_type=c.property_type,
+                days_on_market=c.days_on_market,
+                zestimate_usd=c.zestimate_usd,
+            )
+            for c in limited
+        ]
+
+        return SeedCompsResponse(
+            zip_code=request.zip_code,
+            comps=comps,
+            fetch=FetchMetadataResponse(
+                request_id=fetch_result.request_id,
+                vendor=fetch_result.vendor,
+                status_code=fetch_result.status_code,
+                fetched_at=fetch_result.fetched_at.isoformat(),
+                latency_ms=fetch_result.latency_ms,
+                cost_usd=fetch_result.cost_usd,
+                attempts=fetch_result.attempts,
+            ),
         )
 
     async def aclose(self) -> None:

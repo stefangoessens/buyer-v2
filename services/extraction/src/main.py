@@ -14,6 +14,8 @@ from .contracts import (
     ExtractListingRequest,
     ExtractListingResponse,
     FetchObservabilityResponse,
+    SeedCompsRequest,
+    SeedCompsResponse,
 )
 from .observability import (
     HealthState,
@@ -164,6 +166,32 @@ async def extract_listing(
     runtime: ExtractionRuntime = Depends(get_runtime),
 ) -> ExtractListingResponse:
     return await runtime.extract(request)
+
+
+@app.post(
+    "/seed-comps",
+    response_model=SeedCompsResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        429: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
+    },
+)
+async def seed_comps(
+    request: SeedCompsRequest,
+    runtime: ExtractionRuntime = Depends(get_runtime),
+) -> SeedCompsResponse:
+    """Scrape Zillow sold-listings search for a zip + bed filter.
+
+    Returns up to `limit` comparable sold listings for the requested
+    zip code. Used by the engine orchestrator Phase 0 to populate the
+    Convex comp pool before pricing/comps/leverage engines run.
+    """
+    return await runtime.seed_comps(request)
 
 
 if __name__ == "__main__":
