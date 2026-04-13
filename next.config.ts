@@ -9,6 +9,16 @@ const workspaceRoot = dirname(fileURLToPath(import.meta.url));
 const nextConfig: NextConfig = {
   outputFileTracingRoot: workspaceRoot,
   transpilePackages: ["@buyer-v2/shared"],
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "photos.zillowstatic.com" },
+      { protocol: "https", hostname: "**.zillowstatic.com" },
+      { protocol: "https", hostname: "ssl.cdn-redfin.com" },
+      { protocol: "https", hostname: "**.cdn-redfin.com" },
+      { protocol: "https", hostname: "ap.rdcpix.com" },
+      { protocol: "https", hostname: "**.rdcpix.com" },
+    ],
+  },
 };
 
 const serverEnv = readEnv(webServerEnvSpec, process.env);
