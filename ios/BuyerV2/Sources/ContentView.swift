@@ -38,7 +38,7 @@ struct ContentView: View {
                 // Warm from disk cache immediately — the deal tracker
                 // shell can render stale-but-usable data while the live
                 // fetches kick off in parallel.
-                await cacheCoordinator.warmFromCache(userId: user.id)
+                await cacheCoordinator.warmFromCache(userId: user.userId)
             }
     }
 }

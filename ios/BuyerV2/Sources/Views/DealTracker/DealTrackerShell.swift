@@ -42,7 +42,7 @@ struct DealTrackerShell: View {
             PreferencesView()
         }
         .task {
-            await dealService.loadDeals(for: user.id)
+            await dealService.loadDeals(for: user.userId)
         }
         // Drive the tasks/timeline services whenever the deal state changes —
         // loading tasks/events when we resolve to an active deal, flipping
@@ -70,7 +70,7 @@ struct DealTrackerShell: View {
             Task {
                 switch newState {
                 case .signedOut, .expired, .authUnavailable:
-                    await cacheCoordinator.clearForSignOut(userId: user.id)
+                    await cacheCoordinator.clearForSignOut(userId: user.userId)
                 case .signedIn, .restoring:
                     break
                 }
@@ -116,7 +116,7 @@ struct DealTrackerShell: View {
         }
 
         await cacheCoordinator.applyLiveSnapshot(
-            userId: user.id,
+            userId: user.userId,
             deal: dealSnapshot,
             tasks: tasksSnapshot,
             events: eventsSnapshot

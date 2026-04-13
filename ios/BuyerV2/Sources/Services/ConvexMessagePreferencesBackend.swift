@@ -4,8 +4,8 @@ import Foundation
 /// state defined in `convex/messagePreferences.ts`. Kept deliberately
 /// thin so the `MessagePreferencesService` can stay transport-agnostic.
 ///
-/// The token provider is async because production wiring reads from
-/// the keychain (an actor) via `AuthService.loadAccessToken`. Tests can
+/// The token provider is async because production wiring reads from the
+/// live `AuthService` session boundary before every request. Tests can
 /// still pass a trivial closure like `{ "stub" }` — Swift auto-converts
 /// sync returns into the async signature.
 final class ConvexMessagePreferencesBackend: MessagePreferencesBackend, @unchecked Sendable {
