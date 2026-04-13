@@ -1,19 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { PasteLinkInput } from "@/components/marketing/PasteLinkInput";
 
 export function HeroInput() {
-  const router = useRouter();
   const submitUrl = useMutation(api.intake.submitUrl);
   const [sourceListingId, setSourceListingId] =
     useState<Id<"sourceListings"> | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const hasNavigatedRef = useRef(false);
 
   const status = useQuery(
     api.intake.getIntakeStatus,
@@ -22,8 +21,13 @@ export function HeroInput() {
 
   useEffect(() => {
     if (!status) return;
-    if (status.status === "complete" && status.propertyId) {
-      router.push(`/property/${status.propertyId}`);
+    if (
+      status.status === "complete" &&
+      status.propertyId &&
+      !hasNavigatedRef.current
+    ) {
+      hasNavigatedRef.current = true;
+      window.location.assign(`/property/${status.propertyId}`);
       return;
     }
     if (status.status === "failed") {
@@ -33,7 +37,7 @@ export function HeroInput() {
       );
       setSourceListingId(null);
     }
-  }, [status, router]);
+  }, [status]);
 
   const handleSubmit = useCallback(
     async (url: string) => {
