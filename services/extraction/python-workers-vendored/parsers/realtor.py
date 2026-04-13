@@ -140,9 +140,23 @@ class RealtorExtractor:
 
     @staticmethod
     def _apply(target: dict[str, Any], patch: dict[str, Any]) -> None:
-        """Fill missing keys in ``target`` from ``patch`` (earlier wins)."""
+        """Fill missing keys in ``target`` from ``patch`` (earlier wins).
+
+        Exception: ``photos`` prefers the LONGER gallery across strategies.
+        JSON-LD on modern Realtor pages only exposes a single hero image,
+        while __NEXT_DATA__ carries the full 40+ photo array — setdefault
+        would otherwise lock in the hero-only result and strand the rich
+        gallery from later strategies.
+        """
         for key, value in patch.items():
             if value is None:
+                continue
+            if key == "photos" and isinstance(value, (tuple, list)):
+                existing = target.get("photos")
+                if not isinstance(existing, (tuple, list)) or len(value) > len(
+                    existing
+                ):
+                    target["photos"] = value
                 continue
             target.setdefault(key, value)
 

@@ -134,6 +134,13 @@ class RedfinExtractor:
         for key, value in patch.items():
             if value is None:
                 continue
+            if key == "photos" and isinstance(value, (tuple, list)):
+                existing = target.get("photos")
+                if not isinstance(existing, (tuple, list)) or len(value) > len(
+                    existing
+                ):
+                    target["photos"] = value
+                continue
             target.setdefault(key, value)
 
     # ------------------------------------------------------------------
@@ -252,21 +259,33 @@ class RedfinExtractor:
         )
         # Prefer the residence-level image array when it has more entries
         # than the outer hero image, since that's where the real photo
-        # gallery lives on modern Redfin pages.
-        images = residence.get("image")
-        outer_images = node.get("image")
-        if not isinstance(images, (list, str)) or (
-            isinstance(images, list)
-            and isinstance(outer_images, list)
-            and len(outer_images) > len(images)
-        ):
-            images = outer_images
-        if isinstance(images, list):
-            out["photos"] = tuple(
-                PropertyPhoto(url=str(img)) for img in images if isinstance(img, str)
-            )
-        elif isinstance(images, str):
-            out["photos"] = (PropertyPhoto(url=images),)
+        # gallery lives on modern Redfin pages. Images can be either bare
+        # URL strings OR schema.org ImageObject dicts with a ``url`` key.
+        def _normalize_images(raw: Any) -> list[str]:
+            if isinstance(raw, str):
+                return [raw]
+            if isinstance(raw, dict):
+                href = raw.get("url") or raw.get("contentUrl")
+                return [str(href)] if isinstance(href, str) and href else []
+            if isinstance(raw, list):
+                urls: list[str] = []
+                for entry in raw:
+                    if isinstance(entry, str):
+                        urls.append(entry)
+                    elif isinstance(entry, dict):
+                        href = entry.get("url") or entry.get("contentUrl")
+                        if isinstance(href, str) and href:
+                            urls.append(href)
+                return urls
+            return []
+
+        residence_photos = _normalize_images(residence.get("image"))
+        outer_photos = _normalize_images(node.get("image"))
+        photos_raw = (
+            residence_photos if len(residence_photos) >= len(outer_photos) else outer_photos
+        )
+        if photos_raw:
+            out["photos"] = tuple(PropertyPhoto(url=u) for u in photos_raw)
         return out
 
     # ------------------------------------------------------------------
