@@ -7,6 +7,11 @@ export const userRole = v.union(
   v.literal("admin")
 );
 
+export const authProvider = v.union(
+  v.literal("clerk"),
+  v.literal("auth0")
+);
+
 // Deal lifecycle
 export const dealStatus = v.union(
   v.literal("intake"),

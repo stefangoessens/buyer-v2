@@ -1,6 +1,7 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { determineReviewState, ENGINE_TYPES } from "./lib/engineResult";
+import { getCurrentUser, requireRole } from "./lib/session";
 
 // ═══ Queries ═══
 
@@ -55,13 +56,7 @@ export const listPendingReview = query({
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) => q.eq("authSubject", identity.subject))
-      .unique();
+    const user = await getCurrentUser(ctx);
     if (!user || (user.role !== "broker" && user.role !== "admin")) return [];
 
     return await ctx.db
@@ -109,19 +104,7 @@ export const approveOutput = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Authentication required");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) =>
-        q.eq("authSubject", identity.subject),
-      )
-      .unique();
-    if (!user) throw new Error("User not found");
-    if (user.role !== "broker" && user.role !== "admin") {
-      throw new Error("Only brokers and admins can approve outputs");
-    }
+    const user = await requireRole(ctx, "broker");
 
     await ctx.db.patch(args.outputId, {
       reviewState: "approved" as const,
@@ -149,19 +132,7 @@ export const rejectOutput = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Authentication required");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) =>
-        q.eq("authSubject", identity.subject),
-      )
-      .unique();
-    if (!user) throw new Error("User not found");
-    if (user.role !== "broker" && user.role !== "admin") {
-      throw new Error("Only brokers and admins can reject outputs");
-    }
+    const user = await requireRole(ctx, "broker");
 
     await ctx.db.patch(args.outputId, {
       reviewState: "rejected" as const,

@@ -7,6 +7,7 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./auth": "./src/auth.ts",
     "./config": "./src/config.ts",
     "./contracts": "./src/contracts.ts",
     "./utils": "./src/utils.ts"

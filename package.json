@@ -12,6 +12,7 @@
     "dev": "next dev --turbopack",
     "dev:web": "next dev --turbopack",
     "dev:backend": "pnpm --dir convex dev",
+    "codegen:backend": "pnpm --dir convex codegen",
     "build": "next build",
     "build:web": "next build",
     "build:backend": "pnpm --dir convex typecheck",

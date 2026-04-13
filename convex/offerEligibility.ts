@@ -1,6 +1,6 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireAuth } from "./lib/session";
+import { getSessionContext, requireAuth } from "./lib/session";
 import {
   eligibilityAgreementType,
   eligibilityBlockingReason,
@@ -285,8 +285,8 @@ export const checkEligibility = query({
     blockingReasonCode: v.optional(eligibilityBlockingReason),
   }),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
+    const session = await getSessionContext(ctx);
+    if (session.kind === "anonymous") {
       return {
         eligible: false,
         currentAgreementType: "none" as const,
@@ -296,13 +296,7 @@ export const checkEligibility = query({
       };
     }
 
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) =>
-        q.eq("authSubject", identity.subject)
-      )
-      .unique();
-    if (!user) {
+    if (session.kind === "unknown_user") {
       return {
         eligible: false,
         currentAgreementType: "none" as const,
@@ -311,6 +305,7 @@ export const checkEligibility = query({
         blockingReasonCode: "buyer_not_found" as const,
       };
     }
+    const user = session.user;
 
     // Run the shared compute across ALL of this buyer's agreements, not
     // scoped to a particular deal room. We synthesize a sentinel dealRoomId

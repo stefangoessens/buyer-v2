@@ -1,90 +1,51 @@
-# Welcome to your Convex functions directory!
+# buyer-v2 Convex Backend
 
-Write your Convex functions here.
-See https://docs.convex.dev/functions for more.
+This directory owns the Convex data plane for buyer-v2: schema, generated
+types, queries, mutations, actions, auth/session helpers, and file-access
+guards.
 
-A query function that takes two arguments looks like:
+## Structure
 
-```ts
-// convex/myFunctions.ts
-import { query } from "./_generated/server";
-import { v } from "convex/values";
+- `schema.ts`: canonical table definitions and indexes.
+- `auth.config.ts`: third-party JWT/OIDC providers accepted by Convex.
+- `_generated/`: checked-in Convex codegen output used by the web and backend.
+- `lib/`: backend-only helpers shared across queries/mutations/actions.
+- `engines/`: internal AI actions.
+- `security/`: file access, deletion/export, and other privileged paths.
+- top-level `*.ts`: domain modules exported through the Convex file router.
 
-export const myQueryFunction = query({
-  // Validators for arguments.
-  args: {
-    first: v.number(),
-    second: v.string(),
-  },
+## Naming conventions
 
-  // Function implementation.
-  handler: async (ctx, args) => {
-    // Read the database as many times as you need here.
-    // See https://docs.convex.dev/database/reading-data.
-    const documents = await ctx.db.query("tablename").collect();
+- Public API modules use `query`, `mutation`, and `action`.
+- Internal-only modules use `internalQuery`, `internalMutation`, and `internalAction`.
+- Shared enums/state machines live in `lib/validators.ts`.
+- Session lookups and role/permission helpers live in `lib/session.ts`.
+- File access goes through `security/fileAccess.ts` and references `_storage` IDs.
 
-    // Arguments passed from the client are properties of the args object.
-    console.log(args.first, args.second);
+## Generated types
 
-    // Write arbitrary JavaScript here: filter, aggregate, build derived data,
-    // remove non-public properties, or create new objects.
-    return documents;
-  },
-});
+Run codegen after any schema or function signature change:
+
+```bash
+pnpm codegen:backend
 ```
 
-Using this query function in a React component looks like:
+This refreshes the checked-in files under `convex/_generated/`.
 
-```ts
-const data = useQuery(api.myFunctions.myQueryFunction, {
-  first: 10,
-  second: "hello",
-});
-```
+## Auth/session baseline
 
-A mutation function looks like:
+- Primary OIDC provider: Clerk.
+- Fallback OIDC provider: Auth0.
+- Convex joins authenticated identities onto `users` through
+  `authTokenIdentifier` first, then falls back to issuer/subject for legacy rows.
+- Business authorization still comes from `users.role`, never from the client.
 
-```ts
-// convex/myFunctions.ts
-import { mutation } from "./_generated/server";
-import { v } from "convex/values";
+## Runtime coverage
 
-export const myMutationFunction = mutation({
-  // Validators for arguments.
-  args: {
-    first: v.string(),
-    second: v.string(),
-  },
+This backend is scaffolded for:
 
-  // Function implementation.
-  handler: async (ctx, args) => {
-    // Insert or modify documents in the database here.
-    // Mutations can also read from the database like queries.
-    // See https://docs.convex.dev/database/writing-data.
-    const message = { body: args.first, author: args.second };
-    const id = await ctx.db.insert("messages", message);
-
-    // Optionally, return a value from your mutation.
-    return await ctx.db.get("messages", id);
-  },
-});
-```
-
-Using this mutation function in a React component looks like:
-
-```ts
-const mutation = useMutation(api.myFunctions.myMutationFunction);
-function handleButtonPress() {
-  // fire and forget, the most common way to use mutations
-  mutation({ first: "Hello!", second: "me" });
-  // OR
-  // use the result once the mutation has completed
-  mutation({ first: "Hello!", second: "me" }).then((result) =>
-    console.log(result),
-  );
-}
-```
-
-Use the Convex CLI to push your functions to a deployment. See everything
-the Convex CLI can do by running `npx convex -h` in your project root
-directory. To learn more, launch the docs with `npx convex docs`.
+- queries and subscriptions
+- mutations
+- Node/V8 actions
+- file storage references via `_storage`
+- provider-backed auth without changing the data model

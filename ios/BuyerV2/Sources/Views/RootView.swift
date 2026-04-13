@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(AuthService.self) private var authService
 
     @State private var showExpiredAlert = false
+    @State private var showAuthUnavailableAlert = false
 
     var body: some View {
         Group {
@@ -19,6 +20,9 @@ struct RootView: View {
                 // Show sign-in with alert overlay
                 SignInView()
                     .onAppear { showExpiredAlert = true }
+            case .authUnavailable:
+                SignInView()
+                    .onAppear { showAuthUnavailableAlert = true }
             }
         }
         .animation(.easeInOut(duration: 0.3), value: authService.state)
@@ -28,6 +32,11 @@ struct RootView: View {
             }
         } message: {
             Text("Your session has expired. Please sign in again.")
+        }
+        .alert("Authentication Unavailable", isPresented: $showAuthUnavailableAlert) {
+            Button("Dismiss", role: .cancel) {}
+        } message: {
+            Text("Authentication is temporarily unavailable. Please try again in a moment.")
         }
     }
 
@@ -49,4 +58,3 @@ struct RootView: View {
     }
 
 }
-

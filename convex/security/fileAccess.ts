@@ -1,5 +1,6 @@
 import { query, internalQuery } from "../_generated/server";
 import { v } from "convex/values";
+import { getSessionContext } from "../lib/session";
 
 /**
  * Check if a user can access a file associated with a deal room.
@@ -52,14 +53,9 @@ export const getSecureFileUrl = query({
   },
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) => q.eq("authSubject", identity.subject))
-      .unique();
-    if (!user) return null;
+    const session = await getSessionContext(ctx);
+    if (session.kind !== "authenticated") return null;
+    const user = session.user;
 
     // Check deal room access
     const dealRoom = await ctx.db.get(args.dealRoomId);
