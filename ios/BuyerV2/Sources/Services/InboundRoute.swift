@@ -65,6 +65,11 @@ enum RouteResolutionResult: Sendable, Equatable {
     /// UI can prefer a "session expired" message over a fresh sign-in.
     case sessionExpired(pendingRoute: InboundRoute)
 
+    /// Payload parsed successfully but the auth backend is unavailable.
+    /// Callers should preserve the route and retry once auth recovers
+    /// instead of misclassifying the destination as invalid.
+    case authUnavailable(pendingRoute: InboundRoute)
+
     /// The payload could not be parsed into a known route. The caller
     /// should fall back to the app's default entry (home).
     case invalidTarget(reason: InvalidTargetReason)

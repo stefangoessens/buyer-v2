@@ -437,6 +437,39 @@ struct InboundRouteResolverTests {
         #expect(pending == .task(dealRoomId: "dr_1", taskId: "tk_2"))
     }
 
+    @Test("resolve → .authUnavailable(pending) when auth backend is unavailable")
+    func testResolveAuthUnavailable() async throws {
+        let provider = StubAuthProvider()
+        provider.authenticateResult = .success(
+            AuthTokens(
+                accessToken: "a",
+                refreshToken: "r",
+                expiresAt: Date(timeIntervalSinceNow: 3600)
+            )
+        )
+        provider.validateResult = .success(makeUser())
+        let authService = AuthService(provider: provider)
+        try await authService.signIn(email: "buyer@example.com", password: "pw")
+
+        provider.validateResult = .failure(AuthError.invalidResponse)
+        await authService.initialize()
+        guard case .authUnavailable = authService.state else {
+            Issue.record("Pre-condition failed: expected .authUnavailable")
+            return
+        }
+
+        let resolver = InboundRouteResolver(authService: authService)
+        let result = resolver.resolve(
+            InboundRoutePayload(url: "buyerv2://property/prop_1")
+        )
+
+        guard case .authUnavailable(let pending) = result else {
+            Issue.record("Expected .authUnavailable, got \(result)")
+            return
+        }
+        #expect(pending == .property(propertyId: "prop_1"))
+    }
+
     @Test("resolve → .invalidTarget when payload can't be parsed (bypasses auth)")
     func testResolveInvalidTargetBypassesAuth() async throws {
         // Even when signed-in, an unparseable payload must surface as

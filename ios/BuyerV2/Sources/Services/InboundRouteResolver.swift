@@ -41,7 +41,7 @@ final class InboundRouteResolver {
     ///   2. If parse fails → `.invalidTarget`.
     ///   3. If auth state is `.signedIn` → `.resolved(route)`.
     ///   4. If auth state is `.expired` → `.sessionExpired(route)`.
-    ///   5. If auth state is `.authUnavailable` → `.invalidTarget`.
+    ///   5. If auth state is `.authUnavailable` → `.authUnavailable(route)`.
     ///   6. Otherwise (`.signedOut`, `.restoring`) → `.signInRequired(route)`.
     ///
     /// The restoring state deliberately maps to `.signInRequired` rather
@@ -60,7 +60,7 @@ final class InboundRouteResolver {
             case .expired:
                 return .sessionExpired(pendingRoute: route)
             case .authUnavailable:
-                return .invalidTarget(reason: .unsupportedScheme)
+                return .authUnavailable(pendingRoute: route)
             case .signedOut, .restoring:
                 return .signInRequired(pendingRoute: route)
             }
