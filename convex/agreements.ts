@@ -1,4 +1,5 @@
 import { query, mutation, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
 import { supersessionReason } from "./lib/validators";
@@ -90,6 +91,12 @@ export const createDraft = mutation({
       timestamp: new Date().toISOString(),
     });
 
+    await ctx.runMutation(internal.offerEligibility.recalculateEligibilityInternal, {
+      buyerId: args.buyerId,
+      dealRoomId: args.dealRoomId,
+      actorUserId: user._id,
+    });
+
     return id;
   },
 });
@@ -116,6 +123,12 @@ export const sendForSigning = mutation({
       entityType: "agreements",
       entityId: args.agreementId,
       timestamp: new Date().toISOString(),
+    });
+
+    await ctx.runMutation(internal.offerEligibility.recalculateEligibilityInternal, {
+      buyerId: agreement.buyerId,
+      dealRoomId: agreement.dealRoomId,
+      actorUserId: user._id,
     });
 
     return null;
@@ -153,6 +166,12 @@ export const recordSignature = mutation({
       timestamp: new Date().toISOString(),
     });
 
+    await ctx.runMutation(internal.offerEligibility.recalculateEligibilityInternal, {
+      buyerId: agreement.buyerId,
+      dealRoomId: agreement.dealRoomId,
+      actorUserId: user._id,
+    });
+
     return null;
   },
 });
@@ -186,6 +205,12 @@ export const cancelAgreement = mutation({
       entityId: args.agreementId,
       details: args.reason ? JSON.stringify({ reason: args.reason }) : undefined,
       timestamp: new Date().toISOString(),
+    });
+
+    await ctx.runMutation(internal.offerEligibility.recalculateEligibilityInternal, {
+      buyerId: agreement.buyerId,
+      dealRoomId: agreement.dealRoomId,
+      actorUserId: user._id,
     });
 
     return null;
@@ -244,6 +269,12 @@ export const replaceAgreement = mutation({
         reason,
       }),
       timestamp: new Date().toISOString(),
+    });
+
+    await ctx.runMutation(internal.offerEligibility.recalculateEligibilityInternal, {
+      buyerId: current.buyerId,
+      dealRoomId: current.dealRoomId,
+      actorUserId: user._id,
     });
 
     return newId;
