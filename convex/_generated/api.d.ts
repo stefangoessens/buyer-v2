@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as _seedDealRoom from "../_seedDealRoom.js";
 import type * as addressIntake from "../addressIntake.js";
 import type * as adminShell from "../adminShell.js";
 import type * as agentCoverage from "../agentCoverage.js";
@@ -119,6 +120,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  _seedDealRoom: typeof _seedDealRoom;
   addressIntake: typeof addressIntake;
   adminShell: typeof adminShell;
   agentCoverage: typeof agentCoverage;

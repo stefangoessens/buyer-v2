@@ -2,6 +2,7 @@ import { type QueryCtx, type MutationCtx } from "../_generated/server";
 import { type Doc } from "../_generated/dataModel";
 import { type UserIdentity } from "convex/server";
 import { v } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { authProvider } from "./validators";
 
 type SessionCtx = QueryCtx | MutationCtx;
@@ -112,8 +113,31 @@ async function lookupUserByIdentity(
  * Resolve the caller into an explicit auth state. This keeps anonymous,
  * unknown-user, and authenticated callers distinct so queries can return
  * deterministic edge states without open-coding identity joins.
+ *
+ * Dual-path lookup: Convex Auth (native, KIN-998) takes priority via
+ * `getAuthUserId`, which resolves directly to a users row. If that
+ * doesn't produce a user (legacy Clerk/Auth0 JWTs on old sessions),
+ * fall back to the identity-based index lookups.
  */
 export async function getSessionContext(ctx: SessionCtx): Promise<SessionContext> {
+  const authUserId = await getAuthUserId(ctx);
+  if (authUserId) {
+    const user = await ctx.db.get(authUserId);
+    if (user) {
+      const identity = (await ctx.auth.getUserIdentity()) ?? {
+        subject: authUserId,
+        issuer: "convex-auth",
+        tokenIdentifier: `convex-auth|${authUserId}`,
+      } as UserIdentity;
+      return {
+        kind: "authenticated",
+        identity,
+        user,
+        permissions: buildSessionPermissions(user.role),
+      };
+    }
+  }
+
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {
     return {
