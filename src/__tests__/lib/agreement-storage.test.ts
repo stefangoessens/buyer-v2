@@ -19,6 +19,10 @@ import {
 } from "../../../convex/lib/agreements"
 
 const NOW = "2026-04-12T12:00:00.000Z"
+const EFFECTIVE_START = "2026-04-15T00:00:00.000Z"
+const EFFECTIVE_END = "2027-04-15T00:00:00.000Z"
+const SIGNED_EFFECTIVE_START = "2026-04-14T00:00:00.000Z"
+const SIGNED_EFFECTIVE_END = "2027-04-14T00:00:00.000Z"
 
 function actor(
   overrides: Partial<AgreementActor> = {},
@@ -99,6 +103,68 @@ describe("agreement storage helpers", () => {
     ).toThrow("Can only cancel signed agreements")
   })
 
+  it("rejects mismatched signed storage ids", () => {
+    expect(() =>
+      buildAgreementSignedPatch(
+        agreement({
+          status: "sent",
+          documentStorageId: "storage_canonical",
+        }),
+        actor(),
+        {
+          documentStorageId: "storage_canonical",
+          signedArtifact: {
+            storageId: "storage_signed",
+            fileName: "buyer-agreement.pdf",
+          },
+        },
+        NOW,
+      ),
+    ).toThrow(/storage references must match/i)
+  })
+
+  it("rejects malformed or inverted effective date ranges", () => {
+    expect(() =>
+      buildAgreementDraft(
+        actor(),
+        {
+          dealRoomId: "deal_1",
+          buyerId: "buyer_1",
+          type: "full_representation",
+          effectiveStartAt: "not-an-iso-date",
+          effectiveEndAt: EFFECTIVE_END,
+        },
+        NOW,
+      ),
+    ).toThrow(/effective.*ISO|ISO.*effective|date range/i)
+
+    expect(() =>
+      buildAgreementSignedPatch(
+        agreement({
+          status: "sent",
+          documentStorageId: "storage_signed",
+          signedArtifact: {
+            storageId: "storage_signed",
+            uploadedAt: NOW,
+          },
+          effectiveStartAt: SIGNED_EFFECTIVE_START,
+          effectiveEndAt: SIGNED_EFFECTIVE_END,
+        }),
+        actor(),
+        {
+          documentStorageId: "storage_signed",
+          signedArtifact: {
+            storageId: "storage_signed",
+            fileName: "buyer-agreement.pdf",
+          },
+          effectiveStartAt: "2026-04-17T00:00:00.000Z",
+          effectiveEndAt: "2026-04-16T00:00:00.000Z",
+        },
+        NOW,
+      ),
+    ).toThrow(/effective date range is inverted|cannot be before effectiveStartAt|inverted/i)
+  })
+
   it("builds typed draft state and create audit metadata", () => {
     const broker = actor()
     const draft = buildAgreementDraft(
@@ -108,8 +174,8 @@ describe("agreement storage helpers", () => {
         buyerId: "buyer_1",
         type: "full_representation",
         documentStorageId: "storage_draft",
-        effectiveStartAt: "2026-04-15",
-        effectiveEndAt: "2027-04-15",
+        effectiveStartAt: EFFECTIVE_START,
+        effectiveEndAt: EFFECTIVE_END,
       },
       NOW,
     )
@@ -120,8 +186,8 @@ describe("agreement storage helpers", () => {
       type: "full_representation",
       status: "draft",
       documentStorageId: "storage_draft",
-      effectiveStartAt: "2026-04-15",
-      effectiveEndAt: "2027-04-15",
+      effectiveStartAt: EFFECTIVE_START,
+      effectiveEndAt: EFFECTIVE_END,
       createdAt: NOW,
       updatedAt: NOW,
       createdByUserId: "user_broker",
@@ -136,8 +202,8 @@ describe("agreement storage helpers", () => {
         buyerId: "buyer_1",
         type: "full_representation",
         documentStorageId: "storage_draft",
-        effectiveStartAt: "2026-04-15",
-        effectiveEndAt: "2027-04-15",
+        effectiveStartAt: EFFECTIVE_START,
+        effectiveEndAt: EFFECTIVE_END,
       },
       NOW,
     )
@@ -160,7 +226,7 @@ describe("agreement storage helpers", () => {
     const sentAgreement = agreement({
       status: "sent",
       type: "full_representation",
-      effectiveStartAt: "2026-04-14",
+      effectiveStartAt: SIGNED_EFFECTIVE_START,
     })
 
     const patch = buildAgreementSignedPatch(
@@ -173,7 +239,7 @@ describe("agreement storage helpers", () => {
           contentType: "application/pdf",
           checksumSha256: "abc123",
         },
-        effectiveEndAt: "2027-04-14",
+        effectiveEndAt: SIGNED_EFFECTIVE_END,
       },
       NOW,
     )
@@ -182,8 +248,8 @@ describe("agreement storage helpers", () => {
       status: "signed",
       documentStorageId: "storage_signed",
       signedAt: NOW,
-      effectiveStartAt: "2026-04-14",
-      effectiveEndAt: "2027-04-14",
+      effectiveStartAt: SIGNED_EFFECTIVE_START,
+      effectiveEndAt: SIGNED_EFFECTIVE_END,
     })
     expect(patch.signedArtifact).toMatchObject({
       storageId: "storage_signed",
@@ -216,7 +282,7 @@ describe("agreement storage helpers", () => {
       agreement({
         status: "signed",
         type: "full_representation",
-        effectiveStartAt: "2026-04-14",
+        effectiveStartAt: SIGNED_EFFECTIVE_START,
       }),
       actor(),
       {
@@ -280,7 +346,7 @@ describe("agreement storage helpers", () => {
         uploadedAt: NOW,
       },
       signedAt: "2026-04-12T11:00:00.000Z",
-      effectiveStartAt: "2026-04-12",
+      effectiveStartAt: "2026-04-12T00:00:00.000Z",
     })
 
     const resolved = resolveCurrentAgreementReadModel([predecessor, successor])

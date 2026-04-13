@@ -152,12 +152,54 @@ function resolveSignedStorageIdFromInput<
   agreement: AgreementRecordLike<AgreementId, DealRoomId, UserId, StorageId>,
   input: RecordAgreementSignatureInput<StorageId>,
 ): StorageId | undefined {
+  if (
+    input.documentStorageId &&
+    input.signedArtifact?.storageId &&
+    input.documentStorageId !== input.signedArtifact.storageId
+  ) {
+    throw new Error("Signed agreement storage references must match")
+  }
+
   return (
     input.signedArtifact?.storageId ??
     input.documentStorageId ??
     agreement.signedArtifact?.storageId ??
     agreement.documentStorageId
   )
+}
+
+function isCanonicalIsoDateLike(value: string): boolean {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/
+  const timestamp =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/
+
+  return (
+    (dateOnly.test(value) || timestamp.test(value)) &&
+    !Number.isNaN(Date.parse(value))
+  )
+}
+
+function assertValidAgreementEffectiveDates(
+  effectiveStartAt?: string,
+  effectiveEndAt?: string,
+): void {
+  if (effectiveStartAt && !isCanonicalIsoDateLike(effectiveStartAt)) {
+    throw new Error("effectiveStartAt must be a valid ISO date or timestamp")
+  }
+
+  if (effectiveEndAt && !isCanonicalIsoDateLike(effectiveEndAt)) {
+    throw new Error("effectiveEndAt must be a valid ISO date or timestamp")
+  }
+
+  if (
+    effectiveStartAt &&
+    effectiveEndAt &&
+    Date.parse(effectiveEndAt) < Date.parse(effectiveStartAt)
+  ) {
+    throw new Error(
+      "effective date range is inverted: effectiveEndAt cannot be earlier than effectiveStartAt",
+    )
+  }
 }
 
 export function getSignedArtifactStorageId<
@@ -211,6 +253,10 @@ export function buildAgreementDraft<
   | "lastUpdatedByUserId"
 > {
   assertCanManageAgreements(actor)
+  assertValidAgreementEffectiveDates(
+    input.effectiveStartAt,
+    input.effectiveEndAt,
+  )
 
   return {
     dealRoomId: input.dealRoomId,
@@ -319,6 +365,9 @@ export function buildAgreementSignedPatch<
   }
 
   const signedStorageId = resolveSignedStorageIdFromInput(agreement, input)
+  const effectiveStartAt = input.effectiveStartAt ?? agreement.effectiveStartAt ?? now
+  const effectiveEndAt = input.effectiveEndAt ?? agreement.effectiveEndAt
+  assertValidAgreementEffectiveDates(effectiveStartAt, effectiveEndAt)
   if (!signedStorageId) {
     throw new Error("Signed agreement storage is required")
   }
@@ -333,9 +382,8 @@ export function buildAgreementSignedPatch<
       input.signedArtifact ?? { storageId: signedStorageId },
       now,
     ),
-    effectiveStartAt:
-      input.effectiveStartAt ?? agreement.effectiveStartAt ?? now,
-    effectiveEndAt: input.effectiveEndAt ?? agreement.effectiveEndAt,
+    effectiveStartAt,
+    effectiveEndAt,
   }
 }
 
@@ -354,6 +402,9 @@ export function buildAgreementSignedAudit<
   if (!signedStorageId) {
     throw new Error("Signed agreement storage is required")
   }
+  const effectiveStartAt = input.effectiveStartAt ?? agreement.effectiveStartAt ?? now
+  const effectiveEndAt = input.effectiveEndAt ?? agreement.effectiveEndAt
+  assertValidAgreementEffectiveDates(effectiveStartAt, effectiveEndAt)
 
   return {
     userId: actor._id,
@@ -364,9 +415,9 @@ export function buildAgreementSignedAudit<
       type: agreement.type,
       dealRoomId: agreement.dealRoomId,
       buyerId: agreement.buyerId,
-      effectiveStartAt: input.effectiveStartAt ?? agreement.effectiveStartAt ?? now,
-      effectiveEndAt: input.effectiveEndAt ?? agreement.effectiveEndAt ?? null,
-      signedStorageId: signedStorageId ?? null,
+      effectiveStartAt,
+      effectiveEndAt: effectiveEndAt ?? null,
+      signedStorageId,
     }),
     timestamp: now,
   }
@@ -387,12 +438,16 @@ export function buildAgreementCanceledPatch<
   if (agreement.status !== "signed") {
     throw new Error("Can only cancel signed agreements")
   }
+  const effectiveEndAt = input.effectiveEndAt ?? agreement.effectiveEndAt ?? now
+  if (input.effectiveEndAt) {
+    assertValidAgreementEffectiveDates(agreement.effectiveStartAt, input.effectiveEndAt)
+  }
 
   return {
     status: "canceled",
     canceledAt: now,
     canceledReason: input.reason?.trim() || undefined,
-    effectiveEndAt: input.effectiveEndAt ?? agreement.effectiveEndAt ?? now,
+    effectiveEndAt,
     updatedAt: now,
     lastUpdatedByUserId: actor._id,
   }
@@ -409,6 +464,10 @@ export function buildAgreementCanceledAudit<
   input: CancelAgreementInput,
   now: string,
 ): AgreementAuditEntry<UserId, AgreementId> {
+  const effectiveEndAt = input.effectiveEndAt ?? agreement.effectiveEndAt ?? now
+  if (input.effectiveEndAt) {
+    assertValidAgreementEffectiveDates(agreement.effectiveStartAt, input.effectiveEndAt)
+  }
   return {
     userId: actor._id,
     action: "agreement_canceled",
@@ -416,7 +475,7 @@ export function buildAgreementCanceledAudit<
     entityId: agreement._id,
     details: JSON.stringify({
       reason: input.reason?.trim() || null,
-      effectiveEndAt: input.effectiveEndAt ?? agreement.effectiveEndAt ?? now,
+      effectiveEndAt,
     }),
     timestamp: now,
   }
