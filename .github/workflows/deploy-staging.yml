@@ -1,12 +1,12 @@
-name: Production Deploy
+name: Staging Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [staging]
 
 concurrency:
-  group: production-deploy
-  cancel-in-progress: false
+  group: staging-deploy
+  cancel-in-progress: true
 
 jobs:
   changes:
@@ -52,8 +52,8 @@ jobs:
               - 'railway.json'
               - '.env.example'
 
-  production-web:
-    name: Verify production web deploy
+  staging-web:
+    name: Verify staging web deploy
     needs: changes
     if: |
       needs.changes.outputs.ci == 'true' ||
@@ -61,7 +61,7 @@ jobs:
       needs.changes.outputs.shared == 'true' ||
       needs.changes.outputs.convex == 'true'
     runs-on: ubuntu-latest
-    environment: production
+    environment: staging
     permissions:
       contents: read
     steps:
@@ -71,31 +71,26 @@ jobs:
         with:
           node-version: 20
 
-      - name: Wait for Railway web deploy
+      - name: Wait for Railway staging web deploy
         run: sleep 120
 
-      - name: Verify production web health
+      - name: Verify staging web health
         run: |
-          url="${{ vars.PRODUCTION_WEB_URL }}"
-          if [ -z "$url" ]; then
-            url="${{ vars.PRODUCTION_URL }}"
-          fi
-
           node scripts/verify-health.mjs \
-            --label "production web" \
-            --url "$url" \
+            --label "staging web" \
+            --url "${{ vars.STAGING_WEB_URL }}" \
             --path "/api/health" \
             --timeout-seconds "300" \
             --interval-seconds "15"
 
-  production-workers:
-    name: Verify production worker deploy
+  staging-workers:
+    name: Verify staging worker deploy
     needs: changes
     if: |
       needs.changes.outputs.ci == 'true' ||
       needs.changes.outputs.workers == 'true'
     runs-on: ubuntu-latest
-    environment: production
+    environment: staging
     permissions:
       contents: read
     steps:
@@ -105,45 +100,45 @@ jobs:
         with:
           node-version: 20
 
-      - name: Wait for Railway worker deploy
+      - name: Wait for Railway staging worker deploy
         run: sleep 120
 
-      - name: Verify production worker health
+      - name: Verify staging worker health
         run: |
           node scripts/verify-health.mjs \
-            --label "production worker" \
-            --url "${{ vars.PRODUCTION_EXTRACTION_URL }}" \
+            --label "staging worker" \
+            --url "${{ vars.STAGING_EXTRACTION_URL }}" \
             --path "/health" \
             --timeout-seconds "300" \
             --interval-seconds "15"
 
-  production-summary:
-    name: Production deploy summary
+  staging-summary:
+    name: Staging deploy summary
     needs:
-      - production-web
-      - production-workers
+      - staging-web
+      - staging-workers
     if: always()
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Fail when production verification fails
+      - name: Fail when staging verification fails
         env:
-          WEB_RESULT: ${{ needs.production-web.result }}
-          WORKERS_RESULT: ${{ needs.production-workers.result }}
+          WEB_RESULT: ${{ needs.staging-web.result }}
+          WORKERS_RESULT: ${{ needs.staging-workers.result }}
         run: |
-          echo "production-web=$WEB_RESULT"
-          echo "production-workers=$WORKERS_RESULT"
+          echo "staging-web=$WEB_RESULT"
+          echo "staging-workers=$WORKERS_RESULT"
 
           for result in "$WEB_RESULT" "$WORKERS_RESULT"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
-              echo "::error::Production deployment verification failed."
+              echo "::error::Staging deployment verification failed."
               exit 1
             fi
           done
 
           {
-            echo "## Production deploy"
+            echo "## Staging deploy"
             echo ""
             echo "- Commit: ${{ github.sha }}"
             echo "- Web verification: $WEB_RESULT"
