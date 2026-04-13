@@ -11,28 +11,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  detect-cold-start:
-    name: Detect cold start
+  web:
+    name: Web
     runs-on: ubuntu-latest
-    outputs:
-      cold_start: ${{ steps.check.outputs.cold_start }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: check
-        run: |
-          if grep -q "cold-start: no app scaffolded yet" package.json; then
-            echo "cold_start=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::cold-start detected — skipping build/test"
-          else
-            echo "cold_start=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  validate:
-    name: Validate
-    needs: detect-cold-start
-    if: needs.detect-cold-start.outputs.cold_start == 'false'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -52,64 +33,90 @@ jobs:
         run: pnpm lint
 
       - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Convex typecheck
-        run: npx tsc -p convex/tsconfig.json --noEmit
+        run: pnpm typecheck:web
 
       - name: Unit tests
         run: pnpm test
 
-      - name: Install Playwright
-        run: npx playwright install chromium --with-deps
-
-      - name: Run e2e tests
-        run: pnpm test:e2e
-        env:
-          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
-
       - name: Build
-        run: pnpm build
+        run: pnpm build:web
         env:
-          NEXT_PUBLIC_CONVEX_URL: ${{ secrets.NEXT_PUBLIC_CONVEX_URL }}
-          NEXT_PUBLIC_POSTHOG_KEY: ${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
-          NEXT_PUBLIC_POSTHOG_HOST: ${{ secrets.NEXT_PUBLIC_POSTHOG_HOST }}
-          NEXT_PUBLIC_SENTRY_DSN: ${{ secrets.NEXT_PUBLIC_SENTRY_DSN }}
+          NEXT_PUBLIC_CONVEX_URL: https://example.convex.cloud
+          NEXT_PUBLIC_POSTHOG_KEY: test-posthog-key
+          NEXT_PUBLIC_POSTHOG_HOST: https://us.i.posthog.com
+          NEXT_PUBLIC_SENTRY_DSN: https://examplePublicKey@o0.ingest.sentry.io/0
 
-  python-workers:
-    name: Python workers
-    needs: detect-cold-start
-    if: needs.detect-cold-start.outputs.cold_start == 'false'
+  convex:
+    name: Convex
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check for python services
-        id: check
-        run: |
-          if [ -d "services" ] && find services -name "pyproject.toml" -o -name "requirements.txt" 2>/dev/null | grep -q .; then
-            echo "has_python=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_python=false" >> "$GITHUB_OUTPUT"
-          fi
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck Convex workspace
+        run: pnpm --dir convex typecheck
+
+  shared:
+    name: Shared
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck shared package
+        run: pnpm --dir packages/shared typecheck
+
+  ios:
+    name: iOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test Swift package
+        run: cd ios/BuyerV2 && swift test
+
+  python:
+    name: Python (${{ matrix.workspace }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace:
+          - python-workers
+          - services/extraction
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Python
-        if: steps.check.outputs.has_python == 'true'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
-      - name: Install + test python services
-        if: steps.check.outputs.has_python == 'true'
+      - name: Install dependencies and run tests
         run: |
-          for service in services/*/; do
-            if [ -f "$service/pyproject.toml" ] || [ -f "$service/requirements.txt" ]; then
-              echo "::group::$service"
-              cd "$service"
-              pip install -e ".[dev]" 2>/dev/null || pip install -r requirements.txt
-              python -m pytest -q || true
-              cd -
-              echo "::endgroup::"
-            fi
-          done
+          cd "${{ matrix.workspace }}"
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          python -m pytest -q

@@ -5,6 +5,12 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./contracts": "./src/contracts.ts",
+    "./utils": "./src/utils.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
