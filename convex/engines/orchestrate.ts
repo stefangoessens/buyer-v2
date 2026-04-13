@@ -16,6 +16,26 @@ export const runAllEnginesForProperty = internalAction({
   args: { propertyId: v.id("properties") },
   returns: v.null(),
   handler: async (ctx, args) => {
+    // Phase 0: seed the comp pool. Comps engine downstream reads from
+    // this pool, so it must land before pricing/comps/leverage fire.
+    // Errors are swallowed — if the scraper fails, the other engines
+    // just run against whatever is already in the DB.
+    let compSeedResult: {
+      name: "comp_seed";
+      ok: boolean;
+      error?: string;
+    };
+    try {
+      await ctx.runAction(
+        internal.engines.compSeeder.seedCompsForProperty,
+        { propertyId: args.propertyId },
+      );
+      compSeedResult = { name: "comp_seed", ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      compSeedResult = { name: "comp_seed", ok: false, error: message };
+    }
+
     // Pricing, comps, leverage, and cost run in parallel — they have no
     // cross-engine dependencies. Offer depends on pricing + leverage
     // outputs, so it runs after the first batch resolves.
@@ -63,7 +83,12 @@ export const runAllEnginesForProperty = internalAction({
       insightsResult = { name: "insights", ok: false, error: message };
     }
 
-    const results = [...independentResults, offerResult, insightsResult];
+    const results = [
+      compSeedResult,
+      ...independentResults,
+      offerResult,
+      insightsResult,
+    ];
 
     await ctx.runMutation(internal.engines.orchestrateMutations.logRun, {
       propertyId: args.propertyId,

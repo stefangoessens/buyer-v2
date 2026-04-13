@@ -111,3 +111,43 @@ class FetchObservabilityResponse(BaseModel):
     usage: FetchUsageResponse
     totals: FetchTotalsResponse
     per_portal: dict[Portal, PortalMetricsResponse]
+
+
+# ─── Comp pool seeding ──────────────────────────────────────────────────
+# Scrapes Zillow's sold-listings search page for a zip + bed filter and
+# returns a list of comps for the Convex comp pool. Used by the engine
+# orchestrator Phase 0 before pricing/comps/leverage run.
+
+
+class SeedCompsRequest(BaseModel):
+    zip_code: str
+    beds_min: int | None = None
+    # Optional override for testing; defaults to "sold".
+    status: str = "sold"
+    # Optional upper bound on returned comps; server may return fewer.
+    limit: int = 30
+
+
+class SoldCompResponse(BaseModel):
+    zpid: str
+    source_url: str
+    address_line1: str
+    city: str
+    state: str
+    postal_code: str
+    latitude: float | None
+    longitude: float | None
+    sold_price_usd: int | None
+    sold_date: str | None
+    beds: int | None
+    baths: float | None
+    living_area_sqft: int | None
+    property_type: str | None
+    days_on_market: int | None
+    zestimate_usd: int | None
+
+
+class SeedCompsResponse(BaseModel):
+    zip_code: str
+    comps: list[SoldCompResponse]
+    fetch: FetchMetadataResponse

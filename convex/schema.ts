@@ -204,12 +204,19 @@ export default defineSchema({
     ),
     extractedAt: v.string(),
     updatedAt: v.string(),
+    // KIN-1036: distinguishes subject properties a user pasted from
+    // sold-comp rows the comp-seeder inserts. Null/undefined means
+    // subject to preserve backwards compat.
+    role: v.optional(v.union(v.literal("subject"), v.literal("comp"))),
+    soldPrice: v.optional(v.number()),
+    soldDate: v.optional(v.string()),
   })
     .index("by_canonicalId", ["canonicalId"])
     .index("by_status", ["status"])
     .index("by_mlsNumber", ["mlsNumber"])
     .index("by_sourcePlatform", ["sourcePlatform"])
-    .index("by_zip", ["zip"]),
+    .index("by_zip", ["zip"])
+    .index("by_zip_and_role", ["zip", "role"]),
 
   sourceListings: defineTable({
     propertyId: v.optional(v.id("properties")),

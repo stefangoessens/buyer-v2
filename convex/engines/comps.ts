@@ -41,12 +41,25 @@ export const runCompsEngine = internalAction({
       listPrice: property.listPrice ?? 0,
     };
 
-    const candidates =
+    // KIN-1036: also pull seeded comp rows from the properties table
+    // (rows inserted by the comp-seeder scraper with role="comp"). We
+    // union them with any pre-populated enrichment candidates.
+    const seededComps: any[] =
+      subject.zip.length > 0
+        ? await ctx.runQuery(internal.engines.compsQueries.listSeededCompsForZip, {
+            zip: subject.zip,
+          })
+        : [];
+
+    const fromEnrichment: any[] =
+      enrichment?.engineInputs?.compsCandidates ?? [];
+
+    const baseCandidates =
       args.candidates && args.candidates.length > 0
         ? args.candidates
-        : enrichment?.engineInputs?.compsCandidates ?? [];
+        : [...fromEnrichment, ...seededComps];
 
-    const result = selectComps({ subject, candidates });
+    const result = selectComps({ subject, candidates: baseCandidates });
 
     const outputId: any = await ctx.runMutation(
       internal.aiEngineOutputs.createOutput,
