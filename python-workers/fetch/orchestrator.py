@@ -90,7 +90,8 @@ class FetchOrchestrator:
             if max_concurrent is not None
             else _env_int("BRIGHT_DATA_MAX_CONCURRENT", _DEFAULT_MAX_CONCURRENT)
         )
-        self._semaphore = asyncio.Semaphore(max(1, resolved_concurrent))
+        self._max_concurrent = max(1, resolved_concurrent)
+        self._semaphore = asyncio.Semaphore(self._max_concurrent)
         self._stats = _OrchestratorStats()
 
     @property
@@ -102,6 +103,10 @@ class FetchOrchestrator:
             "total_latency_ms": self._stats.total_latency_ms,
             "attempts": self._stats.attempts,
         }
+
+    @property
+    def max_concurrent(self) -> int:
+        return self._max_concurrent
 
     async def fetch(self, request: FetchRequest) -> FetchResult:
         async with self._semaphore:
