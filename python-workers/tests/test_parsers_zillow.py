@@ -189,6 +189,87 @@ class TestJsonLdPrimary:
         assert prop.postal_code == "33131"
 
 
+class TestNextDataPrimary:
+    """Real Zillow listings use the Next.js ``__NEXT_DATA__`` blob.
+
+    These fixtures were captured from production Zillow HDP pages in 2026.
+    Unlike the hand-built fixtures above (which exercise the legacy
+    ``hdpApolloPreloadedData`` path), these reflect Zillow's current
+    frontend: every core field must round-trip from the SSR state.
+    """
+
+    def test_miami_beach_luxury_sfh(self) -> None:
+        html = _load("zillow_real_miami_beach_20260413.html")
+        assert "__NEXT_DATA__" in html
+        url = "https://www.zillow.com/homedetails/43895349_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+
+        assert prop.address_line1 == "217 E Rivo Alto Dr"
+        assert prop.city == "Miami Beach"
+        assert prop.state == "FL"
+        assert prop.postal_code == "33139"
+        assert prop.price_usd == 45_000_000
+        assert prop.beds == 6.0
+        assert prop.baths == 7.0
+        assert prop.living_area_sqft == 8393
+        assert prop.property_type == "single_family"
+        assert prop.days_on_market == 87
+        assert prop.description is not None and len(prop.description) > 50
+        assert len(prop.photos) >= 10
+        assert prop.photos[0].url.startswith("http")
+        assert prop.latitude is not None and prop.longitude is not None
+        assert prop.listing_id == "43895349"
+
+    def test_miami_beach_condo(self) -> None:
+        html = _load("zillow_real_miami_condo_20260413.html")
+        assert "__NEXT_DATA__" in html
+        url = "https://www.zillow.com/homedetails/247700480_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+
+        assert prop.address_line1 == "1215 West Ave #402"
+        assert prop.city == "Miami Beach"
+        assert prop.state == "FL"
+        assert prop.postal_code == "33139"
+        assert prop.price_usd == 280_000
+        assert prop.beds == 1.0
+        assert prop.baths == 1.0
+        assert prop.living_area_sqft == 520
+        assert prop.property_type == "condo"
+        assert prop.days_on_market == 23
+        assert prop.hoa_monthly_usd == 1076
+        assert prop.description is not None and len(prop.description) > 50
+        assert len(prop.photos) >= 10
+        assert prop.listing_id == "247700480"
+
+    def test_next_data_yields_required_fields_without_apollo_or_json_ld(self) -> None:
+        """The Next.js path alone must populate every required field.
+
+        Real fixtures contain only a ``__NEXT_DATA__`` blob — no Apollo
+        preload, no JSON-LD. This guards against regressions that would
+        make the parser silently fall back to empty HTML-only extraction.
+        """
+        html = _load("zillow_real_miami_beach_20260413.html")
+        assert "hdpApolloPreloadedData" not in html
+        assert "application/ld+json" not in html
+        prop = ZillowExtractor().extract(
+            html=html,
+            source_url="https://www.zillow.com/homedetails/43895349_zpid/",
+        )
+        for field_name in (
+            "address_line1",
+            "city",
+            "state",
+            "postal_code",
+            "price_usd",
+            "beds",
+            "baths",
+            "living_area_sqft",
+        ):
+            assert getattr(prop, field_name) is not None, (
+                f"{field_name} must populate from __NEXT_DATA__ alone"
+            )
+
+
 class TestApolloFallback:
     """Fixtures missing JSON-LD fall back to the Apollo preload state."""
 

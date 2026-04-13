@@ -1,17 +1,22 @@
 """Deterministic Zillow listing extractor.
 
-The extractor runs three strategies in order and merges whatever each one
+The extractor runs four strategies in order and merges whatever each one
 yields into a single raw-field dict:
 
-1. **JSON-LD** — ``<script type="application/ld+json">`` blocks. Richest
-   source when Zillow ships it.
-2. **Apollo preload** — ``hdpApolloPreloadedData = {...};`` inline script.
-   Always present on HDP pages; covers the listing's full GraphQL payload.
-3. **HTML fallback** — ``<meta>`` tags, ``<h1>``, and ``data-testid`` spans.
-   Last-resort parse for pages that strip both JSON blobs.
+1. **Next.js __NEXT_DATA__** — ``<script id="__NEXT_DATA__" ...>`` with
+   SSR state. Modern Zillow's authoritative source: full property record
+   lives under ``props.pageProps.componentProps.gdpClientCache`` keyed by
+   a ``ForSalePriorityQuery`` / ``NotForSalePriorityQuery`` JSON string.
+2. **JSON-LD** — ``<script type="application/ld+json">`` blocks. Richest
+   schema.org source when Zillow ships it.
+3. **Apollo preload** — legacy ``hdpApolloPreloadedData = {...};`` inline
+   script. Retained for older fixtures / pages still shipping the old
+   blob alongside the new Next.js data.
+4. **HTML fallback** — ``<meta>`` tags, ``<h1>``, and ``data-testid`` spans.
+   Last-resort parse for pages that strip all JSON blobs.
 
 Strategies are additive: earlier strategies win on conflicts, later
-strategies fill in any missing keys. Only after all three have run is the
+strategies fill in any missing keys. Only after all four have run is the
 raw dict converted to a :class:`CanonicalProperty`. Missing *required*
 fields (address, price) raise :class:`SchemaShiftError`; missing optional
 fields are left as ``None``.
@@ -38,6 +43,14 @@ _PORTAL = "zillow"
 # balanced-brace walk via non-greedy match against the trailing `};`.
 _APOLLO_RE = re.compile(
     r"hdpApolloPreloadedData\s*=\s*(\{.*?\})\s*;",
+    re.DOTALL,
+)
+
+# Matches the Next.js SSR state block. Zillow ships this on every HDP page
+# as of the 2026 frontend rewrite; the inner JSON carries the entire
+# property record under `props.pageProps.componentProps.gdpClientCache`.
+_NEXT_DATA_RE = re.compile(
+    r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>',
     re.DOTALL,
 )
 
@@ -104,6 +117,7 @@ class ZillowExtractor:
             ) from exc
 
         raw: dict[str, Any] = {}
+        self._apply(raw, self._extract_next_data(html))
         self._apply(raw, self._extract_json_ld(doc))
         self._apply(raw, self._extract_apollo(html))
         self._apply(raw, self._extract_html_fallback(doc))
@@ -127,7 +141,74 @@ class ZillowExtractor:
             target.setdefault(key, value)
 
     # ------------------------------------------------------------------
-    # Strategy 1: JSON-LD
+    # Strategy 1: Next.js __NEXT_DATA__
+    # ------------------------------------------------------------------
+    def _extract_next_data(self, html: str) -> dict[str, Any]:
+        """Pull the property record out of Zillow's Next.js SSR blob."""
+        match = _NEXT_DATA_RE.search(html)
+        if match is None:
+            return {}
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            return {}
+
+        # Walk ``props.pageProps.componentProps.gdpClientCache``. The cache
+        # value is itself a JSON string (a second parse), keyed by a query
+        # descriptor like ``ForSalePriorityQuery{...}`` whose value wraps
+        # the raw ``property`` dict we care about.
+        try:
+            cache_raw = payload["props"]["pageProps"]["componentProps"]["gdpClientCache"]
+        except (KeyError, TypeError):
+            return {}
+        if not isinstance(cache_raw, str) or not cache_raw:
+            return {}
+        try:
+            cache = json.loads(cache_raw)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(cache, dict) or not cache:
+            return {}
+        prop: dict[str, Any] | None = None
+        for value in cache.values():
+            if isinstance(value, dict) and isinstance(value.get("property"), dict):
+                prop = value["property"]
+                break
+        if prop is None:
+            return {}
+
+        out: dict[str, Any] = {
+            "listing_id": _clean_str(prop.get("zpid")),
+            "mls_number": _clean_str(prop.get("mlsid") or prop.get("mlsNumber")),
+            "address_line1": _clean_str(prop.get("streetAddress")),
+            "city": _clean_str(prop.get("city")),
+            "state": _clean_str(prop.get("state")),
+            "postal_code": _clean_str(prop.get("zipcode") or prop.get("zipCode")),
+            "latitude": _to_float(prop.get("latitude")),
+            "longitude": _to_float(prop.get("longitude")),
+            "property_type": _normalize_property_type(prop.get("homeType")),
+            "price_usd": _to_int(prop.get("price")),
+            "beds": _to_float(prop.get("bedrooms")),
+            "baths": _to_float(prop.get("bathrooms")),
+            "living_area_sqft": _to_int(
+                prop.get("livingArea") or prop.get("livingAreaValue")
+            ),
+            "lot_size_sqft": _lot_size_sqft(prop),
+            "year_built": _to_int(prop.get("yearBuilt")),
+            "days_on_market": _to_int(prop.get("daysOnZillow")),
+            "hoa_monthly_usd": _to_int(
+                prop.get("monthlyHoaFee") or prop.get("hoaFee")
+            ),
+            "description": _clean_str(prop.get("description")),
+        }
+
+        photos = _next_data_photos(prop)
+        if photos:
+            out["photos"] = photos
+        return out
+
+    # ------------------------------------------------------------------
+    # Strategy 2: JSON-LD
     # ------------------------------------------------------------------
     def _extract_json_ld(self, doc: lxml_html.HtmlElement) -> dict[str, Any]:
         result: dict[str, Any] = {}
@@ -207,7 +288,7 @@ class ZillowExtractor:
         return out
 
     # ------------------------------------------------------------------
-    # Strategy 2: Apollo preload
+    # Strategy 3: Apollo preload (legacy)
     # ------------------------------------------------------------------
     def _extract_apollo(self, html: str) -> dict[str, Any]:
         match = _APOLLO_RE.search(html)
@@ -244,7 +325,7 @@ class ZillowExtractor:
         return out
 
     # ------------------------------------------------------------------
-    # Strategy 3: HTML fallback
+    # Strategy 4: HTML fallback
     # ------------------------------------------------------------------
     def _extract_html_fallback(self, doc: lxml_html.HtmlElement) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -488,6 +569,64 @@ def _normalize_property_type(value: Any) -> str | None:
     if key in _PROPERTY_TYPE_MAP:
         return _PROPERTY_TYPE_MAP[key]
     return key
+
+
+def _next_data_photos(prop: dict[str, Any]) -> tuple[PropertyPhoto, ...]:
+    """Extract high-resolution photo URLs from a Next.js property record.
+
+    Zillow serves photos as a list of ``responsivePhotos`` (fallback keys:
+    ``hugePhotos``, ``originalPhotos``) where each entry has a
+    ``mixedSources.jpeg`` list of ``{url, width}`` dicts sorted ascending.
+    We pick the last (largest) jpeg URL per photo so downstream consumers
+    get the highest-resolution version available.
+    """
+    photos_raw: Any = (
+        prop.get("responsivePhotos")
+        or prop.get("hugePhotos")
+        or prop.get("originalPhotos")
+        or []
+    )
+    if not isinstance(photos_raw, list):
+        return ()
+    photos: list[PropertyPhoto] = []
+    for entry in photos_raw:
+        if not isinstance(entry, dict):
+            continue
+        mixed = entry.get("mixedSources")
+        best_url: str | None = None
+        if isinstance(mixed, dict):
+            jpeg = mixed.get("jpeg")
+            if isinstance(jpeg, list) and jpeg:
+                last = jpeg[-1]
+                if isinstance(last, dict):
+                    best_url = _clean_str(last.get("url"))
+        if best_url is None:
+            best_url = _clean_str(entry.get("url"))
+        if not best_url:
+            continue
+        caption = _clean_str(entry.get("caption"))
+        photos.append(PropertyPhoto(url=best_url, caption=caption))
+    return tuple(photos)
+
+
+def _lot_size_sqft(prop: dict[str, Any]) -> int | None:
+    """Normalize Zillow's lot-size fields to square feet.
+
+    ``lotSize`` is an integer square-foot count on modern payloads, but
+    older records expose ``lotAreaValue`` + ``lotAreaUnits`` where units
+    may be ``"Acres"`` or ``"Square Feet"``. Convert acres to sqft
+    (1 acre = 43_560 sqft) when needed.
+    """
+    lot_size = prop.get("lotSize")
+    if lot_size is not None:
+        return _to_int(lot_size)
+    value = _to_float(prop.get("lotAreaValue"))
+    if value is None:
+        return None
+    units = str(prop.get("lotAreaUnits") or "").strip().lower()
+    if units.startswith("acre"):
+        return int(value * 43_560)
+    return int(value)
 
 
 def _pick_residential_type(value: Any) -> Any:
