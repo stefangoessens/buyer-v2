@@ -3,9 +3,20 @@ import path from "path";
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      {
+        find: "@buyer-v2/shared/",
+        replacement: path.resolve(__dirname, "./packages/shared/src/"),
+      },
+      {
+        find: "@buyer-v2/shared",
+        replacement: path.resolve(__dirname, "./packages/shared/src/index.ts"),
+      },
+      {
+        find: "@",
+        replacement: path.resolve(__dirname, "./src"),
+      },
+    ],
   },
   test: {
     environment: "node",

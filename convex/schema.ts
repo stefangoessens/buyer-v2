@@ -280,6 +280,15 @@ export default defineSchema({
     documentStorageId: v.optional(v.id("_storage")),
     signedAt: v.optional(v.string()),
     canceledAt: v.optional(v.string()),
+    supersededAt: v.optional(v.string()),
+    supersessionReason: v.optional(v.union(
+      v.literal("upgrade_to_full_representation"),
+      v.literal("correction"),
+      v.literal("amendment"),
+      v.literal("renewal"),
+      v.literal("replace_expired"),
+      v.literal("broker_decision")
+    )),
     replacedById: v.optional(v.id("agreements")),
   })
     .index("by_dealRoomId", ["dealRoomId"])
@@ -1775,4 +1784,304 @@ export default defineSchema({
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_propertyId", ["propertyId"])
     .index("by_createdBy", ["createdBy"]),
+
+  // ═══ INTERNAL SETTINGS (KIN-807) ═══
+  //
+  // Mutable brokerage + product configuration. One row per
+  // catalog-registered key. Values are stored as a discriminated
+  // union so the Convex layer enforces the same kind at runtime
+  // as the pure validator in `src/lib/settings/logic.ts`.
+  //
+  // Every write also appends a row to `settingsAuditLog` so the
+  // change is traceable to a user + reason + timestamp.
+  settingsEntries: defineTable({
+    key: v.string(),
+    // Tagged value — `kind` discriminator matches the catalog entry.
+    // Exactly one of the *Value fields is set for any given row.
+    kind: v.union(
+      v.literal("string"),
+      v.literal("number"),
+      v.literal("boolean"),
+      v.literal("richText"),
+      v.literal("json")
+    ),
+    stringValue: v.optional(v.string()),
+    numberValue: v.optional(v.number()),
+    booleanValue: v.optional(v.boolean()),
+    richTextValue: v.optional(v.string()),
+    // JSON is stored as `any` — Convex doesn't have a generic
+    // object schema, and nested validation is the catalog's job.
+    jsonValue: v.optional(v.any()),
+    updatedAt: v.string(),
+    updatedBy: v.string(),
+  }).index("by_key", ["key"]),
+
+  settingsAuditLog: defineTable({
+    key: v.string(),
+    // Store both the previous and next value inline so the audit
+    // entry is self-contained. Nullable previous for the first
+    // write to a key.
+    previousKind: v.optional(
+      v.union(
+        v.literal("string"),
+        v.literal("number"),
+        v.literal("boolean"),
+        v.literal("richText"),
+        v.literal("json")
+      )
+    ),
+    previousJson: v.optional(v.any()),
+    nextKind: v.union(
+      v.literal("string"),
+      v.literal("number"),
+      v.literal("boolean"),
+      v.literal("richText"),
+      v.literal("json")
+    ),
+    nextJson: v.any(),
+    changedBy: v.string(),
+    reason: v.string(),
+    changedAt: v.string(),
+  })
+    .index("by_key_and_changedAt", ["key", "changedAt"])
+    .index("by_changedAt", ["changedAt"]),
+
+  // ═══ RELEASE READINESS ITEMS (KIN-846) ═══
+  //
+  // Launch readiness checklist. One row per tracked item. The ops
+  // dashboard and launch runbook read from here; `overall` status
+  // is derived from the items via the pure logic module in
+  // `src/lib/releaseReadiness/logic.ts` (mirrored in Convex).
+  //
+  // `itemKey` is a stable content-authored identifier separate from
+  // the Convex `_id` so the runbook can link to a specific item
+  // across environments.
+  releaseReadinessItems: defineTable({
+    itemKey: v.string(),
+    title: v.string(),
+    description: v.string(),
+    owner: v.string(),
+    severity: v.union(v.literal("p0"), v.literal("p1"), v.literal("p2")),
+    status: v.union(
+      v.literal("notStarted"),
+      v.literal("inProgress"),
+      v.literal("blocked"),
+      v.literal("atRisk"),
+      v.literal("ready"),
+      v.literal("deferred")
+    ),
+    targetDate: v.string(),
+    blockerNote: v.optional(v.string()),
+    evidenceUrl: v.optional(v.string()),
+    updatedAt: v.string(),
+    updatedBy: v.string(),
+  })
+    .index("by_itemKey", ["itemKey"])
+    .index("by_severity_and_status", ["severity", "status"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BACKGROUND ENRICHMENT PIPELINE (KIN-782)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Async jobs that augment a property with secondary data sources after
+  // primary extraction. The deal room renders progressively as jobs land.
+  // Each job is idempotent via `dedupeKey`, per-source failure isolated,
+  // and retry-safe via `attempt`/`maxAttempts`/`nextRetryAt`.
+  //
+  // Sources: fema_flood, county_appraiser, census_geocode,
+  // cross_portal_match, listing_agent_profile, neighborhood_market,
+  // portal_estimates, recent_sales.
+  enrichmentJobs: defineTable({
+    propertyId: v.id("properties"),
+    source: v.union(
+      v.literal("fema_flood"),
+      v.literal("county_appraiser"),
+      v.literal("census_geocode"),
+      v.literal("cross_portal_match"),
+      v.literal("listing_agent_profile"),
+      v.literal("neighborhood_market"),
+      v.literal("portal_estimates"),
+      v.literal("recent_sales"),
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    attempt: v.number(),
+    maxAttempts: v.number(),
+    priority: v.number(),
+    requestedAt: v.string(),
+    startedAt: v.optional(v.string()),
+    completedAt: v.optional(v.string()),
+    nextRetryAt: v.optional(v.string()),
+    errorCode: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
+    dedupeKey: v.string(),
+    resultRef: v.optional(v.string()),
+  })
+    .index("by_propertyId_and_source", ["propertyId", "source"])
+    .index("by_status_and_priority", ["status", "priority"])
+    .index("by_dedupeKey", ["dedupeKey"])
+    .index("by_nextRetryAt", ["nextRetryAt"])
+    .index("by_propertyId_and_status", ["propertyId", "status"]),
+
+  // Canonical listing-agent record — merged across portals, cached, and
+  // refreshed on a schedule. Stats drive the leverage engine and the
+  // pricing panel's context. Per-field provenance lets callers tell
+  // which portal contributed each number.
+  listingAgents: defineTable({
+    canonicalAgentId: v.string(),
+    name: v.string(),
+    phone: v.optional(v.string()),
+    email: v.optional(v.string()),
+    brokerage: v.optional(v.string()),
+    zillowProfileUrl: v.optional(v.string()),
+    redfinProfileUrl: v.optional(v.string()),
+    realtorProfileUrl: v.optional(v.string()),
+    activeListings: v.optional(v.number()),
+    soldCount: v.optional(v.number()),
+    avgDaysOnMarket: v.optional(v.number()),
+    medianListToSellRatio: v.optional(v.number()),
+    priceCutFrequency: v.optional(v.number()),
+    recentActivityCount: v.optional(v.number()),
+    // Per-field provenance — key = field name, value = { source, fetchedAt }.
+    provenance: v.record(
+      v.string(),
+      v.object({
+        source: v.string(),
+        fetchedAt: v.string(),
+      }),
+    ),
+    lastRefreshedAt: v.string(),
+  })
+    .index("by_canonicalAgentId", ["canonicalAgentId"])
+    .index("by_lastRefreshedAt", ["lastRefreshedAt"]),
+
+  // Link between a canonical listing-agent and each property they appear
+  // on. One property may have multiple (listing agent, buyer agent) rows
+  // over its lifetime.
+  propertyAgentLinks: defineTable({
+    propertyId: v.id("properties"),
+    agentId: v.id("listingAgents"),
+    role: v.union(v.literal("listing"), v.literal("buyer")),
+    source: v.string(),
+    capturedAt: v.string(),
+  })
+    .index("by_propertyId", ["propertyId"])
+    .index("by_agentId", ["agentId"])
+    .index("by_propertyId_and_role", ["propertyId", "role"]),
+
+  // Neighborhood market context per (geoKey, windowDays). Cached because
+  // neighborhood stats change slowly and the deal room render path must
+  // never block on a live portal fetch.
+  neighborhoodMarketContext: defineTable({
+    geoKey: v.string(),
+    geoKind: v.union(
+      v.literal("zip"),
+      v.literal("subdivision"),
+      v.literal("city"),
+    ),
+    windowDays: v.number(),
+    medianDom: v.optional(v.number()),
+    medianPricePerSqft: v.optional(v.number()),
+    medianListPrice: v.optional(v.number()),
+    inventoryCount: v.optional(v.number()),
+    pendingCount: v.optional(v.number()),
+    salesVelocity: v.optional(v.number()),
+    trajectory: v.optional(
+      v.union(v.literal("rising"), v.literal("flat"), v.literal("falling")),
+    ),
+    provenance: v.object({
+      source: v.string(),
+      fetchedAt: v.string(),
+    }),
+    lastRefreshedAt: v.string(),
+  })
+    .index("by_geoKey_and_windowDays", ["geoKey", "windowDays"])
+    .index("by_lastRefreshedAt", ["lastRefreshedAt"]),
+
+  // Per-portal property estimates captured as distinct values. The
+  // pricing panel triangulates across these rows — they are NEVER merged
+  // into one blended number before being stored.
+  portalEstimates: defineTable({
+    propertyId: v.id("properties"),
+    portal: v.union(
+      v.literal("zillow"),
+      v.literal("redfin"),
+      v.literal("realtor"),
+    ),
+    estimateValue: v.number(),
+    estimateLow: v.optional(v.number()),
+    estimateHigh: v.optional(v.number()),
+    asOfDate: v.optional(v.string()),
+    provenance: v.object({
+      source: v.string(),
+      fetchedAt: v.string(),
+    }),
+    capturedAt: v.string(),
+  })
+    .index("by_propertyId_and_portal", ["propertyId", "portal"])
+    .index("by_propertyId_and_capturedAt", ["propertyId", "capturedAt"]),
+
+  // ═══ CLOSE TASKS (KIN-847) ═══
+  //
+  // Typed task state for the close phase — inspections, financing
+  // milestones, title work, walkthrough, etc. Tasks are scoped to a
+  // deal room and optionally linked to a contract. Visibility is
+  // explicit (buyer_visible vs internal_only) so internal ops notes
+  // can live next to buyer-facing work without leaking.
+  //
+  // Status machine: pending → in_progress → completed, with blocked
+  // and canceled as explicit escape hatches. Validation happens in
+  // the pure helper at convex/lib/closeTasks.ts.
+  closeTasks: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    contractId: v.optional(v.id("contracts")),
+    title: v.string(),
+    description: v.optional(v.string()),
+    category: v.union(
+      v.literal("inspection"),
+      v.literal("financing"),
+      v.literal("title"),
+      v.literal("insurance"),
+      v.literal("appraisal"),
+      v.literal("disclosure"),
+      v.literal("walkthrough"),
+      v.literal("other"),
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("in_progress"),
+      v.literal("completed"),
+      v.literal("blocked"),
+      v.literal("canceled"),
+    ),
+    visibility: v.union(
+      v.literal("buyer_visible"),
+      v.literal("internal_only"),
+    ),
+    ownerRole: v.union(
+      v.literal("buyer"),
+      v.literal("broker"),
+      v.literal("lender"),
+      v.literal("title_company"),
+      v.literal("inspector"),
+      v.literal("other"),
+    ),
+    ownerUserId: v.optional(v.id("users")),
+    ownerDisplayName: v.optional(v.string()),
+    dueDate: v.optional(v.string()),
+    blockedReason: v.optional(v.string()),
+    internalNotes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    completedAt: v.optional(v.string()),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
+    .index("by_ownerUserId", ["ownerUserId"])
+    .index("by_contractId", ["contractId"]),
 });

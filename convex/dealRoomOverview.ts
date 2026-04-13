@@ -122,7 +122,7 @@ const dealStatusValidator = v.union(
   v.literal("withdrawn"),
 );
 
-const overviewResultValidator = v.object({
+const overviewBaseValidator = {
   dealRoomId: v.string(),
   propertyId: v.string(),
   updatedAt: v.string(),
@@ -142,14 +142,23 @@ const overviewResultValidator = v.object({
   cost: costEnvelopeValidator,
   offer: offerEnvelopeValidator,
   isComplete: v.boolean(),
-  internal: v.optional(
-    v.object({
+};
+
+const overviewResultValidator = v.union(
+  v.object({
+    ...overviewBaseValidator,
+    variant: v.literal("buyer_safe"),
+  }),
+  v.object({
+    ...overviewBaseValidator,
+    variant: v.literal("internal"),
+    internal: v.object({
       providedBy: v.array(v.string()),
       pendingEngines: v.array(v.string()),
       lastFullRefreshAt: v.union(v.string(), v.null()),
     }),
-  ),
-});
+  }),
+);
 
 // ───────────────────────────────────────────────────────────────────────────
 // Query
