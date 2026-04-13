@@ -16,10 +16,13 @@
  * essentials inline and adds persistence + auth.
  */
 
+import { internal } from "./_generated/api";
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
+import type { TokenDenialReason } from "../packages/shared/src/external-access";
+import { authorizeExternalAccessSession } from "./lib/externalAccessSession";
 
 // ═══ Shared validators ═══
 
@@ -45,6 +48,14 @@ const reviewStatusValidator = v.union(
   v.literal("actioned"),
   v.literal("dismissed"),
 );
+
+// `convex/_generated/api.d.ts` is stale in this checkout and does not expose
+// the checked-in `externalAccess` module, even though the runtime module exists.
+const externalAccessRecordEvent = (
+  internal as unknown as {
+    externalAccess: { recordEvent: any };
+  }
+).externalAccess.recordEvent;
 
 // ═══ Inline validation (mirrors src/lib/externalAccess/listingResponse.ts) ═══
 
@@ -157,38 +168,19 @@ function validateInline(input: ValidationInput, nowIso: string): void {
   }
 }
 
-/**
- * Validate a token record for listing-response submission. Throws with
- * a structured error message on any failure. Pure — consumers pass the
- * token record they just loaded.
- */
-function validateTokenForSubmission(
-  token: Doc<"externalAccessTokens"> | null,
-  intendedDealRoomId: Id<"dealRooms">,
-  nowIso: string,
-): Doc<"externalAccessTokens"> {
-  if (!token) {
-    throw new Error("TOKEN_NOT_FOUND: invalid or unknown token");
+function deniedSubmissionError(reason: TokenDenialReason): string {
+  switch (reason) {
+    case "not_found":
+      return "TOKEN_NOT_FOUND: invalid or unknown token";
+    case "expired":
+      return "TOKEN_EXPIRED: token is expired";
+    case "revoked":
+      return "TOKEN_REVOKED: token has been revoked";
+    case "action_not_allowed":
+      return "ACTION_NOT_ALLOWED: token does not permit submit_response";
+    case "scope_mismatch":
+      return "TOKEN_SCOPE_MISMATCH: token is not scoped to this submission";
   }
-  if (token.revokedAt !== undefined) {
-    throw new Error("TOKEN_REVOKED: token has been revoked");
-  }
-  const nowMs = Date.parse(nowIso);
-  const expiresMs = Date.parse(token.expiresAt);
-  if (Number.isNaN(nowMs) || Number.isNaN(expiresMs) || nowMs >= expiresMs) {
-    throw new Error("TOKEN_EXPIRED: token is expired");
-  }
-  if (token.dealRoomId !== intendedDealRoomId) {
-    throw new Error(
-      "TOKEN_SCOPE_MISMATCH: token is not scoped to this deal room",
-    );
-  }
-  if (!token.allowedActions.includes("submit_response")) {
-    throw new Error(
-      "ACTION_NOT_ALLOWED: token does not permit submit_response",
-    );
-  }
-  return token;
 }
 
 // ═══ Queries ═══
@@ -299,7 +291,34 @@ export const submitResponse = mutation({
       .query("externalAccessTokens")
       .withIndex("by_hashedToken", (q) => q.eq("hashedToken", args.hashedToken))
       .unique();
-    const validToken = validateTokenForSubmission(token, args.dealRoomId, now);
+    const authorized = authorizeExternalAccessSession({
+      token,
+      hashedToken: args.hashedToken,
+      intendedAction: "submit_response",
+      intendedDealRoomId: args.dealRoomId,
+      intendedOfferId: args.offerId,
+      now,
+    });
+    if (!authorized.ok) {
+      await ctx.runMutation(externalAccessRecordEvent, {
+        tokenId: token?._id,
+        eventType: "denied",
+        dealRoomId: token?.dealRoomId ?? args.dealRoomId,
+        attemptedAction: "submit_response",
+        denialReason: authorized.reason,
+        summary: `Denied submit_response attempt (${authorized.reason})`,
+      });
+      throw new Error(deniedSubmissionError(authorized.reason));
+    }
+    const { session, token: validToken } = authorized;
+
+    await ctx.runMutation(externalAccessRecordEvent, {
+      tokenId: validToken._id,
+      eventType: "accessed",
+      dealRoomId: validToken.dealRoomId,
+      attemptedAction: "submit_response",
+      summary: `Authorized ${session.scope.resource} submission access`,
+    });
 
     // Verify the offer (if supplied) belongs to the same deal room AND
     // matches the token's offer scope if the token was issued for a
@@ -308,14 +327,40 @@ export const submitResponse = mutation({
     // same room, bypassing the token's least-privilege boundary.
     if (args.offerId) {
       const offer = await ctx.db.get(args.offerId);
-      if (!offer) throw new Error("Offer not found");
+      if (!offer) {
+        await ctx.runMutation(externalAccessRecordEvent, {
+          tokenId: validToken._id,
+          eventType: "denied",
+          dealRoomId: validToken.dealRoomId,
+          attemptedAction: "submit_response",
+          denialReason: "scope_mismatch",
+          summary: "Submission referenced an unknown offer",
+        });
+        throw new Error("Offer not found");
+      }
       if (offer.dealRoomId !== args.dealRoomId) {
+        await ctx.runMutation(externalAccessRecordEvent, {
+          tokenId: validToken._id,
+          eventType: "denied",
+          dealRoomId: validToken.dealRoomId,
+          attemptedAction: "submit_response",
+          denialReason: "scope_mismatch",
+          summary: "Submission targeted an offer outside the deal room scope",
+        });
         throw new Error("Offer does not belong to the specified deal room");
       }
       if (
         validToken.offerId !== undefined &&
         validToken.offerId !== args.offerId
       ) {
+        await ctx.runMutation(externalAccessRecordEvent, {
+          tokenId: validToken._id,
+          eventType: "denied",
+          dealRoomId: validToken.dealRoomId,
+          attemptedAction: "submit_response",
+          denialReason: "scope_mismatch",
+          summary: "Submission targeted an offer outside the token scope",
+        });
         throw new Error(
           "TOKEN_OFFER_SCOPE_MISMATCH: token is scoped to a specific offer that does not match the submission",
         );
@@ -323,26 +368,47 @@ export const submitResponse = mutation({
     } else if (validToken.offerId !== undefined) {
       // Token is scoped to an offer but the submission didn't target one.
       // Reject: the caller must declare which offer they're responding to.
+      await ctx.runMutation(externalAccessRecordEvent, {
+        tokenId: validToken._id,
+        eventType: "denied",
+        dealRoomId: validToken.dealRoomId,
+        attemptedAction: "submit_response",
+        denialReason: "scope_mismatch",
+        summary: "Submission omitted the required offer scope",
+      });
       throw new Error(
         "TOKEN_OFFER_SCOPE_MISMATCH: token is scoped to a specific offer but submission has no offerId",
       );
     }
 
     // Validate the payload shape
-    validateInline(
-      {
-        responseType: args.responseType,
-        offerId: args.offerId,
-        message: args.message,
-        counterPrice: args.counterPrice,
-        counterEarnestMoney: args.counterEarnestMoney,
-        counterClosingDate: args.counterClosingDate,
-        confirmedPct: args.confirmedPct,
-        confirmedFlat: args.confirmedFlat,
-        disputeReason: args.disputeReason,
-      },
-      now,
-    );
+    try {
+      validateInline(
+        {
+          responseType: args.responseType,
+          offerId: args.offerId,
+          message: args.message,
+          counterPrice: args.counterPrice,
+          counterEarnestMoney: args.counterEarnestMoney,
+          counterClosingDate: args.counterClosingDate,
+          confirmedPct: args.confirmedPct,
+          confirmedFlat: args.confirmedFlat,
+          disputeReason: args.disputeReason,
+        },
+        now,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid payload";
+      await ctx.runMutation(externalAccessRecordEvent, {
+        tokenId: validToken._id,
+        eventType: "denied",
+        dealRoomId: validToken.dealRoomId,
+        attemptedAction: "submit_response",
+        denialReason: "payload_invalid",
+        summary: message.slice(0, 200),
+      });
+      throw error;
+    }
 
     // Dedupe: reject if the same token+type was submitted within 60s
     const recent = await ctx.db
@@ -357,6 +423,14 @@ export const submitResponse = mutation({
       return nowMs - submittedMs < DEDUPE_WINDOW_MS;
     });
     if (duplicate) {
+      await ctx.runMutation(externalAccessRecordEvent, {
+        tokenId: validToken._id,
+        eventType: "denied",
+        dealRoomId: validToken.dealRoomId,
+        attemptedAction: "submit_response",
+        denialReason: "duplicate_submission",
+        summary: `Rejected duplicate ${args.responseType} submission`,
+      });
       throw new Error(
         "DUPLICATE_SUBMISSION: identical response submitted within the last 60 seconds",
       );
@@ -385,9 +459,13 @@ export const submitResponse = mutation({
       reviewStatus: "unreviewed",
       submittedAt: now,
     });
-
-    // Bump the token's lastUsedAt for audit
-    await ctx.db.patch(validToken._id, { lastUsedAt: now });
+    await ctx.runMutation(externalAccessRecordEvent, {
+      tokenId: validToken._id,
+      eventType: "submitted",
+      dealRoomId: validToken.dealRoomId,
+      attemptedAction: "submit_response",
+      summary: `Submitted ${args.responseType}`,
+    });
 
     // Audit log
     await ctx.db.insert("auditLog", {
