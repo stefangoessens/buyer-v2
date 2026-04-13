@@ -1,0 +1,32 @@
+# Dockerfile for the buyer-v2-extraction Railway service (KIN-1039).
+#
+# Root-level so the build context includes BOTH `services/extraction/`
+# (the FastAPI entry) AND `python-workers/` (the shared parser/fetch
+# library the service imports from). A Dockerfile living inside
+# `services/extraction/` can't COPY ../python-workers/ — Docker forbids
+# paths outside the build context.
+#
+# Railway config: services/extraction/railway.json points at this file
+# via `dockerfilePath: "../../Dockerfile.extraction"` OR Railway's
+# service-level Root Directory is set to repo root and the Dockerfile
+# path is set to this file. See KIN-1039 deploy notes.
+
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install the FastAPI service package
+COPY services/extraction/pyproject.toml ./services/extraction/pyproject.toml
+RUN pip install --no-cache-dir ./services/extraction
+
+# Copy the service source + the shared python-workers library it imports
+COPY services/extraction/src ./services/extraction/src
+COPY python-workers ./python-workers
+
+# Expose the FastAPI port; Railway provides PORT dynamically
+EXPOSE 8000
+
+# Set the working dir to the service root so `src.main` resolves
+WORKDIR /app/services/extraction
+
+CMD ["sh", "-c", "python -m uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
