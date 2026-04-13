@@ -20,6 +20,7 @@ final class MockAuthProvider: AuthProvider, @unchecked Sendable {
     var refreshCallCount = 0
     var validateCallCount = 0
     var lastValidatedToken: String?
+    var onValidateStarted: (@Sendable () async -> Void)?
 
     func authenticate(email: String, password: String) async throws -> AuthTokens {
         authenticateCallCount += 1
@@ -34,10 +35,35 @@ final class MockAuthProvider: AuthProvider, @unchecked Sendable {
     func validateToken(_ token: String) async throws -> AuthUser {
         validateCallCount += 1
         lastValidatedToken = token
+        if let onValidateStarted {
+            await onValidateStarted()
+        }
         if !validateResultQueue.isEmpty {
             return try validateResultQueue.removeFirst().get()
         }
         return try validateResult.get()
+    }
+}
+
+private actor AsyncResumeSignal {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var resumed = false
+
+    func wait() async {
+        if resumed { return }
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    nonisolated func resume() {
+        Task { await self._resume() }
+    }
+
+    private func _resume() {
+        resumed = true
+        continuation?.resume()
+        continuation = nil
     }
 }
 
@@ -196,6 +222,42 @@ struct AuthServiceTests {
         #expect(user == testUser)
         #expect(provider.refreshCallCount == 1)
         #expect(provider.validateCallCount == 2)
+    }
+
+    @Test("initialize() publishes .restoring while a signed-in session is revalidating")
+    func testInitializeReentersRestoringDuringRevalidation() async throws {
+        let provider = MockAuthProvider()
+        provider.authenticateResult = .success(testTokens)
+        provider.validateResult = .success(testUser)
+        let service = AuthService(provider: provider)
+
+        try await service.signIn(email: "buyer@example.com", password: "pass")
+        guard case .signedIn = service.state else {
+            Issue.record("Pre-condition failed: expected .signedIn")
+            return
+        }
+
+        let resumeSignal = AsyncResumeSignal()
+        provider.onValidateStarted = { await resumeSignal.wait() }
+
+        let initializeTask = Task { await service.initialize() }
+        await Task.yield()
+
+        guard case .restoring = service.state else {
+            Issue.record("Expected .restoring while initialize() is in flight, got \(service.state)")
+            resumeSignal.resume()
+            _ = await initializeTask.value
+            return
+        }
+
+        resumeSignal.resume()
+        _ = await initializeTask.value
+
+        guard case .signedIn(let user) = service.state else {
+            Issue.record("Expected .signedIn after initialize() revalidation, got \(service.state)")
+            return
+        }
+        #expect(user == testUser)
     }
 
     // MARK: - Sign In

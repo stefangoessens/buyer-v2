@@ -127,6 +127,8 @@ final class AuthService {
     // MARK: - Public
 
     func initialize() async {
+        state = .restoring
+
         do {
             let accessToken = try await loadToken(for: Self.accessTokenKey)
             let refreshToken = try await loadToken(for: Self.refreshTokenKey)
