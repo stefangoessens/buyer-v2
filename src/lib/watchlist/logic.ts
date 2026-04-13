@@ -1,19 +1,25 @@
 /**
- * Pure decision logic for the watchlist state (KIN-849).
+ * Pure decision logic for the watchlist state (KIN-986).
  *
- * Every function is pure — no Convex calls, no IO. The Convex
- * mutation layer composes these helpers so the full decision
- * tree is exercised in Vitest without a live backend.
+ * Every function is pure — no Convex calls, no IO. The Convex backend
+ * mirrors the read-model helpers in `convex/lib/watchlist.ts` so tests
+ * can validate the full decision tree without a live database.
  */
 
 import {
   MAX_NOTE_LENGTH,
   MAX_WATCHLIST_SIZE,
+  getWatchlistBuyer,
+  getWatchlistOrderingMetadata,
   type AddWatchlistResult,
+  type BuyerWatchlistRow,
   type BuyerWatchlistView,
+  type InternalWatchlistRow,
   type RemoveWatchlistResult,
   type ReorderWatchlistResult,
   type WatchlistEntry,
+  type WatchlistMissingField,
+  type WatchlistPropertyInput,
   type WatchlistValidation,
   type WatchlistValidationError,
 } from "./types";
@@ -21,12 +27,10 @@ import {
 // MARK: - Validation
 
 /**
- * Validate a single entry's fields. Used by both create and patch
- * paths to fail loud before the write lands.
+ * Validate a single entry's fields. Used by both create and patch paths to
+ * fail loud before the write lands.
  */
-export function validateEntry(
-  entry: WatchlistEntry
-): WatchlistValidation {
+export function validateEntry(entry: WatchlistEntry): WatchlistValidation {
   const errors: WatchlistValidationError[] = [];
 
   if (!entry.id || entry.id.trim() === "") {
@@ -54,12 +58,12 @@ export function validateEntry(
 
 /**
  * Validate a full list as a group. Catches:
- *   - capacity overflow
- *   - duplicate propertyIds (a property should only appear once)
- *   - per-entry errors via `validateEntry`
+ * - capacity overflow
+ * - duplicate propertyIds (a property should only appear once)
+ * - per-entry errors via `validateEntry`
  */
 export function validateWatchlist(
-  entries: readonly WatchlistEntry[]
+  entries: readonly WatchlistEntry[],
 ): WatchlistValidation {
   const errors: WatchlistValidationError[] = [];
 
@@ -74,7 +78,9 @@ export function validateWatchlist(
   const seen = new Set<string>();
   for (const entry of entries) {
     const perEntry = validateEntry(entry);
-    if (!perEntry.ok) errors.push(...perEntry.errors);
+    if (!perEntry.ok) {
+      errors.push(...perEntry.errors);
+    }
     if (seen.has(entry.propertyId)) {
       errors.push({
         kind: "duplicatePropertyId",
@@ -90,12 +96,12 @@ export function validateWatchlist(
 // MARK: - Add
 
 /**
- * Add a property to the watchlist. Idempotent — adding a property
- * that's already there returns `alreadyInList` with the existing
- * entry so the caller doesn't surface an "error" to the buyer.
+ * Add a property to the watchlist. Idempotent — adding a property that's
+ * already there returns `alreadyInList` with the existing entry so the
+ * caller doesn't surface an error to the buyer.
  *
- * New entries land at the END of the list (highest position). The
- * buyer can reorder later via `reorderWatchlist`.
+ * New entries land at the end of the list (highest position). The buyer
+ * can reorder later via `reorderWatchlist`.
  */
 export function addToWatchlist(
   entries: readonly WatchlistEntry[],
@@ -103,9 +109,9 @@ export function addToWatchlist(
   buyerId: string,
   newId: string,
   now: string,
-  note?: string
+  note?: string,
 ): AddWatchlistResult {
-  const existing = entries.find((e) => e.propertyId === propertyId);
+  const existing = entries.find((entry) => entry.propertyId === propertyId);
   if (existing) {
     return { kind: "alreadyInList", entry: existing };
   }
@@ -116,6 +122,7 @@ export function addToWatchlist(
       max: MAX_WATCHLIST_SIZE,
     };
   }
+
   const trimmedNote = note?.trim();
   const entry: WatchlistEntry = {
     id: newId,
@@ -133,80 +140,72 @@ export function addToWatchlist(
 
 /**
  * Remove a property from the watchlist. Returns the new ordering
- * (positions recomputed) or a `notFound` verdict if the property
- * isn't in the list.
- *
- * Note: returns the REMOVED id and the NEW list separately so the
- * Convex mutation layer can delete the row + patch positions in
- * one transaction.
+ * (positions recomputed) or a `notFound` verdict if the property isn't
+ * in the list.
  */
 export function removeFromWatchlist(
   entries: readonly WatchlistEntry[],
   propertyId: string,
-  now: string
+  now: string,
 ):
-  | (RemoveWatchlistResult & { kind: "removed" } & {
+  | (RemoveWatchlistResult & {
+      kind: "removed";
       reorderedEntries: WatchlistEntry[];
     })
   | (RemoveWatchlistResult & { kind: "notFound" }) {
-  const target = entries.find((e) => e.propertyId === propertyId);
+  const target = entries.find((entry) => entry.propertyId === propertyId);
   if (!target) {
     return { kind: "notFound", propertyId };
   }
-  const rest = entries.filter((e) => e.propertyId !== propertyId);
-  // Recompute positions so the list is always contiguous 0..N-1.
-  const reorderedEntries = rest
+
+  const reorderedEntries = entries
+    .filter((entry) => entry.propertyId !== propertyId)
     .slice()
-    .sort((a, b) => a.position - b.position)
-    .map((e, index) => ({
-      ...e,
+    .sort((left, right) => left.position - right.position)
+    .map((entry, index) => ({
+      ...entry,
       position: index,
       updatedAt: now,
     }));
+
   return { kind: "removed", removedId: target.id, reorderedEntries };
 }
 
 // MARK: - Reorder
 
 /**
- * Reorder the watchlist to match `orderedEntryIds`. The new order
- * must be a permutation of the existing entry ids — any missing,
- * extra, or duplicate ids return a typed `invalidOrder` error so
- * the Convex mutation can fail loud.
- *
- * Returns the new entry list with positions 0..N-1 assigned by
- * the caller-supplied order. `updatedAt` is refreshed on every
- * entry that moved.
+ * Reorder the watchlist to match `orderedEntryIds`. The new order must be
+ * a permutation of the existing entry ids — any missing, extra, or
+ * duplicate ids return a typed `invalidOrder` error.
  */
 export function reorderWatchlist(
   entries: readonly WatchlistEntry[],
   orderedEntryIds: readonly string[],
-  now: string
+  now: string,
 ): ReorderWatchlistResult {
-  const currentIds = new Set(entries.map((e) => e.id));
-  const newIdsSet = new Set(orderedEntryIds);
+  const currentIds = new Set(entries.map((entry) => entry.id));
+  const newIds = new Set(orderedEntryIds);
 
-  // Duplicate detection in the new order
-  if (newIdsSet.size !== orderedEntryIds.length) {
+  if (newIds.size !== orderedEntryIds.length) {
     return { kind: "invalidOrder", reason: "duplicateIds" };
   }
-  // Missing: current has ids not in new order
   for (const id of currentIds) {
-    if (!newIdsSet.has(id)) {
+    if (!newIds.has(id)) {
       return { kind: "invalidOrder", reason: "missingIds" };
     }
   }
-  // Extra: new order has ids not in current
   for (const id of orderedEntryIds) {
     if (!currentIds.has(id)) {
       return { kind: "invalidOrder", reason: "extraIds" };
     }
   }
 
-  const byId = new Map(entries.map((e) => [e.id, e]));
-  const reordered: WatchlistEntry[] = orderedEntryIds.map((id, index) => {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const reordered = orderedEntryIds.map((id, index) => {
     const original = byId.get(id)!;
-    if (original.position === index) return original;
+    if (original.position === index) {
+      return original;
+    }
     return {
       ...original,
       position: index,
@@ -220,27 +219,25 @@ export function reorderWatchlist(
 // MARK: - Set note
 
 /**
- * Replace the note on a watchlist entry. Returns the updated
- * entry or undefined if the property isn't in the list. A caller
- * that passes `undefined` or an empty string clears the note.
- *
- * Enforces the 280-char note budget; callers that exceed it get a
- * thrown error so the UI surfaces the problem clearly.
+ * Replace the note on a watchlist entry. A caller that passes `undefined`
+ * or an empty string clears the note.
  */
 export function setEntryNote(
   entries: readonly WatchlistEntry[],
   propertyId: string,
   note: string | undefined,
-  now: string
+  now: string,
 ): WatchlistEntry | undefined {
-  const target = entries.find((e) => e.propertyId === propertyId);
-  if (!target) return undefined;
+  const target = entries.find((entry) => entry.propertyId === propertyId);
+  if (!target) {
+    return undefined;
+  }
+
   const trimmed = note?.trim();
   if (trimmed !== undefined && trimmed.length > MAX_NOTE_LENGTH) {
-    throw new Error(
-      `watchlist note exceeds ${MAX_NOTE_LENGTH} char budget`
-    );
+    throw new Error(`watchlist note exceeds ${MAX_NOTE_LENGTH} char budget`);
   }
+
   return {
     ...target,
     note: trimmed && trimmed.length > 0 ? trimmed : undefined,
@@ -248,12 +245,11 @@ export function setEntryNote(
   };
 }
 
-// MARK: - Buyer view projection
+// MARK: - Buyer entry projection
 
 /**
- * Project a raw entry into the buyer view. Kept as a pure
- * function so tests can assert the shape without instantiating
- * a Convex runtime.
+ * Project a raw entry into the buyer entry view. Kept as a pure function so
+ * tests can assert the shape without instantiating a Convex runtime.
  */
 export function projectBuyerView(entry: WatchlistEntry): BuyerWatchlistView {
   return {
@@ -267,44 +263,154 @@ export function projectBuyerView(entry: WatchlistEntry): BuyerWatchlistView {
 }
 
 /**
- * Bulk projection — sorts by position ascending so the buyer
- * always sees a stable ordering.
+ * Bulk projection of stored entries — sorts by position ascending so the
+ * buyer always sees a stable ordering.
  */
 export function projectBuyerWatchlist(
-  entries: readonly WatchlistEntry[]
+  entries: readonly WatchlistEntry[],
 ): BuyerWatchlistView[] {
   return entries
     .slice()
-    .sort((a, b) => a.position - b.position)
+    .sort((left, right) => left.position - right.position)
     .map(projectBuyerView);
+}
+
+// MARK: - Canonical-property row projection
+
+/**
+ * Build the internal watchlist rows from stored entries plus canonical
+ * property data. Missing properties are skipped so a stale watchlist entry
+ * cannot break the buyer-facing surface.
+ */
+export function buildWatchlistRows(
+  entries: readonly WatchlistEntry[],
+  propertyById: Map<string, WatchlistPropertyInput>,
+): InternalWatchlistRow[] {
+  const orderedEntries = entries
+    .slice()
+    .sort((left, right) => left.position - right.position);
+
+  const rows: InternalWatchlistRow[] = [];
+  for (const entry of orderedEntries) {
+    const property = propertyById.get(entry.propertyId);
+    if (!property) {
+      continue;
+    }
+    rows.push(projectInternalRow(entry, property));
+  }
+  return rows;
+}
+
+/** Strip internal-only fields from the derived row before returning it to a buyer. */
+export function projectBuyerRow(row: InternalWatchlistRow): BuyerWatchlistRow {
+  const { buyerId: _buyerId, canonicalId: _canonicalId, ...buyerRow } = row;
+  return buyerRow;
+}
+
+/** Convenience wrapper to build buyer-safe rows directly from entries + properties. */
+export function buildBuyerWatchlistRows(
+  entries: readonly WatchlistEntry[],
+  propertyById: Map<string, WatchlistPropertyInput>,
+): BuyerWatchlistRow[] {
+  return buildWatchlistRows(entries, propertyById).map(projectBuyerRow);
+}
+
+function projectInternalRow(
+  entry: WatchlistEntry,
+  property: WatchlistPropertyInput,
+): InternalWatchlistRow {
+  const ordering = getWatchlistOrderingMetadata(entry);
+  const buyer = getWatchlistBuyer(entry);
+  const { detailState, missingFields } = computeDetailState(property);
+
+  return {
+    entryId: entry.id,
+    buyerId: buyer.buyerId,
+    propertyId: property._id,
+    canonicalId: property.canonicalId,
+    position: ordering.position,
+    note: entry.note,
+    addedAt: ordering.addedAt,
+    updatedAt: ordering.updatedAt,
+    addressLine:
+      property.address.formatted ?? formatAddressLine(property.address),
+    status: property.status,
+    listPrice: property.listPrice ?? null,
+    beds: property.beds ?? null,
+    baths: combineBaths(property.bathsFull, property.bathsHalf),
+    sqft: property.sqftLiving ?? null,
+    primaryPhotoUrl:
+      property.photoUrls && property.photoUrls.length > 0
+        ? property.photoUrls[0]
+        : null,
+    propertyType: property.propertyType ?? null,
+    detailState,
+    missingFields,
+  };
+}
+
+function computeDetailState(
+  property: WatchlistPropertyInput,
+): {
+  detailState: InternalWatchlistRow["detailState"];
+  missingFields: WatchlistMissingField[];
+} {
+  const missingFields: WatchlistMissingField[] = [];
+  if (property.listPrice === undefined) {
+    missingFields.push("listPrice");
+  }
+  if (property.beds === undefined) {
+    missingFields.push("beds");
+  }
+  if (property.bathsFull === undefined && property.bathsHalf === undefined) {
+    missingFields.push("baths");
+  }
+  if (property.sqftLiving === undefined) {
+    missingFields.push("sqft");
+  }
+  if (!property.photoUrls || property.photoUrls.length === 0) {
+    missingFields.push("primaryPhoto");
+  }
+
+  return {
+    detailState: missingFields.length > 0 ? "partial" : "complete",
+    missingFields,
+  };
+}
+
+function formatAddressLine(address: WatchlistPropertyInput["address"]): string {
+  const parts: string[] = [];
+  parts.push(address.street);
+  if (address.unit) {
+    parts.push(`Unit ${address.unit}`);
+  }
+  parts.push(`${address.city}, ${address.state} ${address.zip}`);
+  return parts.join(", ");
+}
+
+function combineBaths(full?: number, half?: number): number | null {
+  if (full === undefined && half === undefined) {
+    return null;
+  }
+  return (full ?? 0) + (half ?? 0) * 0.5;
 }
 
 // MARK: - Selectors
 
-/**
- * Count the number of watchlist entries for a buyer. Exposed here
- * so the Convex layer and tests share one implementation.
- */
-export function countEntries(
-  entries: readonly WatchlistEntry[]
-): number {
+/** Count the number of watchlist entries for a buyer. */
+export function countEntries(entries: readonly WatchlistEntry[]): number {
   return entries.length;
 }
 
-/**
- * True when the buyer's watchlist is at the hard cap.
- */
+/** True when the buyer's watchlist is at the hard cap. */
 export function isFull(entries: readonly WatchlistEntry[]): boolean {
   return entries.length >= MAX_WATCHLIST_SIZE;
 }
 
-/**
- * Return the entry for a given property id, or undefined if not
- * in the watchlist.
- */
+/** Return the entry for a given property id, or undefined if not in the watchlist. */
 export function findByPropertyId(
   entries: readonly WatchlistEntry[],
-  propertyId: string
+  propertyId: string,
 ): WatchlistEntry | undefined {
-  return entries.find((e) => e.propertyId === propertyId);
+  return entries.find((entry) => entry.propertyId === propertyId);
 }

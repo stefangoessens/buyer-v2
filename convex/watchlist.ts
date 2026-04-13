@@ -1,6 +1,14 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireAuth } from "./lib/session";
+import {
+  buildBuyerWatchlistRows,
+  MAX_NOTE_LENGTH,
+  MAX_WATCHLIST_SIZE,
+  type WatchlistEntry,
+  type WatchlistPropertyInput,
+} from "./lib/watchlist";
 
 /**
  * Convex queries + mutations for the buyer watchlist (KIN-849).
@@ -10,47 +18,115 @@ import { requireAuth } from "./lib/session";
  * no broker/admin surface here because buyer notes are explicitly
  * buyer-private.
  *
- * Pure decision logic lives in `src/lib/watchlist/logic.ts`.
- * Convex files cannot import from `src/`, so transition helpers
- * are duplicated inline. Keep the two aligned; tests on the pure
- * module prevent drift.
+ * Buyer-safe row projection lives in `convex/lib/watchlist.ts`, which
+ * mirrors the pure testable logic in `src/lib/watchlist/logic.ts`.
  */
 
-const MAX_WATCHLIST_SIZE = 50;
-const MAX_NOTE_LENGTH = 280;
+const watchlistStatusValidator = v.union(
+  v.literal("active"),
+  v.literal("pending"),
+  v.literal("contingent"),
+  v.literal("sold"),
+  v.literal("withdrawn"),
+);
+
+const watchlistMissingFieldValidator = v.union(
+  v.literal("listPrice"),
+  v.literal("beds"),
+  v.literal("baths"),
+  v.literal("sqft"),
+  v.literal("primaryPhoto"),
+);
+
+const buyerWatchlistRowValidator = v.object({
+  entryId: v.id("watchlistEntries"),
+  propertyId: v.id("properties"),
+  position: v.number(),
+  note: v.optional(v.string()),
+  addedAt: v.string(),
+  updatedAt: v.string(),
+  addressLine: v.string(),
+  status: watchlistStatusValidator,
+  listPrice: v.union(v.number(), v.null()),
+  beds: v.union(v.number(), v.null()),
+  baths: v.union(v.number(), v.null()),
+  sqft: v.union(v.number(), v.null()),
+  primaryPhotoUrl: v.union(v.string(), v.null()),
+  propertyType: v.union(v.string(), v.null()),
+  detailState: v.union(v.literal("partial"), v.literal("complete")),
+  missingFields: v.array(watchlistMissingFieldValidator),
+});
+
+function toWatchlistEntry(doc: Doc<"watchlistEntries">): WatchlistEntry {
+  return {
+    id: doc._id,
+    buyerId: doc.buyerId,
+    propertyId: doc.propertyId,
+    position: doc.position,
+    note: doc.note,
+    addedAt: doc.addedAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+function toWatchlistPropertyInput(
+  doc: Doc<"properties">,
+): WatchlistPropertyInput {
+  return {
+    _id: doc._id,
+    canonicalId: doc.canonicalId,
+    address: {
+      street: doc.address.street,
+      unit: doc.address.unit,
+      city: doc.address.city,
+      state: doc.address.state,
+      zip: doc.address.zip,
+      formatted: doc.address.formatted,
+    },
+    status: doc.status,
+    listPrice: doc.listPrice,
+    beds: doc.beds,
+    bathsFull: doc.bathsFull,
+    bathsHalf: doc.bathsHalf,
+    sqftLiving: doc.sqftLiving,
+    photoUrls: doc.photoUrls,
+    propertyType: doc.propertyType,
+  };
+}
 
 // MARK: - Query
 
 /**
- * List the authenticated buyer's watchlist, ordered by position.
+ * List the authenticated buyer's watchlist as buyer-safe rows derived from
+ * shared canonical property data.
  */
 export const listMine = query({
   args: {},
-  returns: v.array(
-    v.object({
-      _id: v.id("watchlistEntries"),
-      _creationTime: v.number(),
-      buyerId: v.id("users"),
-      propertyId: v.id("properties"),
-      position: v.number(),
-      note: v.optional(v.string()),
-      addedAt: v.string(),
-      updatedAt: v.string(),
-    })
-  ),
+  returns: v.array(buyerWatchlistRowValidator),
   handler: async (ctx) => {
     const user = await requireAuth(ctx);
     const rows = await ctx.db
       .query("watchlistEntries")
       .withIndex("by_buyerId_and_position", (q) =>
-        q.eq("buyerId", user._id)
+        q.eq("buyerId", user._id),
       )
       .collect();
-    // Explicit sort — Convex returns by index order, but we
-    // want deterministic position ascending in case positions
-    // get temporarily non-contiguous during a multi-step
-    // reorder.
-    return rows.sort((a, b) => a.position - b.position);
+    const entries = rows.map(toWatchlistEntry);
+    const propertyById: Map<string, WatchlistPropertyInput> = new Map();
+
+    for (const entry of entries) {
+      const property = await ctx.db.get(entry.propertyId as Id<"properties">);
+      if (!property) {
+        continue;
+      }
+      propertyById.set(property._id, toWatchlistPropertyInput(property));
+    }
+
+    return buildBuyerWatchlistRows(entries, propertyById).map((row) => ({
+      ...row,
+      entryId: row.entryId as Id<"watchlistEntries">,
+      propertyId: row.propertyId as Id<"properties">,
+    }));
   },
 });
 
@@ -76,6 +152,10 @@ export const addToWatchlist = mutation({
   }),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
+    const property = await ctx.db.get(args.propertyId);
+    if (!property) {
+      throw new Error("Property not found");
+    }
 
     const existing = await ctx.db
       .query("watchlistEntries")

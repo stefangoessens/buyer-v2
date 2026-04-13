@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
   addToWatchlist,
+  buildBuyerWatchlistRows,
+  buildWatchlistRows,
   countEntries,
   findByPropertyId,
   isFull,
   projectBuyerView,
+  projectBuyerRow,
   projectBuyerWatchlist,
   removeFromWatchlist,
   reorderWatchlist,
@@ -15,7 +18,11 @@ import {
 import {
   MAX_NOTE_LENGTH,
   MAX_WATCHLIST_SIZE,
+  getWatchlistBuyer,
+  getWatchlistOrderingMetadata,
+  getWatchlistPropertyReference,
   type WatchlistEntry,
+  type WatchlistPropertyInput,
 } from "@/lib/watchlist/types";
 
 // MARK: - Fixtures
@@ -41,6 +48,56 @@ function makeList(count: number): WatchlistEntry[] {
     })
   );
 }
+
+function makePropertyInput(
+  overrides: Partial<WatchlistPropertyInput> = {}
+): WatchlistPropertyInput {
+  return {
+    _id: "p_1",
+    canonicalId: "canonical_1",
+    address: {
+      street: "123 Palm Ave",
+      city: "Miami",
+      state: "FL",
+      zip: "33101",
+      formatted: "123 Palm Ave, Miami, FL 33101",
+    },
+    status: "active",
+    listPrice: 950000,
+    beds: 3,
+    bathsFull: 2,
+    bathsHalf: 1,
+    sqftLiving: 1800,
+    photoUrls: ["https://example.com/photo.jpg"],
+    propertyType: "Single Family",
+    ...overrides,
+  };
+}
+
+// MARK: - typed entry helpers
+
+describe("typed watchlist entities", () => {
+  it("projects buyer, property reference, and ordering metadata", () => {
+    const entry = makeEntry({
+      id: "entry_typed",
+      buyerId: "buyer_1",
+      propertyId: "property_1",
+      position: 4,
+      addedAt: "2026-04-12T05:00:00Z",
+      updatedAt: "2026-04-12T06:00:00Z",
+    });
+
+    expect(getWatchlistBuyer(entry)).toEqual({ buyerId: "buyer_1" });
+    expect(getWatchlistPropertyReference(entry)).toEqual({
+      propertyId: "property_1",
+    });
+    expect(getWatchlistOrderingMetadata(entry)).toEqual({
+      position: 4,
+      addedAt: "2026-04-12T05:00:00Z",
+      updatedAt: "2026-04-12T06:00:00Z",
+    });
+  });
+});
 
 // MARK: - validateEntry
 
@@ -430,6 +487,159 @@ describe("projectBuyerWatchlist", () => {
 
   it("handles empty list", () => {
     expect(projectBuyerWatchlist([])).toEqual([]);
+  });
+});
+
+// MARK: - buildWatchlistRows / buildBuyerWatchlistRows
+
+describe("buildWatchlistRows", () => {
+  it("derives internal rows from canonical property data", () => {
+    const entry = makeEntry({
+      id: "entry_watch_1",
+      buyerId: "buyer_1",
+      propertyId: "property_1",
+      note: "visit again",
+    });
+    const property = makePropertyInput({
+      _id: "property_1",
+      canonicalId: "canonical_property_1",
+    });
+
+    const rows = buildWatchlistRows(
+      [entry],
+      new Map([[property._id, property]])
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      entryId: "entry_watch_1",
+      buyerId: "buyer_1",
+      propertyId: "property_1",
+      canonicalId: "canonical_property_1",
+      addressLine: "123 Palm Ave, Miami, FL 33101",
+      status: "active",
+      listPrice: 950000,
+      beds: 3,
+      baths: 2.5,
+      sqft: 1800,
+      primaryPhotoUrl: "https://example.com/photo.jpg",
+      propertyType: "Single Family",
+      detailState: "complete",
+      missingFields: [],
+      note: "visit again",
+    });
+  });
+
+  it("marks rows partial when canonical property fields are missing", () => {
+    const entry = makeEntry({ propertyId: "property_partial" });
+    const property = makePropertyInput({
+      _id: "property_partial",
+      canonicalId: "canonical_partial",
+      listPrice: undefined,
+      beds: undefined,
+      bathsFull: undefined,
+      bathsHalf: undefined,
+      sqftLiving: undefined,
+      photoUrls: [],
+    });
+
+    const rows = buildWatchlistRows(
+      [entry],
+      new Map([[property._id, property]])
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.detailState).toBe("partial");
+    expect(rows[0]?.missingFields).toEqual([
+      "listPrice",
+      "beds",
+      "baths",
+      "sqft",
+      "primaryPhoto",
+    ]);
+  });
+
+  it("skips entries whose canonical property is missing", () => {
+    const rows = buildWatchlistRows(
+      [makeEntry({ propertyId: "missing_property" })],
+      new Map()
+    );
+    expect(rows).toEqual([]);
+  });
+});
+
+describe("projectBuyerRow", () => {
+  it("drops internal-only fields from a derived row", () => {
+    const internalRow = buildWatchlistRows(
+      [makeEntry({ buyerId: "buyer_secret", propertyId: "property_1" })],
+      new Map([
+        [
+          "property_1",
+          makePropertyInput({
+            _id: "property_1",
+            canonicalId: "canonical_secret",
+          }),
+        ],
+      ])
+    )[0]!;
+
+    const buyerRow = projectBuyerRow(internalRow);
+    expect(
+      (buyerRow as unknown as { buyerId?: string; canonicalId?: string })
+        .buyerId
+    ).toBeUndefined();
+    expect(
+      (buyerRow as unknown as { buyerId?: string; canonicalId?: string })
+        .canonicalId
+    ).toBeUndefined();
+    expect(buyerRow.entryId).toBe("entry_1");
+  });
+});
+
+describe("buildBuyerWatchlistRows", () => {
+  it("returns buyer-safe rows in position order", () => {
+    const entries = [
+      makeEntry({ id: "entry_b", propertyId: "property_b", position: 1 }),
+      makeEntry({ id: "entry_a", propertyId: "property_a", position: 0 }),
+    ];
+
+    const rows = buildBuyerWatchlistRows(
+      entries,
+      new Map([
+        [
+          "property_a",
+          makePropertyInput({
+            _id: "property_a",
+            canonicalId: "canonical_a",
+            address: {
+              street: "111 Bay Dr",
+              city: "Miami Beach",
+              state: "FL",
+              zip: "33139",
+            },
+          }),
+        ],
+        [
+          "property_b",
+          makePropertyInput({
+            _id: "property_b",
+            canonicalId: "canonical_b",
+            address: {
+              street: "222 Ocean Dr",
+              city: "Miami Beach",
+              state: "FL",
+              zip: "33139",
+            },
+          }),
+        ],
+      ])
+    );
+
+    expect(rows.map((row) => row.entryId)).toEqual(["entry_a", "entry_b"]);
+  });
+
+  it("handles the empty-watchlist path", () => {
+    expect(buildBuyerWatchlistRows([], new Map())).toEqual([]);
   });
 });
 
