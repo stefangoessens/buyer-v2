@@ -1,5 +1,6 @@
 export { parseListingUrl } from "./parser";
 export { extractZillowListingHtml } from "./zillowExtractor";
+export { extractRealtorListingHtml } from "./realtorExtractor";
 export type {
   SourcePlatform,
   ParseResult,
@@ -19,3 +20,15 @@ export type {
   ZillowParserError,
   ZillowParserErrorCode,
 } from "./zillowExtractor";
+export type {
+  RealtorCanonicalListingData,
+  RealtorExtractionField,
+  RealtorExtractionInput,
+  RealtorExtractionPayload,
+  RealtorExtractionResult,
+  RealtorExtractionSourceMetadata,
+  RealtorExtractionStrategy,
+  RealtorListingStatus,
+  RealtorParserError,
+  RealtorParserErrorCode,
+} from "./realtorExtractor";
