@@ -9,6 +9,7 @@
  */
 
 import type * as adminShell from "../adminShell.js";
+import type * as internalNotes from "../internalNotes.js";
 import type * as manualOverrides from "../manualOverrides.js";
 import type * as opsQueues from "../opsQueues.js";
 import type * as kpiDashboard from "../kpiDashboard.js";
@@ -70,6 +71,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   adminShell: typeof adminShell;
+  internalNotes: typeof internalNotes;
   manualOverrides: typeof manualOverrides;
   opsQueues: typeof opsQueues;
   kpiDashboard: typeof kpiDashboard;
