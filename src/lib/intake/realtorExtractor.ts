@@ -198,8 +198,8 @@ export function extractRealtorListingHtml(
   const fetchedAt = input.fetchedAt ?? new Date().toISOString();
   const listingId = extractRealtorListingId(parsedUrl.data.normalizedUrl);
   const state: CandidateState = {
-    values: listingId ? { realtorId: listingId } : {},
-    fieldStrategies: listingId ? { realtorId: "next-data" } : {},
+    values: {},
+    fieldStrategies: {},
     strategiesUsed: new Set(),
     attemptedStrategies: new Set(),
   };
@@ -308,7 +308,12 @@ function mergeCandidate(
   >) {
     const value = normalizeFieldValue(field, rawValue);
     if (value == null) continue;
-    if (state.values[field] !== undefined) continue;
+    if (
+      state.values[field] !== undefined &&
+      !shouldReplaceExistingValue(state, field, value)
+    ) {
+      continue;
+    }
     assignCandidateField(state, field, value, strategy);
     contributed = true;
   }
@@ -326,6 +331,23 @@ function assignCandidateField<K extends RealtorExtractionField>(
 ): void {
   state.values[field] = value;
   state.fieldStrategies[field] = strategy;
+}
+
+function shouldReplaceExistingValue<K extends RealtorExtractionField>(
+  state: CandidateState,
+  field: K,
+  incoming: RealtorCanonicalListingData[K],
+): boolean {
+  if (field !== "propertyType") return false;
+
+  const current = state.values.propertyType;
+  if (!current || typeof incoming !== "string") {
+    return false;
+  }
+
+  return (
+    propertyTypeSpecificity(incoming) > propertyTypeSpecificity(current)
+  );
 }
 
 function normalizeFieldValue<K extends RealtorExtractionField>(
@@ -930,9 +952,7 @@ function mapStatus(raw: unknown): RealtorListingStatus | undefined {
 }
 
 function normalizePropertyType(raw: unknown): string | undefined {
-  const normalized = normalizeTypeTokens(raw)
-    .map((entry) => decodeHtmlEntities(entry).trim())
-    .find((entry) => Boolean(entry));
+  const normalized = pickBestPropertyTypeToken(normalizeTypeTokens(raw));
   if (!normalized) return undefined;
 
   const compact = normalized.replace(/[\s-]+/g, "_").toLowerCase();
@@ -947,6 +967,37 @@ function normalizePropertyType(raw: unknown): string | undefined {
   if (compact.includes("new_construction")) return "New Construction";
   if (compact.includes("land")) return "Lot/Land";
   return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function propertyTypeSpecificity(value: string): number {
+  return isGenericPropertyType(value) ? 1 : 2;
+}
+
+function isGenericPropertyType(value: string): boolean {
+  const compact = value.replace(/[\s-]+/g, "_").toLowerCase();
+  return (
+    compact === "realestatelisting" ||
+    compact === "real_estate_listing" ||
+    compact === "product" ||
+    compact === "residence"
+  );
+}
+
+function pickBestPropertyTypeToken(tokens: string[]): string | undefined {
+  let fallback: string | undefined;
+
+  for (const token of tokens) {
+    const decoded = decodeHtmlEntities(token).trim();
+    if (!decoded) continue;
+    if (!fallback) {
+      fallback = decoded;
+    }
+    if (!isGenericPropertyType(decoded)) {
+      return decoded;
+    }
+  }
+
+  return fallback;
 }
 
 function normalizeDaysOnMarket(raw: unknown): number | undefined {

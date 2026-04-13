@@ -99,8 +99,27 @@ describe("extractRealtorListingHtml", () => {
     expect(result.payload.data.yearBuilt).toBe(2013);
     expect(result.payload.data.hoaFee).toBe(295);
     expect(result.payload.data.daysOnMarket).toBe(22);
+    expect(result.payload.source.fieldStrategies.realtorId).toBeUndefined();
     expect(result.payload.source.strategiesUsed).toEqual(["html-text"]);
     expect(result.payload.source.fieldStrategies.hoaFee).toBe("html-text");
+  });
+
+  it("prefers a richer __NEXT_DATA__ property type over generic JSON-LD", () => {
+    const result = extractRealtorListingHtml({
+      html: loadFixture("realtor_new_construction_palm_beach_gardens.html"),
+      sourceUrl:
+        "https://www.realtor.com/realestateandhomes-detail/7411-Avenir-Grove-Way_Palm-Beach-Gardens_FL_33418_M70005-99887",
+      fetchedAt: "2026-04-12T12:00:00Z",
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.payload.reviewState).toBe("complete");
+    expect(result.payload.data.propertyType).toBe("New Construction");
+    expect(result.payload.source.fieldStrategies.propertyType).toBe(
+      "next-data",
+    );
   });
 
   it("returns a typed parser error when required fields are missing", () => {
