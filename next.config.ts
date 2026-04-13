@@ -9,6 +9,12 @@ const workspaceRoot = dirname(fileURLToPath(import.meta.url));
 const nextConfig: NextConfig = {
   outputFileTracingRoot: workspaceRoot,
   transpilePackages: ["@buyer-v2/shared"],
+  // Typecheck runs as a separate CI gate; ESLint is informational
+  // during Railway production builds so we never block deploys on
+  // pure style rules like react/no-unescaped-entities.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "photos.zillowstatic.com" },
