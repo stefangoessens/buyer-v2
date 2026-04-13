@@ -1943,6 +1943,64 @@ export default defineSchema({
     .index("by_key_and_changedAt", ["key", "changedAt"])
     .index("by_changedAt", ["changedAt"]),
 
+  // ═══ FILE FACTS (KIN-841) ═══
+  //
+  // Typed extracted facts from uploaded documents (HOA estoppels,
+  // inspection reports, flood certificates, etc.). One row per
+  // distinct fact. The full history is append-only; supersession
+  // is handled by updating `reviewStatus` to "superseded" on
+  // older rows when a newer extraction lands.
+  //
+  // `value*` fields are a tagged union — exactly one of them is
+  // populated for any given row, based on `valueKind`. Enum values
+  // also carry `valueEnumAllowed` so downstream readers can
+  // validate that the chosen value is still in the current allow
+  // list without re-fetching the catalog.
+  //
+  // Pure validation + role-filter logic lives in
+  // `src/lib/fileFacts/logic.ts`. The mutation layer mirrors the
+  // same rules inline.
+  fileFacts: defineTable({
+    factSlug: v.string(),
+    storageId: v.id("_storage"),
+    propertyId: v.optional(v.id("properties")),
+    dealRoomId: v.optional(v.id("dealRooms")),
+    analysisRunId: v.optional(v.string()),
+
+    valueKind: v.union(
+      v.literal("numeric"),
+      v.literal("text"),
+      v.literal("date"),
+      v.literal("boolean"),
+      v.literal("enum")
+    ),
+    valueNumeric: v.optional(v.number()),
+    valueNumericUnit: v.optional(v.string()),
+    valueText: v.optional(v.string()),
+    valueDate: v.optional(v.string()),
+    valueBoolean: v.optional(v.boolean()),
+    valueEnum: v.optional(v.string()),
+    valueEnumAllowed: v.optional(v.array(v.string())),
+
+    confidence: v.optional(v.number()),
+    reviewStatus: v.union(
+      v.literal("needsReview"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("superseded")
+    ),
+    internalOnly: v.boolean(),
+    reviewedBy: v.optional(v.string()),
+    reviewedAt: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_storageId", ["storageId"])
+    .index("by_propertyId_and_factSlug", ["propertyId", "factSlug"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_factSlug", ["factSlug"])
+    .index("by_reviewStatus", ["reviewStatus"]),
+
   // ═══ RELEASE READINESS ITEMS (KIN-846) ═══
   //
   // Launch readiness checklist. One row per tracked item. The ops
