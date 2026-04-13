@@ -25,6 +25,24 @@ function applyFilters(rows: MockRow[], filters: EqFilter[]): MockRow[] {
   );
 }
 
+function seedIdCounters(tables: MockTables) {
+  return new Map(
+    Object.entries(tables)
+      .map(([table, rows]) => {
+        const maxId = rows.reduce((currentMax, row) => {
+          const match = row._id.match(new RegExp(`^${table}:(\\d+)$`));
+          if (!match) {
+            return currentMax;
+          }
+          return Math.max(currentMax, Number(match[1]));
+        }, 0);
+
+        return [table, maxId] as const;
+      })
+      .filter(([, maxId]) => maxId > 0),
+  );
+}
+
 function makeQuery(rows: MockRow[]) {
   return {
     withIndex(
@@ -58,7 +76,7 @@ function makeQuery(rows: MockRow[]) {
 
 export function createMockDb(initialTables: Partial<MockTables> = {}) {
   const tables = cloneTables(initialTables);
-  const idCounters = new Map<string, number>();
+  const idCounters = seedIdCounters(tables);
 
   function nextId(table: string) {
     const next = (idCounters.get(table) ?? 0) + 1;

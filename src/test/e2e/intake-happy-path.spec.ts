@@ -9,8 +9,14 @@ test.describe("Intake happy path", () => {
   }) => {
     await page.goto("/");
 
-    await page.locator('input[type="url"]').fill(listingUrl);
-    await page.getByRole("button", { name: /get free analysis/i }).click();
+    const pasteForm = page.locator("form").filter({
+      has: page.locator('input[type="url"]'),
+    }).first();
+
+    await pasteForm.locator('input[type="url"]').fill(listingUrl);
+    await pasteForm
+      .getByRole("button", { name: /get free analysis/i })
+      .click();
 
     await expect(page.getByText("Analyzing your property...")).toBeVisible();
 

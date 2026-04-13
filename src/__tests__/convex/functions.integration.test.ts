@@ -30,7 +30,7 @@ describe("Convex function integration harness", () => {
   });
 
   it("executes a public mutation against a mocked Convex db", async () => {
-    const existingId = "sourceListings:existing";
+    const existingId = "sourceListings:1";
     const { db, getTable } = createMockDb({
       sourceListings: [
         {
@@ -83,6 +83,7 @@ describe("Convex function integration harness", () => {
     });
     expect(getTable("sourceListings")).toHaveLength(2);
     expect(getTable("sourceListings")[1]).toMatchObject({
+      _id: "sourceListings:2",
       sourcePlatform: "redfin",
       status: "pending",
     });
