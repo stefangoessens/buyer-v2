@@ -85,6 +85,24 @@ export interface ReadinessItem {
   updatedBy: string;
 }
 
+/**
+ * Shared write payload used by the web + mobile clients. This is the
+ * stable contract that the backend read/write actions speak; the
+ * backend stores the same fields under Convex rows and stamps the audit
+ * metadata (`updatedAt`, `updatedBy`) on write.
+ */
+export interface ReadinessItemInput {
+  id: string;
+  title: string;
+  description: string;
+  owner: string;
+  severity: ReadinessItemSeverity;
+  status: ReadinessItemStatus;
+  targetDate: string;
+  blockerNote?: string;
+  evidenceUrl?: string;
+}
+
 // MARK: - Overall rollup
 
 /**
@@ -104,6 +122,16 @@ export type OverallReadiness =
   | { kind: "atRisk"; total: number; atRiskCount: number }
   | { kind: "noGo"; total: number; blockedCount: number }
   | { kind: "empty" };
+
+/**
+ * Shared read model returned by the backend. Callers consume the full
+ * checklist plus the derived overall status from the same source of
+ * truth so web / iOS views can't drift on launch-gate math.
+ */
+export interface ReadinessState {
+  items: ReadonlyArray<ReadinessItem>;
+  overall: OverallReadiness;
+}
 
 // MARK: - Validation
 
@@ -153,3 +181,10 @@ export type ReadinessTransitionError = {
   from: ReadinessItemStatus;
   to: ReadinessItemStatus;
 };
+
+export type ReadinessWriteError =
+  | ReadinessTransitionError
+  | {
+      kind: "validation";
+      errors: ReadinessValidationError[];
+    };

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildReadinessState,
   canTransition,
   computeOverallReadiness,
   isIsoDate,
@@ -7,9 +8,11 @@ import {
   transitionStatus,
   validateChecklist,
   validateItem,
+  writeReadinessItem,
 } from "@/lib/releaseReadiness/logic";
 import type {
   ReadinessItem,
+  ReadinessItemInput,
   ReadinessItemSeverity,
   ReadinessItemStatus,
 } from "@/lib/releaseReadiness/types";
@@ -29,6 +32,14 @@ function makeItem(overrides: Partial<ReadinessItem> = {}): ReadinessItem {
     updatedBy: "stefang@buyerv2.com",
     ...overrides,
   };
+}
+
+function makeInput(
+  overrides: Partial<ReadinessItemInput> = {}
+): ReadinessItemInput {
+  const item = makeItem(overrides);
+  const { updatedAt: _updatedAt, updatedBy: _updatedBy, ...input } = item;
+  return input;
 }
 
 // MARK: - isIsoDate
@@ -300,6 +311,86 @@ describe("transitionStatus", () => {
   });
 });
 
+// MARK: - writeReadinessItem
+
+describe("writeReadinessItem", () => {
+  it("creates a new item from the shared write payload", () => {
+    const result = writeReadinessItem(
+      null,
+      makeInput({
+        id: " launch-checklist ",
+        title: "  Final QA sweep  ",
+        owner: "  ops  ",
+      }),
+      "2026-04-15T12:00:00Z",
+      "stefang@buyerv2.com"
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.created).toBe(true);
+      expect(result.item.id).toBe("launch-checklist");
+      expect(result.item.title).toBe("Final QA sweep");
+      expect(result.item.owner).toBe("ops");
+      expect(result.item.updatedBy).toBe("stefang@buyerv2.com");
+    }
+  });
+
+  it("updates an existing item when the transition is legal", () => {
+    const existing = makeItem({
+      id: "beta",
+      status: "inProgress",
+      owner: "ops",
+    });
+
+    const result = writeReadinessItem(
+      existing,
+      makeInput({
+        id: "beta",
+        status: "ready",
+        evidenceUrl: "https://example.com/pr/123",
+        owner: "launch-ops",
+      }),
+      "2026-04-16T09:00:00Z",
+      "launch@buyerv2.com"
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.created).toBe(false);
+      expect(result.item.status).toBe("ready");
+      expect(result.item.owner).toBe("launch-ops");
+      expect(result.item.evidenceUrl).toBe("https://example.com/pr/123");
+      expect(result.item.updatedAt).toBe("2026-04-16T09:00:00Z");
+    }
+  });
+
+  it("rejects blocked items without a blocker note", () => {
+    const result = writeReadinessItem(
+      null,
+      makeInput({
+        id: "gamma",
+        status: "blocked",
+        blockerNote: "   ",
+      }),
+      "2026-04-15T12:00:00Z",
+      "stefang@buyerv2.com"
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("validation");
+      if (result.error.kind === "validation") {
+        expect(
+          result.error.errors.some(
+            (error) => error.kind === "missingBlockerNote"
+          )
+        ).toBe(true);
+      }
+    }
+  });
+});
+
 // MARK: - computeOverallReadiness
 
 describe("computeOverallReadiness", () => {
@@ -386,6 +477,33 @@ describe("computeOverallReadiness", () => {
       item("p1", "blocked"),
     ]);
     expect(result.kind).toBe("noGo");
+  });
+});
+
+// MARK: - buildReadinessState
+
+describe("buildReadinessState", () => {
+  it("derives overall status from the same item list it returns", () => {
+    const ready = makeItem({
+      id: "a",
+      severity: "p0",
+      status: "ready",
+      evidenceUrl: "https://example.com/a",
+    });
+    const blocked = makeItem({
+      id: "b",
+      severity: "p0",
+      status: "blocked",
+      blockerNote: "Waiting on App Store review",
+    });
+
+    const state = buildReadinessState([ready, blocked]);
+
+    expect(state.items).toHaveLength(2);
+    expect(state.overall.kind).toBe("noGo");
+    if (state.overall.kind === "noGo") {
+      expect(state.overall.blockedCount).toBe(1);
+    }
   });
 });
 

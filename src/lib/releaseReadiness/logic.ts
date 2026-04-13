@@ -9,10 +9,13 @@
 import type {
   OverallReadiness,
   ReadinessItem,
+  ReadinessItemInput,
   ReadinessItemStatus,
+  ReadinessState,
   ReadinessTransitionError,
   ReadinessValidation,
   ReadinessValidationError,
+  ReadinessWriteError,
 } from "./types";
 
 // MARK: - Field validation
@@ -182,6 +185,79 @@ export function transitionStatus(
   };
 }
 
+// MARK: - Shared state writes
+
+function normalizeOptionalString(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function materializeItem(
+  input: ReadinessItemInput,
+  now: string,
+  updatedBy: string
+): ReadinessItem {
+  return {
+    id: input.id.trim(),
+    title: input.title.trim(),
+    description: input.description,
+    owner: input.owner.trim(),
+    severity: input.severity,
+    status: input.status,
+    targetDate: input.targetDate,
+    blockerNote: normalizeOptionalString(input.blockerNote),
+    evidenceUrl: normalizeOptionalString(input.evidenceUrl),
+    updatedAt: now,
+    updatedBy,
+  };
+}
+
+/**
+ * Shared create-or-update helper used by tests to exercise the same
+ * contract the backend exposes to web/iOS clients. The caller passes
+ * the full desired item shape; this function validates the final row
+ * and enforces the status transition graph when updating an existing
+ * item.
+ */
+export function writeReadinessItem(
+  existing: ReadinessItem | null,
+  input: ReadinessItemInput,
+  now: string,
+  updatedBy: string
+):
+  | { ok: true; created: boolean; item: ReadinessItem }
+  | { ok: false; error: ReadinessWriteError } {
+  const next = materializeItem(input, now, updatedBy);
+
+  if (existing && !canTransition(existing.status, next.status)) {
+    return {
+      ok: false,
+      error: {
+        kind: "illegalTransition",
+        from: existing.status,
+        to: next.status,
+      },
+    };
+  }
+
+  const validation = validateItem(next);
+  if (!validation.ok) {
+    return {
+      ok: false,
+      error: {
+        kind: "validation",
+        errors: validation.errors,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    created: existing === null,
+    item: next,
+  };
+}
+
 // MARK: - Overall rollup
 
 /**
@@ -231,6 +307,20 @@ export function computeOverallReadiness(
   }
 
   return { kind: "go", total };
+}
+
+/**
+ * Materialize the full shared read model from stored items. The items
+ * remain the source of truth; `overall` is always derived on demand so
+ * callers can't observe a stale rollup.
+ */
+export function buildReadinessState(
+  items: readonly ReadinessItem[]
+): ReadinessState {
+  return {
+    items: [...items],
+    overall: computeOverallReadiness(items),
+  };
 }
 
 // MARK: - Summary metrics

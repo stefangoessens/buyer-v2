@@ -81,6 +81,80 @@ function isIsoDate(value: string): boolean {
   return roundTrip === inputDate;
 }
 
+function normalizeOptionalString(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function validateSharedShape(item: {
+  id: string;
+  title: string;
+  owner: string;
+  status: ReadinessStatus;
+  targetDate: string;
+  blockerNote?: string;
+  evidenceUrl?: string;
+}): void {
+  if (item.id.trim() === "") {
+    throw new Error("id is required");
+  }
+  if (item.title.trim().length < 3 || item.title.trim().length > 120) {
+    throw new Error("title must be 3..120 characters");
+  }
+  if (item.owner.trim() === "") {
+    throw new Error("owner cannot be empty or whitespace");
+  }
+  if (!isIsoDate(item.targetDate)) {
+    throw new Error("targetDate must be an ISO-8601 date");
+  }
+  if (item.status === "blocked" && !normalizeOptionalString(item.blockerNote)) {
+    throw new Error("blockerNote is required when status is 'blocked'");
+  }
+  if (item.status === "ready" && !normalizeOptionalString(item.evidenceUrl)) {
+    throw new Error("evidenceUrl is required when status is 'ready'");
+  }
+}
+
+function computeOverallReadiness(
+  items: Array<{
+    severity: "p0" | "p1" | "p2";
+    status: ReadinessStatus;
+  }>
+):
+  | { kind: "go"; total: number }
+  | { kind: "atRisk"; total: number; atRiskCount: number }
+  | { kind: "noGo"; total: number; blockedCount: number }
+  | { kind: "empty" } {
+  const active = items.filter((item) => item.status !== "deferred");
+  const total = active.length;
+  if (total === 0) {
+    return { kind: "empty" };
+  }
+
+  const p0Blocked = active.filter(
+    (item) => item.severity === "p0" && item.status === "blocked"
+  );
+  if (p0Blocked.length > 0) {
+    return { kind: "noGo", total, blockedCount: p0Blocked.length };
+  }
+
+  const p0AtRisk = active.filter(
+    (item) => item.severity === "p0" && item.status === "atRisk"
+  );
+  const p1Blocked = active.filter(
+    (item) => item.severity === "p1" && item.status === "blocked"
+  );
+  if (p0AtRisk.length > 0 || p1Blocked.length > 0) {
+    return {
+      kind: "atRisk",
+      total,
+      atRiskCount: p0AtRisk.length + p1Blocked.length,
+    };
+  }
+
+  return { kind: "go", total };
+}
+
 // MARK: - Create
 
 /**
@@ -109,7 +183,11 @@ export const createItem = mutation({
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, "broker");
 
+    const owner = args.owner.trim();
     const title = args.title.trim();
+    if (owner === "") {
+      throw new Error("owner cannot be empty or whitespace");
+    }
     if (title.length < 3 || title.length > 120) {
       throw new Error("title must be 3..120 characters");
     }
@@ -147,12 +225,12 @@ export const createItem = mutation({
       itemKey: args.itemKey,
       title,
       description: args.description,
-      owner: args.owner,
+      owner,
       severity: args.severity,
       status: args.status,
       targetDate: args.targetDate,
-      blockerNote: args.blockerNote,
-      evidenceUrl: args.evidenceUrl,
+      blockerNote: normalizeOptionalString(args.blockerNote),
+      evidenceUrl: normalizeOptionalString(args.evidenceUrl),
       updatedAt: now,
       updatedBy: user.email,
     });
@@ -336,6 +414,68 @@ const itemReturnValidator = v.object({
   updatedBy: v.string(),
 });
 
+const sharedItemValidator = v.object({
+  id: v.string(),
+  title: v.string(),
+  description: v.string(),
+  owner: v.string(),
+  severity: severityValidator,
+  status: statusValidator,
+  targetDate: v.string(),
+  blockerNote: v.optional(v.string()),
+  evidenceUrl: v.optional(v.string()),
+  updatedAt: v.string(),
+  updatedBy: v.string(),
+});
+
+const overallValidator = v.union(
+  v.object({
+    kind: v.literal("go"),
+    total: v.number(),
+  }),
+  v.object({
+    kind: v.literal("atRisk"),
+    total: v.number(),
+    atRiskCount: v.number(),
+  }),
+  v.object({
+    kind: v.literal("noGo"),
+    total: v.number(),
+    blockedCount: v.number(),
+  }),
+  v.object({
+    kind: v.literal("empty"),
+  })
+);
+
+function toSharedItem(record: {
+  itemKey: string;
+  title: string;
+  description: string;
+  owner: string;
+  severity: "p0" | "p1" | "p2";
+  status: ReadinessStatus;
+  targetDate: string;
+  blockerNote?: string;
+  evidenceUrl?: string;
+  updatedAt: string;
+  updatedBy: string;
+}) {
+  return {
+    id: record.itemKey,
+    title: record.title,
+    description: record.description,
+    owner: record.owner,
+    severity: record.severity,
+    status: record.status,
+    targetDate: record.targetDate,
+    blockerNote: record.blockerNote,
+    evidenceUrl: record.evidenceUrl,
+    updatedAt: record.updatedAt,
+    updatedBy: record.updatedBy,
+  };
+}
+
 /**
  * List every readiness item. Ops-only.
  */
@@ -345,6 +485,28 @@ export const listAll = query({
   handler: async (ctx) => {
     await requireRole(ctx, "broker");
     return await ctx.db.query("releaseReadinessItems").collect();
+  },
+});
+
+/**
+ * Shared read action for the release-readiness checklist. Returns the
+ * full typed item list plus the derived overall launch verdict from
+ * the same backend state so clients don't reimplement rollup logic.
+ */
+export const getState = query({
+  args: {},
+  returns: v.object({
+    items: v.array(sharedItemValidator),
+    overall: overallValidator,
+  }),
+  handler: async (ctx) => {
+    await requireRole(ctx, "broker");
+    const records = await ctx.db.query("releaseReadinessItems").collect();
+    const items = records.map(toSharedItem);
+    return {
+      items,
+      overall: computeOverallReadiness(items),
+    };
   },
 });
 
@@ -361,5 +523,90 @@ export const getByKey = query({
       .query("releaseReadinessItems")
       .withIndex("by_itemKey", (q) => q.eq("itemKey", args.itemKey))
       .unique();
+  },
+});
+
+/**
+ * Shared write action for web / iOS clients. Upserts by stable item id
+ * (`itemKey` in storage) and enforces the same validation + transition
+ * rules as the lower-level mutations above.
+ */
+export const writeItem = mutation({
+  args: {
+    item: v.object({
+      id: v.string(),
+      title: v.string(),
+      description: v.string(),
+      owner: v.string(),
+      severity: severityValidator,
+      status: statusValidator,
+      targetDate: v.string(),
+      blockerNote: v.optional(v.string()),
+      evidenceUrl: v.optional(v.string()),
+    }),
+  },
+  returns: sharedItemValidator,
+  handler: async (ctx, args) => {
+    const user = await requireRole(ctx, "broker");
+    validateSharedShape(args.item);
+
+    const existing = await ctx.db
+      .query("releaseReadinessItems")
+      .withIndex("by_itemKey", (q) => q.eq("itemKey", args.item.id))
+      .unique();
+
+    if (existing && !canTransition(existing.status, args.item.status)) {
+      throw new Error(
+        `illegal transition ${existing.status} → ${args.item.status}`
+      );
+    }
+
+    const now = new Date().toISOString();
+    const sharedItem = {
+      id: args.item.id.trim(),
+      title: args.item.title.trim(),
+      description: args.item.description,
+      owner: args.item.owner.trim(),
+      severity: args.item.severity,
+      status: args.item.status,
+      targetDate: args.item.targetDate,
+      blockerNote: normalizeOptionalString(args.item.blockerNote),
+      evidenceUrl: normalizeOptionalString(args.item.evidenceUrl),
+      updatedAt: now,
+      updatedBy: user.email,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        itemKey: sharedItem.id,
+        title: sharedItem.title,
+        description: sharedItem.description,
+        owner: sharedItem.owner,
+        severity: sharedItem.severity,
+        status: sharedItem.status,
+        targetDate: sharedItem.targetDate,
+        blockerNote: sharedItem.blockerNote,
+        evidenceUrl: sharedItem.evidenceUrl,
+        updatedAt: sharedItem.updatedAt,
+        updatedBy: sharedItem.updatedBy,
+      });
+      return sharedItem;
+    }
+
+    await ctx.db.insert("releaseReadinessItems", {
+      itemKey: sharedItem.id,
+      title: sharedItem.title,
+      description: sharedItem.description,
+      owner: sharedItem.owner,
+      severity: sharedItem.severity,
+      status: sharedItem.status,
+      targetDate: sharedItem.targetDate,
+      blockerNote: sharedItem.blockerNote,
+      evidenceUrl: sharedItem.evidenceUrl,
+      updatedAt: sharedItem.updatedAt,
+      updatedBy: sharedItem.updatedBy,
+    });
+
+    return sharedItem;
   },
 });
