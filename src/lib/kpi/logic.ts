@@ -130,7 +130,15 @@ export function validateKpiCatalog(
   catalog: KpiCatalog,
   launchEventNames: ReadonlySet<string> = new Set(
     Object.keys(LAUNCH_EVENT_CONTRACT.events)
-  )
+  ),
+  /**
+   * Known Convex table names — optional. When supplied, derivedState
+   * sources are cross-checked against this set so a KPI can never
+   * reference a phantom table. Tests pass the real set from
+   * `KNOWN_CONVEX_TABLES` below; the production catalog runs at
+   * build time so stale references fail CI.
+   */
+  knownTableNames?: ReadonlySet<string>
 ): KpiValidation {
   const errors: KpiValidationError[] = [];
   const seen = new Set<string>();
@@ -167,6 +175,17 @@ export function validateKpiCatalog(
         if (def.source.tables.length === 0) {
           errors.push({ kind: "emptyTableList", id: def.id });
         }
+        if (knownTableNames) {
+          for (const tableName of def.source.tables) {
+            if (!knownTableNames.has(tableName)) {
+              errors.push({
+                kind: "unknownTableName",
+                id: def.id,
+                tableName,
+              });
+            }
+          }
+        }
         break;
       case "external":
         // External sources are opaque — nothing to validate
@@ -185,6 +204,25 @@ export function validateKpiCatalog(
 
   return errors.length === 0 ? { ok: true } : { ok: false, errors };
 }
+
+/**
+ * The Convex table names referenced by the KPI catalog. Maintained
+ * by hand — stale references fail `validateKpiCatalog` in test so
+ * the catalog cannot drift from the real schema silently.
+ *
+ * This list is a subset of the full schema — only tables the KPI
+ * catalog cites. When the catalog adds a new derivedState table,
+ * add it here AND verify it matches a `defineTable` call in
+ * `convex/schema.ts`.
+ */
+export const KNOWN_CONVEX_TABLES: ReadonlySet<string> = new Set([
+  "dealRooms",
+  "offers",
+  "compensationStatus",
+  "fileAnalysisJobs",
+  "fileAnalyses",
+  "fileAnalysisFindings",
+]);
 
 // MARK: - Summary
 

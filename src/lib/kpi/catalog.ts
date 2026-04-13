@@ -190,16 +190,20 @@ const OPS_KPIS: readonly KpiDefinition[] = [
     category: "ops",
     label: "Document analysis SLA",
     description:
-      "P95 latency from document upload to buyer-visible fact state.",
+      "P95 latency from file analysis job submit to completed analysis state.",
     formulaEnglish:
-      "95th percentile of time between file upload and the first approved fileFact surfacing to the buyer.",
+      "95th percentile of time between a fileAnalysisJob submission and the corresponding fileAnalyses row landing with approved state.",
     formulaSymbolic:
-      "p95(fileFacts.reviewedAt - uploadedFiles.createdAt)",
+      "p95(fileAnalyses.createdAt - fileAnalysisJobs.createdAt)",
     source: {
       kind: "derivedState",
-      tables: ["fileFacts", "uploadedFiles"],
+      tables: [
+        "fileAnalysisJobs",
+        "fileAnalyses",
+        "fileAnalysisFindings",
+      ],
       combiner:
-        "p95 over (fileFacts.reviewedAt - uploadedFiles.createdAt) where reviewStatus='approved'",
+        "p95 over (fileAnalyses.createdAt - fileAnalysisJobs.createdAt) within the selected window",
     },
     cadence: "hourly",
     presentation: "duration_hours",
@@ -319,11 +323,11 @@ const BROKER_KPIS: readonly KpiDefinition[] = [
       "Count of active compensation records grouped by status.",
     formulaEnglish:
       "Group the compensation/payout records by their lifecycle status.",
-    formulaSymbolic: "group_by(compensation, status)",
+    formulaSymbolic: "group_by(compensationStatus, status)",
     source: {
       kind: "derivedState",
-      tables: ["compensationRecords"],
-      combiner: "group_by(compensationRecords, status)",
+      tables: ["compensationStatus"],
+      combiner: "group_by(compensationStatus, status)",
     },
     cadence: "daily",
     presentation: "count",
@@ -340,12 +344,12 @@ const AI_KPIS: readonly KpiDefinition[] = [
     description:
       "95th percentile end-to-end latency for AI engine outputs.",
     formulaEnglish:
-      "95th percentile of engine output durations across all engines in the window.",
-    formulaSymbolic: "p95(aiEngineOutputs.durationMs)",
+      "95th percentile of engine output durations measured at the AI gateway. Sourced from PostHog because the Convex aiEngineOutputs row only stores generatedAt, not durationMs.",
+    formulaSymbolic: "p95(ai.gateway.durationMs)",
     source: {
-      kind: "derivedState",
-      tables: ["aiEngineOutputs"],
-      combiner: "p95(aiEngineOutputs.durationMs) grouped by engineType",
+      kind: "external",
+      system: "posthog",
+      reference: "buyer-v2 / AI engine latency",
     },
     cadence: "hourly",
     presentation: "duration_ms",
@@ -359,14 +363,13 @@ const AI_KPIS: readonly KpiDefinition[] = [
     description:
       "Share of engine outputs that fell back to a deterministic or stub path.",
     formulaEnglish:
-      "Count of fallback/stubbed outputs divided by total engine outputs.",
+      "Count of fallback/stubbed outputs divided by total engine outputs, measured at the AI gateway fallback counter.",
     formulaSymbolic:
-      "count(aiEngineOutputs where fallback=true) / count(aiEngineOutputs)",
+      "count(ai.fallback_fired) / count(ai.engine_called)",
     source: {
-      kind: "derivedState",
-      tables: ["aiEngineOutputs"],
-      combiner:
-        "count where fallback=true / total count grouped by engineType",
+      kind: "external",
+      system: "posthog",
+      reference: "buyer-v2 / AI fallback funnel",
     },
     cadence: "hourly",
     presentation: "percentage",
@@ -380,14 +383,13 @@ const AI_KPIS: readonly KpiDefinition[] = [
     description:
       "Average LLM cost spent per unique deal room in the window.",
     formulaEnglish:
-      "Sum of LLM cost USD divided by the distinct deal room count that engines produced outputs for.",
+      "Sum of gateway-tracked LLM cost divided by the distinct deal room count that produced AI outputs in the window.",
     formulaSymbolic:
-      "sum(aiEngineOutputs.costUsd) / count_unique(aiEngineOutputs.dealRoomId)",
+      "sum(ai.gateway.cost_usd) / distinct(ai.gateway.dealRoomId)",
     source: {
-      kind: "derivedState",
-      tables: ["aiEngineOutputs"],
-      combiner:
-        "sum(costUsd) / distinct(dealRoomId) across the selected window",
+      kind: "external",
+      system: "posthog",
+      reference: "buyer-v2 / AI cost per deal room",
     },
     cadence: "daily",
     presentation: "currency_usd",
@@ -401,14 +403,13 @@ const AI_KPIS: readonly KpiDefinition[] = [
     description:
       "Aggregate score from the deterministic AI eval harness suite.",
     formulaEnglish:
-      "Mean of pass rates across the eval harness test suites grouped by engine.",
+      "Mean of pass rates across the eval harness test suites grouped by engine. Produced by the CI eval runner (scripts/ai-eval.ts) and posted to the AI dashboard.",
     formulaSymbolic:
-      "mean(evalRuns.passRate) grouped by engineType",
+      "mean(evalRun.passRate) grouped by engineType",
     source: {
-      kind: "derivedState",
-      tables: ["aiEvalRuns"],
-      combiner:
-        "mean(passRate) over most recent run grouped by engineType",
+      kind: "external",
+      system: "github_actions",
+      reference: "buyer-v2 / scripts/ai-eval.ts",
     },
     cadence: "daily",
     presentation: "score",
@@ -422,14 +423,13 @@ const AI_KPIS: readonly KpiDefinition[] = [
     description:
       "Difference between self-reported engine confidence and realized accuracy.",
     formulaEnglish:
-      "Mean absolute error between predicted confidence and realized pass rate across the eval harness window.",
+      "Mean absolute error between predicted confidence and realized pass rate across the eval harness window. The predicted confidence comes from Convex aiEngineOutputs; the realized pass rate comes from the CI eval drift report.",
     formulaSymbolic:
-      "mean(|engineConfidence - realizedPassRate|)",
+      "mean(|aiEngineOutputs.confidence - eval.passRate|)",
     source: {
-      kind: "derivedState",
-      tables: ["aiEvalRuns", "aiEngineOutputs"],
-      combiner:
-        "mean(|confidence - passRate|) over the selected window",
+      kind: "external",
+      system: "github_actions",
+      reference: "buyer-v2 / scripts/ai-eval.ts drift",
     },
     cadence: "weekly",
     presentation: "ratio",

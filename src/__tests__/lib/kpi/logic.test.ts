@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  KNOWN_CONVEX_TABLES,
   KPI_CATALOG,
   findKpi,
   isValidKpiId,
@@ -161,8 +162,12 @@ describe("validateKpiCatalog", () => {
     Object.keys(LAUNCH_EVENT_CONTRACT.events)
   );
 
-  it("accepts the real catalog", () => {
-    const result = validateKpiCatalog(KPI_CATALOG, launchEventNames);
+  it("accepts the real catalog (with table validation)", () => {
+    const result = validateKpiCatalog(
+      KPI_CATALOG,
+      launchEventNames,
+      KNOWN_CONVEX_TABLES
+    );
     if (!result.ok) {
       throw new Error(
         `real catalog failed: ${JSON.stringify(result.errors)}`
@@ -286,6 +291,40 @@ describe("validateKpiCatalog", () => {
           (e) =>
             e.kind === "unknownEventName" &&
             e.eventName === "phantom_event"
+        )
+      ).toBe(true);
+    }
+  });
+
+  it("detects unknown Convex table names in derivedState source", () => {
+    const catalog: KpiCatalog = {
+      version: "0.0.1",
+      lastUpdated: "2026-04-12",
+      definitions: [
+        makeKpi({
+          id: "broker.phantom",
+          category: "broker",
+          owner: "brokerage",
+          source: {
+            kind: "derivedState",
+            tables: ["dealRooms", "phantomTable"],
+            combiner: "x",
+          },
+        }),
+      ],
+    };
+    const result = validateKpiCatalog(
+      catalog,
+      launchEventNames,
+      KNOWN_CONVEX_TABLES
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.errors.some(
+          (e) =>
+            e.kind === "unknownTableName" &&
+            e.tableName === "phantomTable"
         )
       ).toBe(true);
     }

@@ -171,6 +171,11 @@ export type KpiValidationError =
       kind: "unknownEventName";
       id: string;
       eventName: string;
+    }
+  | {
+      kind: "unknownTableName";
+      id: string;
+      tableName: string;
     };
 
 export type KpiValidation =
