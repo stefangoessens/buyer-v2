@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { convex } from "@/lib/convex";
 import {
   formatMatchConfidence,
   formatMatchScore,
@@ -23,6 +24,36 @@ function Pill({ children }: { children: React.ReactNode }) {
 }
 
 export function AddressIntakeStatus({ intakeId }: AddressIntakeStatusProps) {
+  // Public deployments can intentionally omit ConvexProvider when
+  // `NEXT_PUBLIC_CONVEX_URL` is absent, so only call `useQuery` from a
+  // guarded child component.
+  if (!convex) {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-16">
+        <div className="rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm">
+          <Pill>Unavailable</Pill>
+          <h1 className="mt-4 text-3xl font-semibold text-neutral-900">
+            Address intake is unavailable right now
+          </h1>
+          <p className="mt-3 text-neutral-600">
+            This deployment can&apos;t reach the property graph yet. Try again
+            once the Convex backend is configured.
+          </p>
+          <Link
+            href="/"
+            className="mt-6 inline-flex rounded-2xl bg-primary-400 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-500"
+          >
+            Go to homepage
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  return <AddressIntakeStatusLive intakeId={intakeId} />;
+}
+
+function AddressIntakeStatusLive({ intakeId }: AddressIntakeStatusProps) {
   const snapshot = useQuery(api.addressIntake.getIntakeStatus, {
     intakeId: intakeId as Id<"sourceListings">,
   });
