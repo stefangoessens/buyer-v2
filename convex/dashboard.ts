@@ -57,7 +57,20 @@ const dashboardDealRowValidator = v.object({
     v.literal("full"),
   ),
   updatedAt: v.string(),
-  hydrated: v.boolean(),
+  detailState: v.union(
+    v.literal("loading"),
+    v.literal("partial"),
+    v.literal("complete"),
+  ),
+  missingFields: v.array(
+    v.union(
+      v.literal("listPrice"),
+      v.literal("beds"),
+      v.literal("baths"),
+      v.literal("sqft"),
+      v.literal("primaryPhoto"),
+    ),
+  ),
 });
 
 const dashboardIndexValidator = v.object({
@@ -80,6 +93,25 @@ const dashboardIndexValidator = v.object({
     ),
     oldestActiveDays: v.union(v.number(), v.null()),
     hasAnyDeals: v.boolean(),
+    hasPartialDeals: v.boolean(),
+    badges: v.array(
+      v.object({
+        kind: v.union(
+          v.literal("active_count"),
+          v.literal("recent_count"),
+          v.literal("most_urgent"),
+          v.literal("oldest_active"),
+        ),
+        label: v.string(),
+        tone: v.union(
+          v.literal("primary"),
+          v.literal("neutral"),
+          v.literal("warning"),
+        ),
+        value: v.string(),
+        isEmpty: v.boolean(),
+      }),
+    ),
   }),
 });
 
@@ -117,6 +149,37 @@ export const getDealIndex = query({
           mostUrgentStatus: null,
           oldestActiveDays: null,
           hasAnyDeals: false,
+          hasPartialDeals: false,
+          badges: [
+            {
+              kind: "active_count",
+              label: "Active",
+              tone: "neutral",
+              value: "0",
+              isEmpty: true,
+            },
+            {
+              kind: "recent_count",
+              label: "Recent",
+              tone: "neutral",
+              value: "0",
+              isEmpty: true,
+            },
+            {
+              kind: "most_urgent",
+              label: "Most urgent",
+              tone: "neutral",
+              value: "None",
+              isEmpty: true,
+            },
+            {
+              kind: "oldest_active",
+              label: "Oldest active",
+              tone: "neutral",
+              value: "None",
+              isEmpty: true,
+            },
+          ],
         },
       };
       return empty;
@@ -142,7 +205,7 @@ export const getDealIndex = query({
 
     // Fetch the linked properties in parallel. Missing properties
     // (e.g. still extracting) are fine — the row builder marks them
-    // as `hydrated: false`.
+    // as `detailState: "loading"`.
     const propertyById = new Map<string, RawProperty>();
     const propertyIds = Array.from(new Set(deals.map((d) => d.propertyId)));
     const properties = await Promise.all(

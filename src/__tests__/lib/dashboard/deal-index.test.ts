@@ -102,7 +102,8 @@ describe("buildDashboardRow — hydrated path", () => {
     expect(row.propertyId).toBe("prop_1");
     expect(row.status).toBe("analysis");
     expect(row.category).toBe("active");
-    expect(row.hydrated).toBe(true);
+    expect(row.detailState).toBe("complete");
+    expect(row.missingFields).toEqual([]);
     expect(row.addressLine).toBe("123 Main St, Miami, FL 33131");
     expect(row.listPrice).toBe(650000);
     expect(row.beds).toBe(2);
@@ -161,6 +162,8 @@ describe("buildDashboardRow — hydrated path", () => {
   it("returns null for primaryPhotoUrl when no photos", () => {
     const row = buildDashboardRow(mkDeal(), mkProperty({ photoUrls: [] }));
     expect(row.primaryPhotoUrl).toBe(null);
+    expect(row.detailState).toBe("partial");
+    expect(row.missingFields).toContain("primaryPhoto");
   });
 
   it("returns null for primaryPhotoUrl when photos undefined", () => {
@@ -169,6 +172,8 @@ describe("buildDashboardRow — hydrated path", () => {
       mkProperty({ photoUrls: undefined }),
     );
     expect(row.primaryPhotoUrl).toBe(null);
+    expect(row.detailState).toBe("partial");
+    expect(row.missingFields).toContain("primaryPhoto");
   });
 });
 
@@ -177,7 +182,14 @@ describe("buildDashboardRow — partial hydration", () => {
     const deal = mkDeal();
     const row = buildDashboardRow(deal, undefined);
 
-    expect(row.hydrated).toBe(false);
+    expect(row.detailState).toBe("loading");
+    expect(row.missingFields).toEqual([
+      "listPrice",
+      "beds",
+      "baths",
+      "sqft",
+      "primaryPhoto",
+    ]);
     expect(row.addressLine).toBe("Property details loading…");
     expect(row.listPrice).toBe(null);
     expect(row.beds).toBe(null);
@@ -193,6 +205,30 @@ describe("buildDashboardRow — partial hydration", () => {
     expect(row.status).toBe("offer_sent");
     expect(row.accessLevel).toBe("registered");
     expect(row.category).toBe("active");
+  });
+
+  it("marks rows partial when the property exists but summary fields are missing", () => {
+    const row = buildDashboardRow(
+      mkDeal(),
+      mkProperty({
+        listPrice: undefined,
+        beds: undefined,
+        bathsFull: undefined,
+        bathsHalf: undefined,
+        sqftLiving: undefined,
+        photoUrls: [],
+      }),
+    );
+
+    expect(row.detailState).toBe("partial");
+    expect(row.missingFields).toEqual([
+      "listPrice",
+      "beds",
+      "baths",
+      "sqft",
+      "primaryPhoto",
+    ]);
+    expect(row.addressLine).toBe("123 Main St, Miami, FL 33131");
   });
 });
 
@@ -314,10 +350,10 @@ describe("buildDealIndex — edge cases", () => {
     const result = buildDealIndex(deals, props);
     expect(result.active.length).toBe(2);
     const d2Row = result.active.find((r) => r.dealRoomId === "d2");
-    expect(d2Row?.hydrated).toBe(false);
+    expect(d2Row?.detailState).toBe("loading");
     expect(d2Row?.listPrice).toBe(null);
     const d1Row = result.active.find((r) => r.dealRoomId === "d1");
-    expect(d1Row?.hydrated).toBe(true);
+    expect(d1Row?.detailState).toBe("complete");
   });
 
   it("orders partial rows by urgency same as hydrated rows", () => {
@@ -343,6 +379,13 @@ describe("buildSummary", () => {
     expect(summary.mostUrgentStatus).toBe(null);
     expect(summary.oldestActiveDays).toBe(null);
     expect(summary.hasAnyDeals).toBe(false);
+    expect(summary.hasPartialDeals).toBe(false);
+    expect(summary.badges.map((badge) => badge.kind)).toEqual([
+      "active_count",
+      "recent_count",
+      "most_urgent",
+      "oldest_active",
+    ]);
   });
 
   it("counts active and recent separately", () => {
@@ -362,6 +405,7 @@ describe("buildSummary", () => {
     expect(rows.summary.activeCount).toBe(2);
     expect(rows.summary.recentCount).toBe(1);
     expect(rows.summary.hasAnyDeals).toBe(true);
+    expect(rows.summary.hasPartialDeals).toBe(false);
   });
 
   it("reports the most urgent active status", () => {
@@ -406,5 +450,20 @@ describe("buildSummary", () => {
     );
     expect(rows.summary.oldestActiveDays).toBe(null);
     expect(rows.summary.mostUrgentStatus).toBe(null);
+  });
+
+  it("reports partial summary state when any row is incomplete", () => {
+    const rows = buildDealIndex(
+      [
+        mkDeal({ _id: "d1", status: "analysis", propertyId: "p1" }),
+        mkDeal({ _id: "d2", status: "offer_sent", propertyId: "missing" }),
+      ],
+      new Map([["p1", mkProperty({ _id: "p1" })]]),
+    );
+
+    expect(rows.summary.hasPartialDeals).toBe(true);
+    expect(
+      rows.summary.badges.find((badge) => badge.kind === "most_urgent")?.value,
+    ).toBe("Offer sent");
   });
 });

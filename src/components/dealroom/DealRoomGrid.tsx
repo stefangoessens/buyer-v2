@@ -1,16 +1,16 @@
-import type { DashboardDealRoomTile } from "@/lib/dealroom/dashboard-types";
+import type { DashboardDealRow } from "@/lib/dashboard/deal-index";
 import { DealRoomCard } from "./DealRoomCard";
 
 interface DealRoomGridProps {
-  tiles: DashboardDealRoomTile[];
+  rows: DashboardDealRow[];
   now: string;
 }
 
-export function DealRoomGrid({ tiles, now }: DealRoomGridProps) {
+export function DealRoomGrid({ rows, now }: DealRoomGridProps) {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {tiles.map((tile) => (
-        <DealRoomCard key={tile.dealRoomId} tile={tile} now={now} />
+      {rows.map((row) => (
+        <DealRoomCard key={row.dealRoomId} row={row} now={now} />
       ))}
     </div>
   );
