@@ -361,3 +361,95 @@ class TestReduxDecoyDoesNotPoison:
         assert prop.baths == 2.5
         assert prop.living_area_sqft == 1_850
         assert prop.city == "Delray Beach"
+
+
+class TestMultipleReduxBlobs:
+    """Regression: malformed first `__INITIAL_STATE__` must fall through.
+
+    Previously `_extract_embedded_state` used `search` and returned
+    ``{}`` on the first `json.loads` failure. Pages that carry a stub
+    dev-mode assignment followed by the real Redux blob would then
+    incorrectly trip `SchemaShiftError`. The fix walks every match.
+    """
+
+    def test_malformed_first_blob_does_not_mask_valid_later_blob(self) -> None:
+        # Build an HTML document with:
+        #  1. A malformed `window.__INITIAL_STATE__ = {not json};` up top
+        #  2. A valid `reactServerState = {...};` later that contains real data
+        #  3. No JSON-LD and no Redfin HTML fallback classes
+        malformed = 'window.__INITIAL_STATE__ = {not json};'
+        valid = (
+            'reactServerState = {"propertyInfo": {'
+            '"propertyId": "99887766",'
+            '"price": 815000,'
+            '"beds": 4,'
+            '"baths": 3,'
+            '"sqFt": 2200,'
+            '"yearBuilt": 2012,'
+            '"propertyType": "Single Family Residential",'
+            '"address": {'
+            '"streetAddress": "888 Regression Ave",'
+            '"city": "Coral Springs",'
+            '"state": "FL",'
+            '"zip": "33065"'
+            '}}};'
+        )
+        html = (
+            "<!DOCTYPE html><html><head>"
+            f"<script>{malformed}</script>"
+            f"<script>{valid}</script>"
+            "</head><body></body></html>"
+        )
+        url = "https://www.redfin.com/FL/Coral-Springs/888-regression-ave/home/99887766"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+
+        assert prop.price_usd == 815_000
+        assert prop.beds == 4.0
+        assert prop.baths == 3.0
+        assert prop.living_area_sqft == 2_200
+        assert prop.year_built == 2012
+        assert prop.city == "Coral Springs"
+        assert prop.listing_id == "99887766"
+
+
+class TestZeroValuedReduxFields:
+    """Regression: zero-valued numeric fields from Redux must not become None.
+
+    Prior code used `a or b` chains which silently dropped legitimate
+    zeros — a brand-new listing with `daysOnMarket=0`, a studio with
+    `beds=0`, and a no-HOA property with `hoaDues=0` all fell back
+    through to None, skewing downstream filters and ranking.
+    """
+
+    def test_zero_days_on_market_preserved(self) -> None:
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script>reactServerState = {"propertyInfo": {'
+            '"propertyId": "11112222",'
+            '"price": 500000,'
+            '"beds": 0,'  # studio
+            '"baths": 1,'
+            '"sqFt": 450,'
+            '"yearBuilt": 2022,'
+            '"daysOnMarket": 0,'  # just-listed
+            '"hoaDues": 0,'  # no HOA
+            '"propertyType": "Condo/Co-op",'
+            '"address": {'
+            '"streetAddress": "1 Studio Way",'
+            '"city": "Miami",'
+            '"state": "FL",'
+            '"zip": "33130"'
+            '}}};</script>'
+            "</head><body></body></html>"
+        )
+        url = "https://www.redfin.com/FL/Miami/1-studio-way/home/11112222"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+
+        # The whole point: zeros must round-trip, not become None.
+        assert prop.days_on_market == 0
+        assert prop.beds == 0.0
+        assert prop.hoa_monthly_usd == 0
+        # Sanity: other fields also populated.
+        assert prop.price_usd == 500_000
+        assert prop.baths == 1.0
+        assert prop.city == "Miami"

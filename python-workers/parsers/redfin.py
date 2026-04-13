@@ -216,46 +216,59 @@ class RedfinExtractor:
     # Strategy 2: Redux / reactServerState preload
     # ------------------------------------------------------------------
     def _extract_embedded_state(self, html: str) -> dict[str, Any]:
-        match = _REDUX_RE.search(html)
-        if match is None:
-            return {}
-        blob = match.group(1)
-        try:
-            payload = json.loads(blob)
-        except json.JSONDecodeError:
-            return {}
-        if not isinstance(payload, dict):
-            return {}
-        # Redfin wraps the listing in one of several top-level keys depending
-        # on the page template. Probe each in turn and take the first dict.
-        prop: dict[str, Any] | None = None
-        for key in ("propertyInfo", "listing", "mainHouseInfo", "property"):
-            candidate = payload.get(key)
-            if isinstance(candidate, dict):
-                prop = candidate
-                break
-        if prop is None:
-            return {}
+        # Redfin listings sometimes include a decoy/malformed first
+        # `__INITIAL_STATE__` assignment (e.g. in a string literal or a
+        # dev-mode stub script). We must walk *every* candidate blob and
+        # return data from the first one that (a) parses as JSON and (b)
+        # contains a recognisable listing dict — otherwise a single bad
+        # early match would force us into the HTML fallback even when a
+        # valid Redux blob exists later in the document.
+        for match in _REDUX_RE.finditer(html):
+            blob = match.group(1)
+            try:
+                payload = json.loads(blob)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            prop: dict[str, Any] | None = None
+            for key in ("propertyInfo", "listing", "mainHouseInfo", "property"):
+                candidate = payload.get(key)
+                if isinstance(candidate, dict):
+                    prop = candidate
+                    break
+            if prop is None:
+                continue
+            return self._redux_to_raw(prop)
+        return {}
+
+    @staticmethod
+    def _redux_to_raw(prop: dict[str, Any]) -> dict[str, Any]:
+        """Project a Redux listing dict onto the raw-field shape.
+
+        Uses `_first_present` instead of Python's `or` chain to preserve
+        legitimate zero values (e.g. `days_on_market=0` for a new listing,
+        studio beds, zero HOA) that would otherwise be silently coerced
+        to `None` and skew downstream filtering and ranking.
+        """
         out: dict[str, Any] = {
             "listing_id": _clean_str(
-                prop.get("propertyId")
-                or prop.get("listingId")
-                or prop.get("mlsId")
+                _first_present(prop, "propertyId", "listingId", "mlsId")
             ),
-            "mls_number": _clean_str(prop.get("mlsId") or prop.get("mlsNumber")),
+            "mls_number": _clean_str(_first_present(prop, "mlsId", "mlsNumber")),
             "latitude": _to_float(prop.get("latitude")),
             "longitude": _to_float(prop.get("longitude")),
             "property_type": _normalize_property_type(prop.get("propertyType")),
             "price_usd": _to_int(prop.get("price")),
-            "beds": _to_float(prop.get("beds") or prop.get("bedrooms")),
-            "baths": _to_float(prop.get("baths") or prop.get("bathrooms")),
-            "living_area_sqft": _to_int(prop.get("sqFt") or prop.get("livingArea")),
+            "beds": _to_float(_first_present(prop, "beds", "bedrooms")),
+            "baths": _to_float(_first_present(prop, "baths", "bathrooms")),
+            "living_area_sqft": _to_int(_first_present(prop, "sqFt", "livingArea")),
             "lot_size_sqft": _to_int(prop.get("lotSize")),
             "year_built": _to_int(prop.get("yearBuilt")),
             "days_on_market": _to_int(
-                prop.get("daysOnMarket") or prop.get("daysOnRedfin")
+                _first_present(prop, "daysOnMarket", "daysOnRedfin")
             ),
-            "hoa_monthly_usd": _to_int(prop.get("hoaDues") or prop.get("hoaFee")),
+            "hoa_monthly_usd": _to_int(_first_present(prop, "hoaDues", "hoaFee")),
             "description": _clean_str(prop.get("description")),
         }
         address = prop.get("address")
@@ -263,12 +276,14 @@ class RedfinExtractor:
             out["address_line1"] = _clean_str(address.get("streetAddress"))
             out["city"] = _clean_str(address.get("city"))
             out["state"] = _clean_str(address.get("state"))
-            out["postal_code"] = _clean_str(address.get("zip") or address.get("zipCode"))
+            out["postal_code"] = _clean_str(
+                _first_present(address, "zip", "zipCode")
+            )
         else:
             out["address_line1"] = _clean_str(prop.get("streetAddress"))
             out["city"] = _clean_str(prop.get("city"))
             out["state"] = _clean_str(prop.get("state"))
-            out["postal_code"] = _clean_str(prop.get("zip") or prop.get("zipCode"))
+            out["postal_code"] = _clean_str(_first_present(prop, "zip", "zipCode"))
         return out
 
     # ------------------------------------------------------------------
@@ -429,6 +444,19 @@ class RedfinExtractor:
 # ----------------------------------------------------------------------
 # Module-private helpers
 # ----------------------------------------------------------------------
+def _first_present(source: dict[str, Any], *keys: str) -> Any:
+    """Return the first value in *keys* that is present and not None.
+
+    Unlike ``source.get(a) or source.get(b)``, this preserves legitimate
+    falsy values such as ``0`` and ``""`` — the `or` chain would coerce
+    ``{"daysOnMarket": 0}`` to ``None`` and mask a brand-new listing.
+    """
+    for key in keys:
+        if key in source and source[key] is not None:
+            return source[key]
+    return None
+
+
 def _clean_str(value: Any) -> str | None:
     if value is None:
         return None
