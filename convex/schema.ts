@@ -2181,4 +2181,63 @@ export default defineSchema({
     .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
     .index("by_ownerUserId", ["ownerUserId"])
     .index("by_contractId", ["contractId"]),
+
+  // ═══ DOCUMENT ANALYSIS (KIN-852) ═══
+  //
+  // Stores raw file analysis records produced by the upload + extraction
+  // pipeline. The buyer-safe summary projector in
+  // `convex/lib/documentSummary.ts` reads from this table to compose
+  // either a buyer-safe row (no internal facts) or a full internal row.
+  //
+  // The full extraction job pipeline lives separately (KIN-821 territory) —
+  // this table is the persisted analysis result that downstream surfaces
+  // can read from. Schema is intentionally minimal so the file-analysis
+  // worker can write to it without coupling to the broader ingestion
+  // pipeline.
+  fileAnalyses: defineTable({
+    documentId: v.string(),
+    dealRoomId: v.id("dealRooms"),
+    documentType: v.union(
+      v.literal("seller_disclosure"),
+      v.literal("hoa_doc"),
+      v.literal("inspection_report"),
+      v.literal("title_commitment"),
+      v.literal("survey"),
+      v.literal("appraisal"),
+      v.literal("loan_estimate"),
+      v.literal("purchase_contract"),
+      v.literal("other"),
+    ),
+    fileName: v.string(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("running"),
+      v.literal("succeeded"),
+      v.literal("failed"),
+      v.literal("review_required"),
+    ),
+    reviewState: v.union(
+      v.literal("pending"),
+      v.literal("approved"),
+      v.literal("rejected"),
+    ),
+    factsPayload: v.string(),
+    reviewNotes: v.optional(v.string()),
+    confidence: v.number(),
+    severity: v.union(
+      v.literal("info"),
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+      v.literal("critical"),
+    ),
+    uploadedAt: v.string(),
+    analyzedAt: v.optional(v.string()),
+    reviewedAt: v.optional(v.string()),
+    extractedPageCount: v.number(),
+    totalPageCount: v.number(),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
+    .index("by_documentId", ["documentId"]),
 });
