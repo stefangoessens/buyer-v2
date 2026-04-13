@@ -1,4 +1,10 @@
 import { AppSidebar, AppTopNav } from "@/components/dealroom/AppSidebar";
+import type { Metadata } from "next";
+import { appSurfaceDefinitions } from "@/lib/app-shell";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const metadata: Metadata = appSurfaceDefinitions.buyerApp.metadata;
 
 export default function AppLayout({
   children,

@@ -13,6 +13,13 @@ pnpm dev:backend        # local Convex backend (terminal 1)
 pnpm dev:web            # Next.js App Router app (terminal 2)
 ```
 
+## Web Runtime Baseline
+
+- Public browser-safe config lives in `src/lib/env.ts` and is sourced from `webPublicEnvSpec`.
+- Server-only secrets live in `src/lib/env.server.ts` and are sourced from `webServerEnvSpec`.
+- The App Router baseline is split into `(marketing)`, `(dealroom)`, `(app)`, and `(admin)` route groups so new feature modules can land without moving existing surfaces.
+- `NEXT_PUBLIC_APP_URL` is the canonical web origin used by metadata, sitemap, and robots generation.
+
 ## Repository Layout
 
 ```text

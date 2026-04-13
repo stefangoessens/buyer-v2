@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import { requireServerEnv } from "@/lib/env.server";
 import type { GatewayMessage, GatewayResponse } from "./types";
 import { MODEL_COSTS } from "./types";
 
@@ -9,8 +10,9 @@ let openaiClient: OpenAI | null = null;
 
 function getAnthropicClient(): Anthropic {
   if (!anthropicClient) {
+    const { ANTHROPIC_API_KEY } = requireServerEnv("ANTHROPIC_API_KEY");
     anthropicClient = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
+      apiKey: ANTHROPIC_API_KEY,
     });
   }
   return anthropicClient;
@@ -18,8 +20,9 @@ function getAnthropicClient(): Anthropic {
 
 function getOpenAIClient(): OpenAI {
   if (!openaiClient) {
+    const { OPENAI_API_KEY } = requireServerEnv("OPENAI_API_KEY");
     openaiClient = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: OPENAI_API_KEY,
     });
   }
   return openaiClient;
