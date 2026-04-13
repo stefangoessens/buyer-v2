@@ -24,3 +24,9 @@ Launch-critical events are defined once in `@buyer-v2/shared/launch-events` and 
 ## iOS coverage
 - iOS events must use the same event names and property shapes (shared via a TypeScript-to-Swift codegen or manual mirror)
 - KIN-826 owns the iOS PostHog SDK integration
+
+## Baseline taxonomy
+- Funnel: `link_pasted`, `teaser_viewed`, `registration_started`, `registration_completed`
+- Deal workflow: `deal_room_entered`, `pricing_panel_viewed`, `tour_requested`, `offer_submitted`, `contract_signed`, `deal_closed`
+- Operations workflow: `message_sent`, `message_delivered`, `agent_assigned`, `payout_created`
+- System observability: `error_boundary_hit`, `health_check_failed`, `worker_job_failed`
