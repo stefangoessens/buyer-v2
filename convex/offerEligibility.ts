@@ -13,6 +13,7 @@ import {
 } from "./lib/offerEligibilityCompute";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { applySupersessionState } from "./agreementSupersession";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Offer Eligibility (KIN-822 + KIN-834)
@@ -460,12 +461,6 @@ export const initiateUpgrade = mutation({
       throw new Error("No signed Tour Pass found for this deal room");
     }
 
-    // Mark current as replaced
-    await ctx.db.patch(currentTourPass._id, {
-      status: "replaced",
-      canceledAt: new Date().toISOString(),
-    });
-
     // Create new full_representation draft scoped to same buyer/deal room
     const newId = await ctx.db.insert("agreements", {
       dealRoomId: currentTourPass.dealRoomId,
@@ -475,8 +470,17 @@ export const initiateUpgrade = mutation({
       documentStorageId: args.documentStorageId,
     });
 
-    // Link replacement
-    await ctx.db.patch(currentTourPass._id, { replacedById: newId });
+    const successor = await ctx.db.get(newId);
+    if (!successor) {
+      throw new Error("Upgrade agreement was not created");
+    }
+
+    await applySupersessionState(ctx, {
+      predecessor: currentTourPass,
+      successor,
+      reason: "upgrade_to_full_representation",
+      actorUserId: user._id,
+    });
 
     // Audit the agreement-level change
     await ctx.db.insert("auditLog", {
@@ -488,6 +492,7 @@ export const initiateUpgrade = mutation({
         from: "tour_pass",
         to: "full_representation",
         newAgreementId: newId,
+        reason: "upgrade_to_full_representation",
       }),
       timestamp: new Date().toISOString(),
     });

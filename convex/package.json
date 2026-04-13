@@ -1,0 +1,9 @@
+{
+  "name": "@buyer-v2/convex",
+  "private": true,
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

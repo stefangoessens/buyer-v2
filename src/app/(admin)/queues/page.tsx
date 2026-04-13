@@ -1,26 +1,66 @@
+"use client";
+
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import { AdminEmptyState } from "@/components/admin/AdminEmptyState";
+import { QueueIndexCards } from "@/components/admin/QueueIndexCards";
+import type { QueueKey } from "@/lib/admin/queueLabels";
 
-export const metadata = { title: "Review queues" };
+interface QueueCount {
+  queueKey: QueueKey;
+  open: number;
+  inReview: number;
+  urgent: number;
+}
+
+interface QueueCountsPayload {
+  byQueue: QueueCount[];
+  totalOpen: number;
+  totalUrgent: number;
+}
 
 /**
- * Queue index. KIN-798 replaces the empty state with a typed table of
- * open review items and age/priority/queue-type filters. The shell owns
- * the layout + navigation; the list of queues is queue-owner turf.
+ * Queue index. Renders a card for each of the six ops review queues
+ * with live open/in-review/urgent counts. Each card links to the
+ * queue detail route.
  */
 export default function QueuesIndexPage() {
   return (
     <AdminShell>
+      <QueuesIndexContent />
+    </AdminShell>
+  );
+}
+
+function QueuesIndexContent() {
+  const counts = useQuery(api.opsQueues.getQueueCounts) as
+    | QueueCountsPayload
+    | undefined;
+
+  return (
+    <>
       <AdminPageHeader
         eyebrow="Queues"
         title="Review queues"
-        description="Triage intake, offer, contract, and escalation reviews here. Filters for age, priority, and queue type are added in KIN-798."
+        description="Triage intake, offer, contract, and escalation reviews. Every card shows open items, currently-in-review items, and urgent counts."
       />
-      <AdminEmptyState
-        title="No queue data wired yet"
-        description="KIN-798 fills this route in with the full review table. The shell is already wired to the typed backend query."
-      />
-    </AdminShell>
+      {counts === undefined ? (
+        <AdminEmptyState
+          title="Loading queue counts…"
+          description="Fetching typed counts from the backend."
+        />
+      ) : counts.totalOpen === 0 && counts.byQueue.every((q) => q.inReview === 0) ? (
+        <>
+          <div className="mb-4 text-sm text-neutral-500">
+            No items open or in review right now. Everything clear.
+          </div>
+          <QueueIndexCards counts={counts.byQueue} />
+        </>
+      ) : (
+        <QueueIndexCards counts={counts.byQueue} />
+      )}
+    </>
   );
 }

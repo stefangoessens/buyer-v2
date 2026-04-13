@@ -1,10 +1,12 @@
+import type { Metadata } from "next";
+import { BuyerDashboardClient } from "@/components/dealroom/BuyerDashboardClient";
+
+export const metadata: Metadata = {
+  title: "Dashboard | buyer-v2",
+  description: "Your deals, tours, and property analyses in one place.",
+};
+
 export default function DashboardPage() {
-  return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Buyer Dashboard</h1>
-      <p className="text-gray-600">
-        Your deals, tours, and property analysis will appear here.
-      </p>
-    </div>
-  );
+  const now = new Date().toISOString();
+  return <BuyerDashboardClient now={now} />;
 }
