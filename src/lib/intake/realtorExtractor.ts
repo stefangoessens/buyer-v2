@@ -218,7 +218,7 @@ export function extractRealtorListingHtml(
 
   const attemptedStrategies = Array.from(state.attemptedStrategies);
   const strategiesUsed = Array.from(state.strategiesUsed);
-  if (attemptedStrategies.length === 0) {
+  if (strategiesUsed.length === 0) {
     return {
       success: false,
       error: {
@@ -229,7 +229,7 @@ export function extractRealtorListingHtml(
         sourceUrl: input.sourceUrl,
         listingId,
         normalizedUrl: parsedUrl.data.normalizedUrl,
-        attemptedStrategies: [],
+        attemptedStrategies,
       },
     };
   }
@@ -390,14 +390,28 @@ function extractJsonLdObjects(html: string): unknown[] {
 }
 
 function extractNextData(html: string): unknown | undefined {
+  let bestMatch: { payload: unknown; score: number } | undefined;
+
   for (const script of extractScriptBlocks(html)) {
     if (!/id=(["'])__NEXT_DATA__\1/i.test(script.attrs)) continue;
     const parsed = parseJsonValue(script.content);
-    if (parsed !== undefined) {
-      return parsed;
+    if (parsed === undefined) continue;
+
+    const candidate = pickBestNextDataListing(parsed);
+    if (!candidate) continue;
+
+    const score = scoreNextDataListing(candidate);
+    if (score === 0) continue;
+
+    if (!bestMatch || score > bestMatch.score) {
+      bestMatch = {
+        payload: parsed,
+        score,
+      };
     }
   }
-  return undefined;
+
+  return bestMatch?.payload;
 }
 
 function extractScriptBlocks(
@@ -421,8 +435,28 @@ function parseJsonValue(raw: string): unknown | undefined {
   try {
     return JSON.parse(trimmed);
   } catch {
-    return undefined;
+    // Some pages wrap the JSON blob in a quoted string.
   }
+
+  if (
+    (trimmed.startsWith("\"") && trimmed.endsWith("\"")) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    const inner = trimmed.slice(1, -1);
+    const normalized = inner
+      .replace(/\\"/g, "\"")
+      .replace(/\\\\/g, "\\")
+      .replace(/\\u003c/g, "<")
+      .replace(/\\u003e/g, ">")
+      .replace(/\\u0026/g, "&");
+    try {
+      return JSON.parse(normalized);
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
 }
 
 function extractFromJsonLd(rawObjects: unknown[]): Partial<RealtorCanonicalListingData> {
@@ -601,16 +635,7 @@ function pickBestNextDataListing(raw: unknown): JsonRecord | undefined {
   let best: { record: JsonRecord; score: number } | undefined;
   for (const candidate of candidates) {
     if (!hasSubstantiveListingFields(candidate)) continue;
-    const score = [
-      "list_price",
-      "price",
-      "current_price",
-      "address",
-      "coordinate",
-      "description",
-      "photos",
-      "mls_number",
-    ].reduce((total, key) => total + (candidate[key] != null ? 1 : 0), 0);
+    const score = scoreNextDataListing(candidate);
 
     if (!best || score > best.score) {
       best = { record: candidate, score };
@@ -638,6 +663,19 @@ function hasSubstantiveListingFields(record: JsonRecord): boolean {
     return true;
   }
   return false;
+}
+
+function scoreNextDataListing(record: JsonRecord): number {
+  return [
+    "list_price",
+    "price",
+    "current_price",
+    "address",
+    "coordinate",
+    "description",
+    "photos",
+    "mls_number",
+  ].reduce((total, key) => total + (record[key] != null ? 1 : 0), 0);
 }
 
 function extractFromVisibleHtml(

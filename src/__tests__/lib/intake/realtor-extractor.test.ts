@@ -122,6 +122,81 @@ describe("extractRealtorListingHtml", () => {
     );
   });
 
+  it("scans past stub __NEXT_DATA__ blobs and preserves zero values", () => {
+    const result = extractRealtorListingHtml({
+      html: `
+        <html>
+          <head>
+            <script id="__NEXT_DATA__" type="application/json">
+              {"props":{"pageProps":{"property":{"listing_id":"stub-only"}}}}
+            </script>
+            <script id="__NEXT_DATA__" type="application/json">
+              {
+                "props": {
+                  "pageProps": {
+                    "listing": {
+                      "href": "https://www.realtor.com/realestateandhomes-detail/88-Harbor-Point-Way_Tampa_FL_33602_M80006-44556",
+                      "address": {
+                        "line": "88 Harbor Point Way",
+                        "city": "Tampa",
+                        "state_code": "FL",
+                        "postal_code": "33602"
+                      },
+                      "coordinate": {
+                        "lat": 27.95,
+                        "lon": -82.46
+                      },
+                      "status": "for_sale",
+                      "list_price": 725000,
+                      "days_on_market": 0,
+                      "type": "NEW_CONSTRUCTION",
+                      "public_remarks": "Fresh listing with a waterfront clubhouse.",
+                      "photos": [
+                        { "href": "https://cdn.example.com/photo-1.jpg" }
+                      ],
+                      "hoa": {
+                        "fee": 0,
+                        "fee_frequency": "monthly"
+                      },
+                      "description": {
+                        "beds": 4,
+                        "baths": 3.5,
+                        "baths_full": 3,
+                        "baths_half": 1,
+                        "sqft": 2450,
+                        "year_built": 2026
+                      }
+                    }
+                  }
+                }
+              }
+            </script>
+          </head>
+          <body></body>
+        </html>
+      `,
+      sourceUrl:
+        "https://www.realtor.com/realestateandhomes-detail/88-Harbor-Point-Way_Tampa_FL_33602_M80006-44556",
+      fetchedAt: "2026-04-12T12:00:00Z",
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.payload.reviewState).toBe("complete");
+    expect(result.payload.data.address.city).toBe("Tampa");
+    expect(result.payload.data.realtorId).toBe("M80006-44556");
+    expect(result.payload.data.propertyType).toBe("New Construction");
+    expect(result.payload.data.daysOnMarket).toBe(0);
+    expect(result.payload.data.hoaFee).toBe(0);
+    expect(result.payload.data.hoaFrequency).toBe("monthly");
+    expect(result.payload.source.strategiesUsed).toEqual(["next-data"]);
+    expect(result.payload.source.fieldStrategies.daysOnMarket).toBe(
+      "next-data",
+    );
+    expect(result.payload.source.fieldStrategies.hoaFee).toBe("next-data");
+  });
+
   it("returns a typed parser error when required fields are missing", () => {
     const result = extractRealtorListingHtml({
       html: `
@@ -146,6 +221,33 @@ describe("extractRealtorListingHtml", () => {
     expect(result.error.listingId).toBe("M11122-23334");
     expect(result.error.missingFields).toEqual(["listPrice"]);
     expect(result.error.attemptedStrategies).toContain("html-text");
+  });
+
+  it("returns a schema-drift error when no strategy yields listing fields", () => {
+    const result = extractRealtorListingHtml({
+      html: `
+        <html>
+          <head>
+            <script id="__NEXT_DATA__" type="application/json">
+              {"props":{"pageProps":{"property":{"listing_id":"stub-only"}}}}
+            </script>
+          </head>
+          <body>
+            <main>No listing details available.</main>
+          </body>
+        </html>
+      `,
+      sourceUrl:
+        "https://www.realtor.com/realestateandhomes-detail/99-Unknown-St_Orlando_FL_32801_M99999-00001",
+      fetchedAt: "2026-04-12T12:00:00Z",
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(result.error.code).toBe("missing_structured_data");
+    expect(result.error.listingId).toBe("M99999-00001");
+    expect(result.error.attemptedStrategies).toEqual(["html-text"]);
   });
 
   it("rejects non-Realtor URLs before attempting extraction", () => {
