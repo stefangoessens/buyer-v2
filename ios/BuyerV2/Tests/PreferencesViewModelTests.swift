@@ -3,8 +3,6 @@ import Testing
 
 @testable import BuyerV2
 
-// MARK: - PreferencesViewModel display-state mapping
-
 @Suite("PreferencesViewModel display mapping")
 struct PreferencesViewModelDisplayTests {
 
@@ -14,8 +12,6 @@ struct PreferencesViewModelDisplayTests {
         name: "Buyer One",
         role: .buyer
     )
-
-    // MARK: - Auth boundary
 
     @Test("signed-out auth short-circuits every service state")
     func testSignedOutAuthAlwaysWins() {
@@ -27,7 +23,8 @@ struct PreferencesViewModelDisplayTests {
         ] {
             let vm = PreferencesViewModel(
                 authState: .signedOut,
-                serviceState: serviceState
+                serviceState: serviceState,
+                saveState: .idle
             )
             #expect(vm.display() == .signedOut)
         }
@@ -37,7 +34,8 @@ struct PreferencesViewModelDisplayTests {
     func testExpiredAuthMapsSignedOut() {
         let vm = PreferencesViewModel(
             authState: .expired,
-            serviceState: .loaded(.default, hasStored: true)
+            serviceState: .loaded(.default, hasStored: true),
+            saveState: .idle
         )
         #expect(vm.display() == .signedOut)
     }
@@ -46,82 +44,94 @@ struct PreferencesViewModelDisplayTests {
     func testRestoringAuthKeepsLoading() {
         let vm = PreferencesViewModel(
             authState: .restoring,
-            serviceState: .loaded(.default, hasStored: true)
+            serviceState: .loaded(.default, hasStored: true),
+            saveState: .idle
         )
         #expect(vm.display() == .loading)
     }
 
-    // MARK: - Loading
-
-    @Test("signed-in + idle service → loading")
+    @Test("signed-in + idle service -> loading")
     func testSignedInIdleMapsLoading() {
         let vm = PreferencesViewModel(
             authState: .signedIn(user: sampleUser),
-            serviceState: .idle
+            serviceState: .idle,
+            saveState: .idle
         )
         #expect(vm.display() == .loading)
     }
 
-    @Test("signed-in + loading service → loading")
+    @Test("signed-in + loading service -> loading")
     func testSignedInLoadingMapsLoading() {
         let vm = PreferencesViewModel(
             authState: .signedIn(user: sampleUser),
-            serviceState: .loading
+            serviceState: .loading,
+            saveState: .idle
         )
         #expect(vm.display() == .loading)
     }
 
-    // MARK: - Loaded
-
-    @Test("signed-in + loaded with stored=false → content with hasStored=false")
+    @Test("loaded first-time user keeps hasStored=false")
     func testLoadedFirstTimeUser() {
         let vm = PreferencesViewModel(
             authState: .signedIn(user: sampleUser),
-            serviceState: .loaded(.default, hasStored: false)
+            serviceState: .loaded(.default, hasStored: false),
+            saveState: .idle
         )
-        guard case .content(let prefs, let hasStored, let saveError) = vm.display() else {
+        guard case .content(let prefs, let hasStored, let saveState) = vm.display() else {
             Issue.record("Expected .content")
             return
         }
         #expect(prefs == .default)
         #expect(hasStored == false)
-        #expect(saveError == nil)
+        #expect(saveState == .idle)
     }
 
-    @Test("signed-in + loaded with stored=true → content with hasStored=true")
-    func testLoadedReturningUser() {
+    @Test("loaded state preserves explicit saving status")
+    func testLoadedSavingState() {
         var prefs = MessagePreferences.default
         prefs.channels.sms = true
-        prefs.categories.marketing = true
+
         let vm = PreferencesViewModel(
             authState: .signedIn(user: sampleUser),
-            serviceState: .loaded(prefs, hasStored: true)
+            serviceState: .loaded(prefs, hasStored: true),
+            saveState: .saving
         )
-        guard case .content(let display, let hasStored, _) = vm.display() else {
+        guard case .content(let shown, let hasStored, let saveState) = vm.display() else {
             Issue.record("Expected .content")
             return
         }
-        #expect(display.channels.sms == true)
-        #expect(display.categories.marketing == true)
+        #expect(shown == prefs)
         #expect(hasStored == true)
+        #expect(saveState == .saving)
     }
 
-    // MARK: - Error branching
+    @Test("loaded state preserves save failure banner state")
+    func testLoadedSaveErrorState() {
+        let vm = PreferencesViewModel(
+            authState: .signedIn(user: sampleUser),
+            serviceState: .loaded(.default, hasStored: false),
+            saveState: .error("upstream 500")
+        )
+        guard case .content(_, let hasStored, let saveState) = vm.display() else {
+            Issue.record("Expected .content")
+            return
+        }
+        #expect(hasStored == false)
+        #expect(saveState == .error("upstream 500"))
+    }
 
-    @Test("signed-in + generic error → error screen")
+    @Test("generic load error maps to error screen")
     func testGenericErrorMapsError() {
         let vm = PreferencesViewModel(
             authState: .signedIn(user: sampleUser),
-            serviceState: .error("offline")
+            serviceState: .error("offline"),
+            saveState: .idle
         )
         #expect(vm.display() == .error("offline"))
     }
 
-    @Test("signed-in + auth-shaped error → signed out")
+    @Test("auth-shaped load error maps to signed out")
     func testAuthErrorMapsSignedOutEvenWhenAuthStateLagsBehind() {
-        // Regression guard: backend says 401 before AuthService has
-        // rotated to .expired. The screen should collapse to the
-        // signed-out view rather than flash a generic error.
         let cases = [
             "notAuthenticated",
             "Not Authenticated",
@@ -129,153 +139,22 @@ struct PreferencesViewModelDisplayTests {
             "unauthorized request",
             "403 Forbidden"
         ]
+
         for message in cases {
             let vm = PreferencesViewModel(
                 authState: .signedIn(user: sampleUser),
-                serviceState: .error(message)
+                serviceState: .error(message),
+                saveState: .idle
             )
             #expect(vm.display() == .signedOut, "case: \(message)")
         }
     }
-
-    // MARK: - Rollback overlay
-
-    @Test("rollback overlay keeps content rendered + surfaces error banner")
-    func testDisplayPreservingPreferencesSurfacesSaveError() {
-        var prefs = MessagePreferences.default
-        prefs.channels.sms = true
-
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .error("upstream 500")
-        )
-        let display = vm.displayPreservingPreferences(prefs, hasStored: true)
-        guard case .content(let shown, let hasStored, let saveError) = display else {
-            Issue.record("Expected .content overlay")
-            return
-        }
-        #expect(shown == prefs)
-        #expect(hasStored == true)
-        #expect(saveError == "upstream 500")
-    }
-
-    @Test("rollback overlay still routes auth errors to signed-out")
-    func testDisplayPreservingPreferencesRespectsAuthFailure() {
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .error("401 Unauthorized")
-        )
-        let display = vm.displayPreservingPreferences(.default, hasStored: true)
-        #expect(display == .signedOut)
-    }
-
-    @Test("rollback overlay during restore → loading")
-    func testDisplayPreservingPreferencesDuringRestore() {
-        let vm = PreferencesViewModel(
-            authState: .restoring,
-            serviceState: .error("boom")
-        )
-        let display = vm.displayPreservingPreferences(.default, hasStored: true)
-        #expect(display == .loading)
-    }
-
-    @Test("rollback overlay falls through to display() for non-error states")
-    func testDisplayPreservingPreferencesFallsThroughForLoaded() {
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .loaded(.default, hasStored: true)
-        )
-        let display = vm.displayPreservingPreferences(.default, hasStored: false)
-        // No error → fall through to the plain `.content` from display()
-        // with hasStored taken from the service, not the overlay hint.
-        guard case .content(_, let hasStored, let saveError) = display else {
-            Issue.record("Expected .content")
-            return
-        }
-        #expect(hasStored == true)
-        #expect(saveError == nil)
-    }
-
-    // MARK: - displayWithOverlay gate (codex P2)
-
-    @Test("displayWithOverlay: pre-load error keeps the hard error screen")
-    func testOverlayGateBlockedBeforeFirstLoad() {
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .error("cold start offline")
-        )
-        let display = vm.displayWithOverlay(
-            lastKnownPreferences: .default,
-            lastKnownHasStored: false,
-            hasSuccessfullyLoaded: false
-        )
-        #expect(display == .error("cold start offline"))
-    }
-
-    @Test("displayWithOverlay: first-time user (.default, hasStored=false) still gets the rollback banner after first successful load")
-    func testOverlayGateAllowsFirstTimeUserWithDefaultSnapshot() {
-        // Codex P2 regression: previously the overlay was gated on
-        // `lastKnownHasStored || lastKnownPreferences != .default`, so a
-        // first-time user whose first load was `(.default, false)`
-        // never overlaid the save error — they got dropped to the
-        // hard error screen instead.
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .error("upstream 500")
-        )
-        let display = vm.displayWithOverlay(
-            lastKnownPreferences: .default,
-            lastKnownHasStored: false,
-            hasSuccessfullyLoaded: true
-        )
-        guard case .content(let shown, let hasStored, let saveError) = display else {
-            Issue.record("Expected .content overlay, got \(display)")
-            return
-        }
-        #expect(shown == .default)
-        #expect(hasStored == false)
-        #expect(saveError == "upstream 500")
-    }
-
-    @Test("displayWithOverlay: loaded state falls through to display() regardless of gate")
-    func testOverlayGateFallsThroughForLoaded() {
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .loaded(.default, hasStored: true)
-        )
-        let display = vm.displayWithOverlay(
-            lastKnownPreferences: .default,
-            lastKnownHasStored: true,
-            hasSuccessfullyLoaded: true
-        )
-        guard case .content(_, _, let saveError) = display else {
-            Issue.record("Expected .content")
-            return
-        }
-        #expect(saveError == nil)
-    }
-
-    @Test("displayWithOverlay: auth-shaped error routes to signed-out even when gate is open")
-    func testOverlayGateRespectsAuthError() {
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .error("HTTP 401")
-        )
-        let display = vm.displayWithOverlay(
-            lastKnownPreferences: .default,
-            lastKnownHasStored: true,
-            hasSuccessfullyLoaded: true
-        )
-        #expect(display == .signedOut)
-    }
 }
-
-// MARK: - ConvexMessagePreferencesBackend auth error path
 
 @Suite("ConvexMessagePreferencesBackend auth boundary")
 struct ConvexMessagePreferencesBackendTests {
 
-    @Test("missing token → notAuthenticated on every call")
+    @Test("missing token -> notAuthenticated on every call")
     func testMissingTokenThrows() async throws {
         let backend = ConvexMessagePreferencesBackend(
             baseURL: URL(string: "https://test.local")!,
@@ -296,7 +175,7 @@ struct ConvexMessagePreferencesBackendTests {
         }
     }
 
-    @Test("empty-string token → notAuthenticated")
+    @Test("empty-string token -> notAuthenticated")
     func testEmptyTokenThrows() async {
         let backend = ConvexMessagePreferencesBackend(
             baseURL: URL(string: "https://test.local")!,
@@ -317,8 +196,6 @@ struct ConvexMessagePreferencesBackendTests {
     }
 }
 
-// MARK: - Signed-out rollback scenario at the service level
-
 @Suite("MessagePreferencesService signed-out surface", .serialized)
 @MainActor
 struct MessagePreferencesServiceSignedOutTests {
@@ -338,6 +215,13 @@ struct MessagePreferencesServiceSignedOutTests {
         }
     }
 
+    private let signedInUser = AuthUser(
+        id: "u1",
+        email: "e@example.com",
+        name: "E",
+        role: .buyer
+    )
+
     @Test("service load() surfaces notAuthenticated as an error state the view-model treats as signed-out")
     func testLoadNotAuthenticatedRoutesToSignedOut() async {
         let service = MessagePreferencesService(backend: NotAuthBackend())
@@ -349,30 +233,20 @@ struct MessagePreferencesServiceSignedOutTests {
         }
 
         let vm = PreferencesViewModel(
-            authState: .signedIn(user: AuthUser(
-                id: "u1",
-                email: "e@example.com",
-                name: "E",
-                role: .buyer
-            )),
-            serviceState: .error(message)
+            authState: .signedIn(user: signedInUser),
+            serviceState: .error(message),
+            saveState: service.saveState
         )
         #expect(vm.display() == .signedOut)
     }
 
-    @Test("service update() failure overlay reads live service.preferences, never the failed optimistic value")
-    func testOverlayUsesPostRollbackServiceStateNotOptimistic() async {
-        // Codex round 2 P2: if the view caches every `.loaded`
-        // emission, the optimistic update value gets pinned as the
-        // rollback snapshot. On write failure, the service rolls its
-        // OWN state back but the view still renders the stale cached
-        // value, giving a "reverted change still appears on" illusion.
-        // Reading `service.preferences` post-failure should give the
-        // true pre-update state instead.
-        final class FailingUpsertBackend: MessagePreferencesBackend, @unchecked Sendable {
+    @Test("service update() failure keeps committed toggles on-screen with an explicit save error")
+    func testUpdateFailureRollsBackIntoContent() async {
+        final class PartialBackend: MessagePreferencesBackend, @unchecked Sendable {
             func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
-                // Load returns the committed (all-defaults) state.
-                return (MessagePreferences.default, false)
+                var prefs = MessagePreferences.default
+                prefs.channels.sms = true
+                return (prefs, true)
             }
             func upsert(_: MessagePreferencesPatch) async throws -> MessagePreferences {
                 throw MessagePreferencesError.httpError(statusCode: 500)
@@ -381,99 +255,27 @@ struct MessagePreferencesServiceSignedOutTests {
             func resetToDefaults() async throws -> MessagePreferences { .default }
         }
 
-        let backend = FailingUpsertBackend()
-        let service = MessagePreferencesService(backend: backend)
+        let service = MessagePreferencesService(backend: PartialBackend())
         await service.load()
 
-        // Attempt an update that will fail — optimistic path flips
-        // `service.preferences.channels.sms = true` momentarily.
-        await service.update(MessagePreferencesPatch(smsEnabled: true))
-
-        // Post-failure, the service must report the pre-update value.
-        #expect(service.preferences.channels.sms == false)
-        #expect(service.hasStoredPreferences == false)
-
-        // The view reads live service state into the overlay mapper.
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: AuthUser(
-                id: "u1",
-                email: "e@example.com",
-                name: "E",
-                role: .buyer
-            )),
-            serviceState: service.state
-        )
-        let display = vm.displayWithOverlay(
-            lastKnownPreferences: service.preferences,
-            lastKnownHasStored: service.hasStoredPreferences,
-            hasSuccessfullyLoaded: true
-        )
-        guard case .content(let shown, let hasStored, let saveError) = display else {
-            Issue.record("Expected overlay .content, got \(display)")
-            return
-        }
-        // The banner should say "save failed" but the toggles must
-        // reflect the committed state, NOT the failed optimistic one.
-        #expect(shown.channels.sms == false)
-        #expect(hasStored == false)
-        #expect(saveError != nil)
-    }
-
-    @Test("service update() failure after load() keeps toggles + banner via rollback overlay")
-    func testUpdateFailureRollsBackWithOverlay() async {
-        // Build a backend that succeeds on fetch but fails on upsert.
-        final class PartialBackend: MessagePreferencesBackend, @unchecked Sendable {
-            var upsertShouldFail = true
-            func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
-                var prefs = MessagePreferences.default
-                prefs.channels.sms = true
-                return (prefs, true)
-            }
-            func upsert(_: MessagePreferencesPatch) async throws -> MessagePreferences {
-                if upsertShouldFail {
-                    throw MessagePreferencesError.httpError(statusCode: 500)
-                }
-                return .default
-            }
-            func optOutAll() async throws -> MessagePreferences { .default }
-            func resetToDefaults() async throws -> MessagePreferences { .default }
-        }
-
-        let backend = PartialBackend()
-        let service = MessagePreferencesService(backend: backend)
-        await service.load()
-
-        // Snapshot what load produced — this is what the view would cache.
         let loadedPrefs = service.preferences
-        let loadedHasStored = service.hasStoredPreferences
-
         await service.update(MessagePreferencesPatch(marketingEnabled: true))
 
-        // The service rolls preferences back. The overlay should keep
-        // rendering the post-load toggles + surface the save error.
         #expect(service.preferences == loadedPrefs)
-
-        guard case .error(let message) = service.state else {
-            Issue.record("Expected error post-rollback")
-            return
-        }
+        #expect(service.saveState == .error("The preference service returned HTTP 500."))
 
         let vm = PreferencesViewModel(
-            authState: .signedIn(user: AuthUser(
-                id: "u1",
-                email: "e@example.com",
-                name: "E",
-                role: .buyer
-            )),
-            serviceState: .error(message)
+            authState: .signedIn(user: signedInUser),
+            serviceState: service.state,
+            saveState: service.saveState
         )
-        let display = vm.displayPreservingPreferences(loadedPrefs, hasStored: loadedHasStored)
-        guard case .content(let shown, let hasStored, let saveError) = display else {
-            Issue.record("Expected overlay .content, got \(display)")
+
+        guard case .content(let shown, let hasStored, let saveState) = vm.display() else {
+            Issue.record("Expected .content after rollback")
             return
         }
         #expect(shown == loadedPrefs)
         #expect(hasStored == true)
-        #expect(saveError != nil)
+        #expect(saveState == .error("The preference service returned HTTP 500."))
     }
 }

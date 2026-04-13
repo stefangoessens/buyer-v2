@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 
 /// Display-state projection for `PreferencesView`. Maps the underlying
 /// `MessagePreferencesService` + `AuthService` states into the four
@@ -19,8 +18,10 @@ enum PreferencesDisplayState: Sendable, Equatable {
 
     /// Loaded preferences. `hasStored` distinguishes "defaults returned
     /// because no row exists yet" from "user explicitly chose defaults",
-    /// which the view uses to badge first-time users.
-    case content(MessagePreferences, hasStored: Bool, saveError: String?)
+    /// which the view uses to badge first-time users. `saveState`
+    /// keeps optimistic writes explicit without collapsing a failed
+    /// save into the hard load-error screen.
+    case content(MessagePreferences, hasStored: Bool, saveState: MessagePreferencesSaveState)
 
     /// Hard failure that requires a retry (not a partial-write rollback).
     case error(String)
@@ -38,6 +39,7 @@ struct PreferencesViewModel {
 
     let authState: AuthState
     let serviceState: MessagePreferencesLoadState
+    let saveState: MessagePreferencesSaveState
 
     func display() -> PreferencesDisplayState {
         // Auth boundary: any non-signed-in state wins over service state.
@@ -56,7 +58,7 @@ struct PreferencesViewModel {
         case .idle, .loading:
             return .loading
         case .loaded(let prefs, let hasStored):
-            return .content(prefs, hasStored: hasStored, saveError: nil)
+            return .content(prefs, hasStored: hasStored, saveState: saveState)
         case .error(let message):
             // An auth failure surfaced by the backend should route to the
             // signed-out screen even if AuthService hasn't caught up yet,
@@ -66,55 +68,6 @@ struct PreferencesViewModel {
             }
             return .error(message)
         }
-    }
-
-    /// Compose the display state with rollback-overlay awareness.
-    ///
-    /// Post-load write failures should keep the content view rendered
-    /// (with a save-error banner on top), while pre-load failures
-    /// should still surface the hard error screen. The view passes in
-    /// `hasSuccessfullyLoaded` so the decision is data-driven rather
-    /// than inferred from whether the cached prefs happen to equal
-    /// `.default` — the earlier heuristic missed first-time users whose
-    /// first successful load was `(.default, hasStored: false)` and
-    /// then had an update fail.
-    func displayWithOverlay(
-        lastKnownPreferences: MessagePreferences,
-        lastKnownHasStored: Bool,
-        hasSuccessfullyLoaded: Bool
-    ) -> PreferencesDisplayState {
-        if hasSuccessfullyLoaded {
-            return displayPreservingPreferences(
-                lastKnownPreferences,
-                hasStored: lastKnownHasStored
-            )
-        }
-        return display()
-    }
-
-    /// A `.loaded` + save-error composition used after an optimistic
-    /// update fails. The service rolls back the values but stays in
-    /// `.error`; the view wants to keep showing toggles PLUS a banner.
-    func displayPreservingPreferences(
-        _ preferences: MessagePreferences,
-        hasStored: Bool
-    ) -> PreferencesDisplayState {
-        switch authState {
-        case .signedOut, .expired:
-            return .signedOut
-        case .restoring:
-            return .loading
-        case .signedIn:
-            break
-        }
-
-        if case .error(let message) = serviceState {
-            if Self.isAuthError(message) {
-                return .signedOut
-            }
-            return .content(preferences, hasStored: hasStored, saveError: message)
-        }
-        return display()
     }
 
     // MARK: - Heuristics
