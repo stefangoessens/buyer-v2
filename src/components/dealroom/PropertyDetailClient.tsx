@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { PropertyPhotoGallery } from "./PropertyPhotoGallery";
 import { PropertyStatsBar } from "./PropertyStatsBar";
 import { PropertySkeletonLoader } from "./PropertySkeletonLoader";
+import { PropertyInsightsCard } from "./PropertyInsightsCard";
 
 interface PropertyDetailClientProps {
   propertyId: string;
@@ -267,6 +268,16 @@ export function PropertyDetailClient({
         </div>
       </section>
 
+      {/* AI insights — the hero of the page */}
+      <section className="w-full bg-white pt-12 lg:pt-16">
+        <div className="mx-auto max-w-[1248px] px-6">
+          <PropertyInsightsCard
+            variant="public"
+            propertyId={propertyId}
+          />
+        </div>
+      </section>
+
       {/* Description + CTA */}
       <section className="w-full bg-white py-16 lg:py-20">
         <div className="mx-auto max-w-[1248px] px-6">
@@ -333,15 +344,14 @@ export function PropertyDetailClient({
                 <div className="relative flex h-full flex-col">
                   <div className="inline-flex w-fit items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-primary-100 ring-1 ring-white/15 backdrop-blur">
                     <span className="inline-block size-1.5 rounded-full bg-primary-100" />
-                    AI analysis ready
+                    Full deal room
                   </div>
                   <h3 className="mt-5 text-[28px] font-semibold leading-[1.15] tracking-[-0.006em] text-white md:text-[32px]">
-                    Unlock your free AI analysis
+                    Unlock every insight + full deal room
                   </h3>
                   <p className="mt-4 text-base leading-relaxed text-primary-100/90">
-                    Fair pricing, comparable sales, negotiation leverage, and a
-                    full offer strategy — all tailored to this specific
-                    listing. Created by our AI in seconds, reviewed by a
+                    Get every premium insight, comparable sales, a leverage
+                    score, and a tailored offer strategy — all reviewed by a
                     licensed Florida broker.
                   </p>
 

@@ -50,7 +50,20 @@ export const runAllEnginesForProperty = internalAction({
       offerResult = { name: "offer", ok: false, error: message };
     }
 
-    const results = [...independentResults, offerResult];
+    // Phase 3: insights synthesizes every upstream engine output into
+    // buyer-readable analytical takes — so it must run last.
+    let insightsResult: { name: "insights"; ok: boolean; error?: string };
+    try {
+      await ctx.runAction(internal.engines.insights.runInsightsEngine, {
+        propertyId: args.propertyId,
+      });
+      insightsResult = { name: "insights", ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      insightsResult = { name: "insights", ok: false, error: message };
+    }
+
+    const results = [...independentResults, offerResult, insightsResult];
 
     await ctx.runMutation(internal.engines.orchestrateMutations.logRun, {
       propertyId: args.propertyId,
