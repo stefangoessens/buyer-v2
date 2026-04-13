@@ -453,3 +453,94 @@ class TestZeroValuedReduxFields:
         assert prop.price_usd == 500_000
         assert prop.baths == 1.0
         assert prop.city == "Miami"
+
+
+class TestJsonLdGenericTypeDoesNotLeak:
+    """Regression: JSON-LD @type fallback must ignore generic container types.
+
+    When `additionalType` is missing and `@type` is "RealEstateListing"
+    (a generic schema.org container, not a residential sub-type), the
+    parser previously stored `"realestatelisting"` as `property_type`.
+    Because the merge uses `setdefault`, later Redux data couldn't
+    correct it and downstream type-based filters would be wrong.
+    """
+
+    def test_generic_jsonld_type_does_not_override_redux(self) -> None:
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script type="application/ld+json">{'
+            '"@context": "https://schema.org",'
+            '"@type": "RealEstateListing",'
+            '"name": "Generic",'
+            '"address": {'
+            '"streetAddress": "500 Generic St",'
+            '"addressLocality": "Boca Raton",'
+            '"addressRegion": "FL",'
+            '"postalCode": "33432"'
+            '},'
+            '"offers": {"@type": "Offer", "price": 900000}'
+            '}</script>'
+            '<script>reactServerState = {"propertyInfo": {'
+            '"propertyId": "55556666",'
+            '"price": 900000,'
+            '"beds": 3,'
+            '"baths": 2,'
+            '"sqFt": 2000,'
+            '"propertyType": "Single Family Residential",'
+            '"address": {'
+            '"streetAddress": "500 Generic St",'
+            '"city": "Boca Raton",'
+            '"state": "FL",'
+            '"zip": "33432"'
+            '}}};</script>'
+            "</head><body></body></html>"
+        )
+        url = "https://www.redfin.com/FL/Boca-Raton/500-generic-st/home/55556666"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+        # property_type must reflect the Redux value, NOT the generic
+        # "realestatelisting" JSON-LD @type fallback.
+        assert prop.property_type == "single_family"
+
+
+class TestHtmlFallbackLotSize:
+    """Regression: `.home-facts-row` lot size must populate `lot_size_sqft`.
+
+    Previously the HTML fallback loop only handled year built, property
+    type, HOA, and days on market — lot size rows were dropped even when
+    present, degrading downstream comps and valuation.
+    """
+
+    def test_lot_size_sqft_from_home_facts_row(self) -> None:
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<meta name="twitter:data1" content="$650,000">'
+            "</head><body>"
+            '<span class="street-address">123 LotSize Ct</span>'
+            '<span class="citystatezip">Plantation, FL 33317</span>'
+            '<div class="home-facts-row">'
+            '<span class="home-facts-label">Lot Size</span>'
+            '<span class="home-facts-value">8,712 sq ft</span>'
+            "</div>"
+            "</body></html>"
+        )
+        url = "https://www.redfin.com/FL/Plantation/123-lotsize-ct/home/77778888"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+        assert prop.lot_size_sqft == 8_712
+
+    def test_lot_size_acres_converted_to_sqft(self) -> None:
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<meta name="twitter:data1" content="$1,250,000">'
+            "</head><body>"
+            '<span class="street-address">456 Acre Way</span>'
+            '<span class="citystatezip">Parkland, FL 33076</span>'
+            '<div class="home-facts-row">'
+            '<span class="home-facts-label">Lot Size</span>'
+            '<span class="home-facts-value">0.5 acres</span>'
+            "</div>"
+            "</body></html>"
+        )
+        url = "https://www.redfin.com/FL/Parkland/456-acre-way/home/99990000"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+        # 0.5 acres × 43,560 sqft/acre = 21,780 sqft.
+        assert prop.lot_size_sqft == 21_780

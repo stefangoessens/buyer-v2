@@ -199,7 +199,16 @@ class RedfinExtractor:
             out["living_area_sqft"] = _to_int(floor_size.get("value"))
         out["year_built"] = _to_int(node.get("yearBuilt"))
         out["description"] = _clean_str(node.get("description"))
-        additional_type = node.get("additionalType") or node.get("@type")
+        # `additionalType` is the specific sub-type (e.g. SingleFamilyResidence).
+        # Only fall back to `@type` if it actually carries a residential type —
+        # otherwise we'd store generic schema.org values like "RealEstateListing"
+        # as `property_type`, which then blocks later Redux data from correcting
+        # it because the merge uses `setdefault`.
+        additional_type = node.get("additionalType")
+        if additional_type is None:
+            at_type = _pick_residential_type(node.get("@type"))
+            if isinstance(at_type, str) and _is_residential_type(at_type):
+                additional_type = at_type
         out["property_type"] = _normalize_property_type(
             _pick_residential_type(additional_type)
         )
@@ -372,6 +381,8 @@ class RedfinExtractor:
                 out["hoa_monthly_usd"] = _first_int(value)
             elif "days on" in label and "days_on_market" not in out:
                 out["days_on_market"] = _first_int(value)
+            elif "lot size" in label and "lot_size_sqft" not in out:
+                out["lot_size_sqft"] = _parse_lot_size_sqft(value)
 
         # Photo gallery: `<img class="InlinePhotoViewer_image">`.
         photo_nodes = doc.xpath(
@@ -537,6 +548,57 @@ _HOME_ID_RE = re.compile(r"/home/(\d+)(?:/|$|\?)")
 def _listing_id_from_url(source_url: str) -> str | None:
     match = _HOME_ID_RE.search(source_url)
     return match.group(1) if match else None
+
+
+# Residential schema.org / Redfin type tokens used to gate the JSON-LD
+# `@type` fallback — generic container types like "RealEstateListing" or
+# "Product" must NOT leak into `property_type`.
+_RESIDENTIAL_TYPE_KEYS = {
+    "condo",
+    "condominium",
+    "single_family",
+    "singlefamilyresidence",
+    "house",
+    "townhouse",
+    "townhome",
+    "multi_family",
+    "multifamily",
+    "duplex",
+    "triplex",
+    "fourplex",
+    "land",
+    "vacantland",
+    "new_construction",
+    "apartment",
+    "apartmentcomplex",
+    "residence",
+}
+
+
+def _is_residential_type(value: str) -> bool:
+    key = value.strip().lower().replace(" ", "_").replace("-", "_")
+    return key in _RESIDENTIAL_TYPE_KEYS
+
+
+# Lot-size parsing for HTML fallback. Redfin reports lot size as either
+# "8,712 sq ft" or "0.2 acres"; downstream code wants square feet.
+_LOT_SIZE_SQFT_RE = re.compile(r"([\d,]+(?:\.\d+)?)\s*(sq\s*ft|sqft|acres?)", re.IGNORECASE)
+_SQFT_PER_ACRE = 43_560
+
+
+def _parse_lot_size_sqft(text: str) -> int | None:
+    """Parse Redfin's lot size strings ("8,712 sq ft" / "0.2 acres") to sqft."""
+    match = _LOT_SIZE_SQFT_RE.search(text)
+    if match is None:
+        return None
+    try:
+        raw = float(match.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    unit = match.group(2).lower().replace(" ", "")
+    if unit.startswith("acre"):
+        return int(round(raw * _SQFT_PER_ACRE))
+    return int(round(raw))
 
 
 def _parse_address_line(text: str) -> dict[str, str] | None:
