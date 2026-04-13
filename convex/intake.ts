@@ -1,4 +1,4 @@
-import { mutation, internalMutation } from "./_generated/server";
+import { mutation, internalMutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { getSessionContext } from "./lib/session";
 
@@ -152,6 +152,41 @@ function parseSubmittedListingUrl(input: string): ParsedListingUrlResult {
   };
 }
 
+export function buildSourceUrlLookupCandidates(
+  rawUrl: string,
+  normalizedUrl: string,
+): Array<string> {
+  const candidates: Array<string> = [];
+
+  for (const candidate of [normalizedUrl.trim(), rawUrl.trim()]) {
+    if (!candidate || candidates.includes(candidate)) {
+      continue;
+    }
+    candidates.push(candidate);
+  }
+
+  return candidates;
+}
+
+async function findExistingSourceListing(
+  ctx: MutationCtx,
+  rawUrl: string,
+  normalizedUrl: string,
+) {
+  for (const sourceUrl of buildSourceUrlLookupCandidates(rawUrl, normalizedUrl)) {
+    const existing = await ctx.db
+      .query("sourceListings")
+      .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", sourceUrl))
+      .first();
+
+    if (existing) {
+      return existing;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Submit a listing URL for intake processing.
  * Public mutation — called from the paste-link hero and authenticated app.
@@ -183,12 +218,11 @@ export const submitUrl = mutation({
       };
     }
 
-    const existing = await ctx.db
-      .query("sourceListings")
-      .withIndex("by_sourceUrl", (q) =>
-        q.eq("sourceUrl", parsed.data.normalizedUrl),
-      )
-      .first();
+    const existing = await findExistingSourceListing(
+      ctx,
+      parsed.data.rawUrl,
+      parsed.data.normalizedUrl,
+    );
 
     if (existing) {
       return {
@@ -240,12 +274,11 @@ export const submitExtensionUrl = mutation({
     const authState: "signed_in" | "signed_out" =
       session.kind === "authenticated" ? "signed_in" : "signed_out";
 
-    const existing = await ctx.db
-      .query("sourceListings")
-      .withIndex("by_sourceUrl", (q) =>
-        q.eq("sourceUrl", parsed.data.normalizedUrl),
-      )
-      .first();
+    const existing = await findExistingSourceListing(
+      ctx,
+      parsed.data.rawUrl,
+      parsed.data.normalizedUrl,
+    );
 
     if (existing) {
       return {

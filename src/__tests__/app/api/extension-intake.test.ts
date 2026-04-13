@@ -166,6 +166,32 @@ describe("POST /api/extension/intake", () => {
     expect(setAuthMock).toHaveBeenCalledWith("test-token");
   });
 
+  it("falls back to the Clerk session cookie for extension-origin requests", async () => {
+    mutationMock.mockResolvedValue({
+      kind: "created",
+      authState: "signed_in",
+      platform: "zillow",
+      listingId: "12345",
+      normalizedUrl: "https://www.zillow.com/homedetails/12345_zpid/",
+      sourceListingId: "sl_cookie",
+    });
+
+    await POST(
+      new Request("http://localhost/api/extension/intake", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "__session=clerk-session-token; theme=dark",
+        },
+        body: JSON.stringify({
+          url: "https://www.zillow.com/homedetails/12345_zpid/",
+        }),
+      }),
+    );
+
+    expect(setAuthMock).toHaveBeenCalledWith("clerk-session-token");
+  });
+
   it("rejects invalid request payloads before hitting Convex", async () => {
     const response = await POST(
       new Request("http://localhost/api/extension/intake", {

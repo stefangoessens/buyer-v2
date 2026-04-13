@@ -8,6 +8,8 @@ import {
 } from "@/lib/extension/intake-state";
 import { env } from "@/lib/env";
 
+const CLERK_SESSION_COOKIE = "__session";
+
 function readBearerToken(headerValue: string | null): string | null {
   if (!headerValue) return null;
   const [scheme, token] = headerValue.split(/\s+/, 2);
@@ -15,6 +17,43 @@ function readBearerToken(headerValue: string | null): string | null {
     return null;
   }
   return token.trim();
+}
+
+function readCookieValue(headerValue: string | null, name: string): string | null {
+  if (!headerValue) return null;
+
+  for (const part of headerValue.split(";")) {
+    const [rawName, ...rawValueParts] = part.trim().split("=");
+    if (rawName !== name || rawValueParts.length === 0) {
+      continue;
+    }
+
+    const rawValue = rawValueParts.join("=");
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+
+  return null;
+}
+
+function resolveConvexAuthToken(request: Request): string | null {
+  const bearerToken = readBearerToken(request.headers.get("authorization"));
+  if (bearerToken) {
+    return bearerToken;
+  }
+
+  if (env.NEXT_PUBLIC_AUTH_PROVIDER !== "clerk") {
+    return null;
+  }
+
+  // Extension-origin fetches cannot reliably attach an explicit Convex token,
+  // but they can carry the buyer-v2 Clerk session cookie via
+  // `credentials: "include"`. Reusing that JWT keeps the extension's
+  // signed-in branch aligned with the caller's active web session.
+  return readCookieValue(request.headers.get("cookie"), CLERK_SESSION_COOKIE);
 }
 
 async function trackExtensionFailure(
@@ -77,7 +116,7 @@ export async function POST(request: Request) {
 
   try {
     const client = new ConvexHttpClient(env.NEXT_PUBLIC_CONVEX_URL);
-    const token = readBearerToken(request.headers.get("authorization"));
+    const token = resolveConvexAuthToken(request);
     if (token) {
       client.setAuth(token);
     }
