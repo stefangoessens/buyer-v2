@@ -279,7 +279,11 @@ export default defineSchema({
     dealRoomId: v.id("dealRooms"),
     propertyId: v.id("properties"),
     buyerId: v.id("users"),
+    tourRequestId: v.optional(v.id("tourRequests")),
     agentId: v.optional(v.id("users")),
+    assignmentRoutingPath: v.optional(routingPath),
+    showamiFallbackId: v.optional(v.string()),
+    showamiStatus: v.optional(v.string()),
     status: v.union(
       v.literal("requested"),
       v.literal("confirmed"),
@@ -530,10 +534,15 @@ export default defineSchema({
 
   tourAssignments: defineTable({
     tourId: v.id("tours"),
-    agentId: v.id("users"),
+    tourRequestId: v.optional(v.id("tourRequests")),
+    agentId: v.optional(v.id("users")),
     routingPath: routingPath,
     status: assignmentStatus,
     showamiFallbackId: v.optional(v.string()),
+    showamiStatus: v.optional(v.string()),
+    cooperatingBrokerage: v.optional(v.string()),
+    routingReason: v.optional(v.string()),
+    lastSyncedAt: v.optional(v.string()),
     assignedAt: v.string(),
     completedAt: v.optional(v.string()),
     canceledAt: v.optional(v.string()),
@@ -541,13 +550,16 @@ export default defineSchema({
     notes: v.optional(v.string()),
   })
     .index("by_tourId", ["tourId"])
+    .index("by_tourRequestId", ["tourRequestId"])
     .index("by_agentId", ["agentId"])
     .index("by_agentId_and_status", ["agentId", "status"])
-    .index("by_routingPath", ["routingPath"]),
+    .index("by_routingPath", ["routingPath"])
+    .index("by_showamiFallbackId", ["showamiFallbackId"]),
 
   showingPayouts: defineTable({
     tourAssignmentId: v.id("tourAssignments"),
     tourId: v.id("tours"),
+    tourRequestId: v.optional(v.id("tourRequests")),
     agentId: v.id("users"),
     brokerage: v.string(),
     feeAmount: v.number(),
@@ -565,6 +577,25 @@ export default defineSchema({
     .index("by_payoutStatus", ["payoutStatus"])
     .index("by_batchMonth", ["batchMonth"])
     .index("by_tourId", ["tourId"]),
+
+  showingPayoutFeeConfigs: defineTable({
+    geographyType: v.union(
+      v.literal("zip"),
+      v.literal("county"),
+      v.literal("statewide"),
+    ),
+    geographyValue: v.string(),
+    feeAmount: v.number(),
+    isActive: v.boolean(),
+    notes: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_geographyType_and_geographyValue", [
+      "geographyType",
+      "geographyValue",
+    ])
+    .index("by_isActive", ["isActive"]),
 
   // ═══ AVAILABILITY WINDOWS (KIN-836) ═══
   //
@@ -1580,6 +1611,9 @@ export default defineSchema({
     failureReason: v.optional(v.string()),
     // Optional internal notes — never exposed to buyer.
     internalNotes: v.optional(v.string()),
+    assignmentRoutingPath: v.optional(routingPath),
+    currentAssignmentId: v.optional(v.id("tourAssignments")),
+    showamiFallbackId: v.optional(v.string()),
     // Once a request is assigned + confirmed, an executed `tours` row may
     // be linked. Optional because some requests never execute (canceled,
     // failed) and the tours table is owned by the execution layer.
