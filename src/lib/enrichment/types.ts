@@ -234,6 +234,65 @@ export interface PortalEstimate {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// Stored enrichment artifacts
+// ───────────────────────────────────────────────────────────────────────────
+
+export type SnapshotSource =
+  | "fema_flood"
+  | "county_appraiser"
+  | "census_geocode"
+  | "cross_portal_match";
+
+export interface PropertyEnrichmentSnapshot<T = unknown> {
+  propertyId: string;
+  source: SnapshotSource;
+  payload: T;
+  provenance: FieldProvenance;
+  lastRefreshedAt: string;
+}
+
+export interface RecentComparableSale {
+  propertyId: string;
+  portal: PortalName;
+  canonicalId: string;
+  address: string;
+  soldPrice: number;
+  soldDate: string;
+  listPrice?: number;
+  beds?: number;
+  baths?: number;
+  sqft?: number;
+  yearBuilt?: number;
+  lotSize?: number;
+  propertyType?: string;
+  waterfront?: boolean;
+  pool?: boolean;
+  hoaFee?: number;
+  subdivision?: string;
+  zip?: string;
+  dom?: number;
+  provenance: FieldProvenance;
+  capturedAt: string;
+}
+
+export interface PortalEstimateRequestTarget {
+  portal: PortalName;
+  canonicalId: string;
+}
+
+export interface ListingAgentPortalTarget {
+  portal: PortalName;
+  propertyExternalId?: string;
+  profileUrl?: string;
+}
+
+export interface NeighborhoodMarketRequest {
+  geoKey: string;
+  geoKind: GeoKind;
+  windowDays: number;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // Dedupe / cache helpers
 // ───────────────────────────────────────────────────────────────────────────
 

@@ -15,18 +15,24 @@ export const runLeverageEngine = internalAction({
     });
     if (!property) return null;
 
-    const input: LeverageInput = {
-      propertyId: args.propertyId,
-      listPrice: property.listPrice ?? 0,
-      daysOnMarket: property.daysOnMarket ?? 0,
-      description: property.description,
-      sqft: property.sqftLiving ?? 0,
-      neighborhoodMedianDom: property.neighborhoodMedianDom,
-      neighborhoodMedianPsf: property.neighborhoodMedianPsf,
-      wasRelisted: property.wasRelisted,
-      wasWithdrawn: property.wasWithdrawn,
-      wasPendingFellThrough: property.wasPendingFellThrough,
-    };
+    const enrichment: any = await ctx.runQuery(
+      internal.enrichment.getForPropertyInternal,
+      { propertyId: args.propertyId },
+    );
+
+    const input: LeverageInput =
+      enrichment?.engineInputs?.leverage ?? {
+        propertyId: args.propertyId,
+        listPrice: property.listPrice ?? 0,
+        daysOnMarket: property.daysOnMarket ?? 0,
+        description: property.description,
+        sqft: property.sqftLiving ?? 0,
+        neighborhoodMedianDom: property.neighborhoodMedianDom,
+        neighborhoodMedianPsf: property.neighborhoodMedianPsf,
+        wasRelisted: property.wasRelisted,
+        wasWithdrawn: property.wasWithdrawn,
+        wasPendingFellThrough: property.wasPendingFellThrough,
+      };
 
     const result = analyzeLeverage(input);
 

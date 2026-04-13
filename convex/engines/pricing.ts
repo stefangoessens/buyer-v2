@@ -31,20 +31,26 @@ export const runPricingEngine = internalAction({
     );
     if (!prompt) return null;
 
+    const enrichment: any = await ctx.runQuery(
+      internal.enrichment.getForPropertyInternal,
+      { propertyId: args.propertyId },
+    );
+
     // 3. Build and run the pricing engine
-    const input: PricingInput = {
-      propertyId: args.propertyId,
-      listPrice: property.listPrice ?? 0,
-      address: property.address?.formatted ?? "Unknown",
-      beds: property.beds ?? 0,
-      baths: (property.bathsFull ?? 0) + (property.bathsHalf ?? 0) * 0.5,
-      sqft: property.sqftLiving ?? 0,
-      yearBuilt: property.yearBuilt ?? 0,
-      propertyType: property.propertyType ?? "Unknown",
-      zestimate: property.zestimate,
-      redfinEstimate: property.redfinEstimate,
-      realtorEstimate: property.realtorEstimate,
-    };
+    const input: PricingInput =
+      enrichment?.engineInputs?.pricing ?? {
+        propertyId: args.propertyId,
+        listPrice: property.listPrice ?? 0,
+        address: property.address?.formatted ?? "Unknown",
+        beds: property.beds ?? 0,
+        baths: (property.bathsFull ?? 0) + (property.bathsHalf ?? 0) * 0.5,
+        sqft: property.sqftLiving ?? 0,
+        yearBuilt: property.yearBuilt ?? 0,
+        propertyType: property.propertyType ?? "Unknown",
+        zestimate: property.zestimate,
+        redfinEstimate: property.redfinEstimate,
+        realtorEstimate: property.realtorEstimate,
+      };
 
     const request = buildPricingRequest(input, prompt.prompt, prompt.systemPrompt);
     const result = await gateway(request);

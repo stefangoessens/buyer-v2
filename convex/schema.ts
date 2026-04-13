@@ -2142,6 +2142,29 @@ export default defineSchema({
     .index("by_nextRetryAt", ["nextRetryAt"])
     .index("by_propertyId_and_status", ["propertyId", "status"]),
 
+  // Generic snapshot rows for enrichment sources that land one canonical
+  // payload per property instead of row-oriented records. This keeps
+  // provenance + last refresh explicit without forcing those sources to
+  // mutate the canonical property document directly.
+  propertyEnrichmentSnapshots: defineTable({
+    propertyId: v.id("properties"),
+    source: v.union(
+      v.literal("fema_flood"),
+      v.literal("county_appraiser"),
+      v.literal("census_geocode"),
+      v.literal("cross_portal_match"),
+    ),
+    payloadJson: v.string(),
+    provenance: v.object({
+      source: v.string(),
+      fetchedAt: v.string(),
+    }),
+    lastRefreshedAt: v.string(),
+  })
+    .index("by_propertyId_and_source", ["propertyId", "source"])
+    .index("by_source_and_lastRefreshedAt", ["source", "lastRefreshedAt"])
+    .index("by_lastRefreshedAt", ["lastRefreshedAt"]),
+
   // Canonical listing-agent record — merged across portals, cached, and
   // refreshed on a schedule. Stats drive the leverage engine and the
   // pricing panel's context. Per-field provenance lets callers tell
@@ -2239,6 +2262,43 @@ export default defineSchema({
   })
     .index("by_propertyId_and_portal", ["propertyId", "portal"])
     .index("by_propertyId_and_capturedAt", ["propertyId", "capturedAt"]),
+
+  // Immediate-area sold comparables cached for the comps engine and deal
+  // room market context. Stored per subject property so a refresh never
+  // blocks the read path and source attribution stays attached to every comp.
+  recentComparableSales: defineTable({
+    propertyId: v.id("properties"),
+    portal: v.union(
+      v.literal("zillow"),
+      v.literal("redfin"),
+      v.literal("realtor"),
+    ),
+    canonicalId: v.string(),
+    address: v.string(),
+    soldPrice: v.number(),
+    soldDate: v.string(),
+    listPrice: v.optional(v.number()),
+    beds: v.optional(v.number()),
+    baths: v.optional(v.number()),
+    sqft: v.optional(v.number()),
+    yearBuilt: v.optional(v.number()),
+    lotSize: v.optional(v.number()),
+    propertyType: v.optional(v.string()),
+    waterfront: v.optional(v.boolean()),
+    pool: v.optional(v.boolean()),
+    hoaFee: v.optional(v.number()),
+    subdivision: v.optional(v.string()),
+    zip: v.optional(v.string()),
+    dom: v.optional(v.number()),
+    provenance: v.object({
+      source: v.string(),
+      fetchedAt: v.string(),
+    }),
+    capturedAt: v.string(),
+  })
+    .index("by_propertyId_and_portal", ["propertyId", "portal"])
+    .index("by_propertyId_and_soldDate", ["propertyId", "soldDate"])
+    .index("by_capturedAt", ["capturedAt"]),
 
   // ═══ CLOSE TASKS (KIN-847) ═══
   //

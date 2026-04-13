@@ -1,6 +1,14 @@
 import { query, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
+import { buildSchedule } from "../src/lib/enrichment/scheduler";
+import {
+  buildEnrichmentContexts,
+  buildNeighborhoodRequests,
+} from "../src/lib/enrichment/jobContext";
+import { canonicalizeAgentId } from "../src/lib/enrichment/listingAgentStats";
+import { computeNeighborhoodContext } from "../src/lib/enrichment/neighborhoodStats";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Source / priority registries (must match src/lib/enrichment/types.ts)
@@ -16,6 +24,13 @@ const sourceValidator = v.union(
   v.literal("portal_estimates"),
   v.literal("recent_sales"),
   v.literal("browser_use_fallback"),
+);
+
+const snapshotSourceValidator = v.union(
+  v.literal("fema_flood"),
+  v.literal("county_appraiser"),
+  v.literal("census_geocode"),
+  v.literal("cross_portal_match"),
 );
 
 type EnrichmentSource =
@@ -40,17 +55,6 @@ const SOURCE_PRIORITY: Record<EnrichmentSource, number> = {
   neighborhood_market: 70,
   recent_sales: 80,
 };
-
-const ALL_SOURCES: EnrichmentSource[] = [
-  "cross_portal_match",
-  "portal_estimates",
-  "census_geocode",
-  "fema_flood",
-  "county_appraiser",
-  "listing_agent_profile",
-  "neighborhood_market",
-  "recent_sales",
-];
 
 /** Cache freshness horizons per source, in hours. Jobs succeeded within this
  *  window are still considered fresh — `enqueueJob` returns the existing id
@@ -88,6 +92,7 @@ export const enqueueJob = internalMutation({
     priority: v.number(),
     maxAttempts: v.number(),
     dedupeKey: v.string(),
+    contextJson: v.optional(v.string()),
   },
   returns: v.id("enrichmentJobs"),
   handler: async (ctx, args) => {
@@ -122,6 +127,7 @@ export const enqueueJob = internalMutation({
       priority: args.priority,
       requestedAt: new Date().toISOString(),
       dedupeKey: args.dedupeKey,
+      contextJson: args.contextJson,
     });
 
     await ctx.db.insert("auditLog", {
@@ -136,46 +142,374 @@ export const enqueueJob = internalMutation({
   },
 });
 
+function safeParseJson<T>(value: string | undefined): T | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function getCrossPortalIds(
+  ctx: any,
+  propertyId: Id<"properties">,
+): Promise<{
+  zillowId?: string;
+  redfinId?: string;
+  realtorId?: string;
+}> {
+  const snapshot = await ctx.db
+    .query("propertyEnrichmentSnapshots")
+    .withIndex("by_propertyId_and_source", (q: any) =>
+      q.eq("propertyId", propertyId).eq("source", "cross_portal_match"),
+    )
+    .unique();
+
+  const payload = safeParseJson<{
+    zillowId?: string;
+    redfinId?: string;
+    realtorId?: string;
+  }>(snapshot?.payloadJson);
+
+  return payload ?? {};
+}
+
+async function buildFreshSourceMap(
+  ctx: any,
+  property: any,
+  crossPortalIds: {
+    zillowId?: string;
+    redfinId?: string;
+    realtorId?: string;
+  },
+): Promise<Map<EnrichmentSource, { lastRefreshedAt: string }>> {
+  const freshSources = new Map<EnrichmentSource, { lastRefreshedAt: string }>();
+
+  const snapshots = await ctx.db
+    .query("propertyEnrichmentSnapshots")
+    .withIndex("by_propertyId_and_source", (q: any) =>
+      q.eq("propertyId", property._id),
+    )
+    .collect();
+  for (const snapshot of snapshots) {
+    freshSources.set(snapshot.source, {
+      lastRefreshedAt: snapshot.lastRefreshedAt,
+    });
+  }
+
+  const listingLinks = await ctx.db
+    .query("propertyAgentLinks")
+    .withIndex("by_propertyId_and_role", (q: any) =>
+      q.eq("propertyId", property._id).eq("role", "listing"),
+    )
+    .collect();
+  let latestAgentRefresh: string | undefined;
+  for (const link of listingLinks) {
+    const agent = await ctx.db.get(link.agentId);
+    if (!agent) continue;
+    if (!latestAgentRefresh || agent.lastRefreshedAt > latestAgentRefresh) {
+      latestAgentRefresh = agent.lastRefreshedAt;
+    }
+  }
+  if (latestAgentRefresh) {
+    freshSources.set("listing_agent_profile", {
+      lastRefreshedAt: latestAgentRefresh,
+    });
+  }
+
+  const portalEstimates = await ctx.db
+    .query("portalEstimates")
+    .withIndex("by_propertyId_and_capturedAt", (q: any) =>
+      q.eq("propertyId", property._id),
+    )
+    .order("desc")
+    .collect();
+  const latestEstimateByPortal = new Map<string, string>();
+  for (const row of portalEstimates) {
+    if (!latestEstimateByPortal.has(row.portal)) {
+      latestEstimateByPortal.set(row.portal, row.capturedAt);
+    }
+  }
+  if (latestEstimateByPortal.size === 3) {
+    const estimateFreshness = Array.from(latestEstimateByPortal.values()).sort()[0];
+    if (estimateFreshness) {
+      freshSources.set("portal_estimates", {
+        lastRefreshedAt: estimateFreshness,
+      });
+    }
+  }
+
+  const recentSales = await ctx.db
+    .query("recentComparableSales")
+    .withIndex("by_propertyId_and_soldDate", (q: any) =>
+      q.eq("propertyId", property._id),
+    )
+    .order("desc")
+    .collect();
+  if (recentSales.length > 0) {
+    const latest = recentSales
+      .map((sale: any) => sale.capturedAt)
+      .sort()
+      .at(-1);
+    if (latest) {
+      freshSources.set("recent_sales", { lastRefreshedAt: latest });
+    }
+  }
+
+  const neighborhoodRequests = buildNeighborhoodRequests({
+    canonicalId: property.canonicalId,
+    sourcePlatform: property.sourcePlatform,
+    address: {
+      city: property.address.city,
+      formatted: property.address.formatted,
+      zip: property.address.zip,
+    },
+    subdivision: property.subdivision,
+  });
+  if (neighborhoodRequests.length > 0) {
+    let oldestRefresh: string | undefined;
+    let complete = true;
+
+    for (const request of neighborhoodRequests) {
+      const row = await ctx.db
+        .query("neighborhoodMarketContext")
+        .withIndex("by_geoKey_and_windowDays", (q: any) =>
+          q.eq("geoKey", request.geoKey).eq("windowDays", request.windowDays),
+        )
+        .unique();
+      if (!row) {
+        complete = false;
+        break;
+      }
+      if (!oldestRefresh || row.lastRefreshedAt < oldestRefresh) {
+        oldestRefresh = row.lastRefreshedAt;
+      }
+    }
+
+    if (complete && oldestRefresh) {
+      freshSources.set("neighborhood_market", {
+        lastRefreshedAt: oldestRefresh,
+      });
+    }
+  }
+
+  if (
+    crossPortalIds.zillowId ||
+    crossPortalIds.redfinId ||
+    crossPortalIds.realtorId
+  ) {
+    const crossPortalSnapshot = snapshots.find(
+      (snapshot: any) => snapshot.source === "cross_portal_match",
+    );
+    if (crossPortalSnapshot) {
+      freshSources.set("cross_portal_match", {
+        lastRefreshedAt: crossPortalSnapshot.lastRefreshedAt,
+      });
+    }
+  }
+
+  return freshSources;
+}
+
+async function upsertPropertySnapshotRow(args: {
+  ctx: any;
+  propertyId: Id<"properties">;
+  source: "fema_flood" | "county_appraiser" | "census_geocode" | "cross_portal_match";
+  payloadJson: string;
+  citation: string;
+  fetchedAt: string;
+}): Promise<Id<"propertyEnrichmentSnapshots">> {
+  const existing = await args.ctx.db
+    .query("propertyEnrichmentSnapshots")
+    .withIndex("by_propertyId_and_source", (q: any) =>
+      q.eq("propertyId", args.propertyId).eq("source", args.source),
+    )
+    .unique();
+
+  const row = {
+    propertyId: args.propertyId,
+    source: args.source,
+    payloadJson: args.payloadJson,
+    provenance: {
+      source: args.citation,
+      fetchedAt: args.fetchedAt,
+    },
+    lastRefreshedAt: args.fetchedAt,
+  };
+
+  if (existing) {
+    await args.ctx.db.replace(existing._id, row);
+    return existing._id;
+  }
+  return await args.ctx.db.insert("propertyEnrichmentSnapshots", row);
+}
+
+async function replaceRecentComparableSalesRows(args: {
+  ctx: any;
+  propertyId: Id<"properties">;
+  sales: Array<Record<string, unknown>>;
+  citation: string;
+  fetchedAt: string;
+}): Promise<Array<Id<"recentComparableSales">>> {
+  const existingRows = await args.ctx.db
+    .query("recentComparableSales")
+    .withIndex("by_propertyId_and_soldDate", (q: any) =>
+      q.eq("propertyId", args.propertyId),
+    )
+    .collect();
+  for (const row of existingRows) {
+    await args.ctx.db.delete(row._id);
+  }
+
+  const insertedIds: Array<Id<"recentComparableSales">> = [];
+  for (const sale of args.sales) {
+    const portal = sale.portal;
+    if (portal !== "zillow" && portal !== "redfin" && portal !== "realtor") {
+      continue;
+    }
+
+    insertedIds.push(
+      await args.ctx.db.insert("recentComparableSales", {
+        propertyId: args.propertyId,
+        portal,
+        canonicalId:
+          typeof sale.canonicalId === "string"
+            ? sale.canonicalId
+            : `${portal}:${String(sale.address ?? sale.soldDate ?? insertedIds.length)}`,
+        address: String(sale.address ?? "Unknown"),
+        soldPrice: Number(sale.soldPrice ?? 0),
+        soldDate: String(sale.soldDate ?? args.fetchedAt),
+        listPrice:
+          typeof sale.listPrice === "number" ? sale.listPrice : undefined,
+        beds: typeof sale.beds === "number" ? sale.beds : undefined,
+        baths: typeof sale.baths === "number" ? sale.baths : undefined,
+        sqft: typeof sale.sqft === "number" ? sale.sqft : undefined,
+        yearBuilt:
+          typeof sale.yearBuilt === "number" ? sale.yearBuilt : undefined,
+        lotSize: typeof sale.lotSize === "number" ? sale.lotSize : undefined,
+        propertyType:
+          typeof sale.propertyType === "string" ? sale.propertyType : undefined,
+        waterfront:
+          typeof sale.waterfront === "boolean" ? sale.waterfront : undefined,
+        pool: typeof sale.pool === "boolean" ? sale.pool : undefined,
+        hoaFee: typeof sale.hoaFee === "number" ? sale.hoaFee : undefined,
+        subdivision:
+          typeof sale.subdivision === "string" ? sale.subdivision : undefined,
+        zip: typeof sale.zip === "string" ? sale.zip : undefined,
+        dom: typeof sale.dom === "number" ? sale.dom : undefined,
+        provenance: {
+          source: args.citation,
+          fetchedAt: args.fetchedAt,
+        },
+        capturedAt: args.fetchedAt,
+      }),
+    );
+  }
+
+  return insertedIds;
+}
+
+async function markJobSucceededRow(args: {
+  ctx: any;
+  jobId: Id<"enrichmentJobs">;
+  resultRef?: string;
+  completedAt: string;
+}): Promise<void> {
+  await args.ctx.db.patch(args.jobId, {
+    status: "succeeded" as const,
+    completedAt: args.completedAt,
+    errorCode: undefined,
+    errorMessage: undefined,
+    nextRetryAt: undefined,
+    resultRef: args.resultRef,
+  });
+  await args.ctx.db.insert("auditLog", {
+    action: "enrichment_job_succeeded",
+    entityType: "enrichmentJobs",
+    entityId: args.jobId,
+    timestamp: args.completedAt,
+  });
+}
+
 /** Enqueue every source for a freshly intaken property. */
 export const enqueueAllSourcesForProperty = internalMutation({
-  args: { propertyId: v.id("properties") },
+  args: {
+    propertyId: v.id("properties"),
+    forceRefresh: v.optional(v.boolean()),
+  },
   returns: v.array(v.id("enrichmentJobs")),
   handler: async (ctx, args) => {
     const jobIds: Array<Id<"enrichmentJobs">> = [];
     const now = new Date().toISOString();
+    const property = await ctx.db.get(args.propertyId);
+    if (!property) return jobIds;
 
-    for (const source of ALL_SOURCES) {
-      const dedupeKey = buildDedupeKey(args.propertyId, source);
-      const existing = await ctx.db
-        .query("enrichmentJobs")
-        .withIndex("by_dedupeKey", (q) => q.eq("dedupeKey", dedupeKey))
-        .first();
+    const crossPortalIds = await getCrossPortalIds(ctx, args.propertyId);
+    const contexts = buildEnrichmentContexts(
+      {
+        canonicalId: property.canonicalId,
+        folioNumber: property.folioNumber,
+        sourcePlatform: property.sourcePlatform,
+        address: {
+          city: property.address.city,
+          formatted: property.address.formatted,
+          zip: property.address.zip,
+        },
+        coordinates: property.coordinates,
+        zillowId: property.zillowId,
+        redfinId: property.redfinId,
+        realtorId: property.realtorId,
+        listingAgentName: property.listingAgentName,
+        listingBrokerage: property.listingBrokerage,
+        listingAgentPhone: property.listingAgentPhone,
+        subdivision: property.subdivision,
+      },
+      crossPortalIds,
+    );
 
-      if (existing) {
-        if (existing.status === "pending" || existing.status === "running") {
-          jobIds.push(existing._id);
-          continue;
-        }
-        if (existing.status === "succeeded" && existing.completedAt) {
-          const ttlMs = SOURCE_CACHE_TTL_HOURS[source] * 60 * 60 * 1000;
-          const completedAtMs = Date.parse(existing.completedAt);
-          if (Number.isFinite(completedAtMs) && Date.now() - completedAtMs < ttlMs) {
-            jobIds.push(existing._id);
-            continue;
-          }
-        }
+    const freshSources = await buildFreshSourceMap(ctx, property, crossPortalIds);
+    const inFlightRows = await ctx.db
+      .query("enrichmentJobs")
+      .withIndex("by_propertyId_and_status", (q: any) =>
+        q.eq("propertyId", args.propertyId),
+      )
+      .collect();
+    const inFlightSources = new Set<EnrichmentSource>(
+      inFlightRows
+        .filter((row: any) => row.status === "pending" || row.status === "running")
+        .map((row: any) => row.source as EnrichmentSource),
+    );
+
+    const plan = buildSchedule({
+      propertyId: args.propertyId,
+      freshSources,
+      inFlightSources,
+      forceRefresh: args.forceRefresh,
+      now: new Date(now),
+    });
+
+    for (const decision of plan) {
+      if (decision.shouldSkip) continue;
+      const context = contexts[decision.source];
+      if (!context) continue;
+
+      const contextJson = JSON.stringify(context);
+      const jobId: Id<"enrichmentJobs"> = await ctx.runMutation(
+        internal.enrichmentJobs.enqueueJob,
+        {
+          propertyId: args.propertyId,
+          source: decision.source,
+          priority: decision.priority,
+          maxAttempts: decision.maxAttempts,
+          dedupeKey: decision.dedupeKey,
+          contextJson,
+        },
+      );
+      const existingJob = await ctx.db.get(jobId);
+      if (existingJob && existingJob.contextJson !== contextJson) {
+        await ctx.db.patch(jobId, { contextJson });
       }
-
-      const jobId = await ctx.db.insert("enrichmentJobs", {
-        propertyId: args.propertyId,
-        source,
-        status: "pending" as const,
-        attempt: 0,
-        maxAttempts: 3,
-        priority: SOURCE_PRIORITY[source],
-        requestedAt: now,
-        dedupeKey,
-      });
       jobIds.push(jobId);
     }
 
@@ -183,7 +517,10 @@ export const enqueueAllSourcesForProperty = internalMutation({
       action: "enrichment_all_sources_enqueued",
       entityType: "properties",
       entityId: args.propertyId,
-      details: JSON.stringify({ jobCount: jobIds.length }),
+      details: JSON.stringify({
+        jobCount: jobIds.length,
+        forceRefresh: args.forceRefresh ?? false,
+      }),
       timestamp: now,
     });
 
@@ -767,6 +1104,253 @@ export const recordPortalEstimate = internalMutation({
       provenance: { source: args.provenanceSource, fetchedAt: now },
       capturedAt: now,
     });
+  },
+});
+
+export const upsertPropertySnapshot = internalMutation({
+  args: {
+    propertyId: v.id("properties"),
+    source: snapshotSourceValidator,
+    payloadJson: v.string(),
+    provenanceSource: v.string(),
+    fetchedAt: v.optional(v.string()),
+  },
+  returns: v.id("propertyEnrichmentSnapshots"),
+  handler: async (ctx, args) => {
+    return await upsertPropertySnapshotRow({
+      ctx,
+      propertyId: args.propertyId,
+      source: args.source,
+      payloadJson: args.payloadJson,
+      citation: args.provenanceSource,
+      fetchedAt: args.fetchedAt ?? new Date().toISOString(),
+    });
+  },
+});
+
+export const replaceRecentComparableSales = internalMutation({
+  args: {
+    propertyId: v.id("properties"),
+    sales: v.array(v.any()),
+    provenanceSource: v.string(),
+    fetchedAt: v.optional(v.string()),
+  },
+  returns: v.array(v.id("recentComparableSales")),
+  handler: async (ctx, args) => {
+    return await replaceRecentComparableSalesRows({
+      ctx,
+      propertyId: args.propertyId,
+      sales: args.sales as Array<Record<string, unknown>>,
+      citation: args.provenanceSource,
+      fetchedAt: args.fetchedAt ?? new Date().toISOString(),
+    });
+  },
+});
+
+export const persistJobResult = internalMutation({
+  args: {
+    jobId: v.id("enrichmentJobs"),
+    payloadJson: v.string(),
+    citation: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) throw new Error("Enrichment job not found");
+
+    const fetchedAt = new Date().toISOString();
+    const payload = safeParseJson<any>(args.payloadJson);
+    const context = safeParseJson<any>(job.contextJson);
+    let resultRef: string | undefined;
+
+    switch (job.source) {
+      case "fema_flood":
+      case "county_appraiser":
+      case "census_geocode":
+      case "cross_portal_match": {
+        const snapshotId = await upsertPropertySnapshotRow({
+          ctx,
+          propertyId: job.propertyId,
+          source: job.source,
+          payloadJson: args.payloadJson,
+          citation: args.citation,
+          fetchedAt,
+        });
+        resultRef = snapshotId;
+        break;
+      }
+      case "listing_agent_profile": {
+        const observations: Array<any> = Array.isArray(payload?.observations)
+          ? payload.observations
+          : payload?.observation
+            ? [payload.observation]
+            : [];
+
+        const agentIds: string[] = [];
+        for (const observation of observations) {
+          if (!observation || typeof observation.name !== "string") continue;
+          const canonicalAgentId = canonicalizeAgentId({
+            name: observation.name,
+            brokerage:
+              typeof observation.brokerage === "string"
+                ? observation.brokerage
+                : undefined,
+          });
+
+          await ctx.db.insert("auditLog", {
+            action: "listing_agent_profile_persist_started",
+            entityType: "properties",
+            entityId: job.propertyId,
+            details: JSON.stringify({
+              canonicalAgentId,
+              source: observation.source,
+            }),
+            timestamp: fetchedAt,
+          });
+
+          const agentId: Id<"listingAgents"> = await ctx.runMutation(
+            internal.enrichmentJobs.upsertListingAgent,
+            {
+              canonicalAgentId,
+              observation: {
+                ...observation,
+                fetchedAt:
+                  typeof observation.fetchedAt === "string"
+                    ? observation.fetchedAt
+                    : fetchedAt,
+              },
+            },
+          );
+
+          await ctx.runMutation(internal.enrichmentJobs.linkAgentToProperty, {
+            propertyId: job.propertyId,
+            agentId,
+            role: "listing",
+            source: `enrichment:${observation.source ?? "unknown"}`,
+          });
+          agentIds.push(agentId);
+        }
+        resultRef = JSON.stringify(agentIds);
+        break;
+      }
+      case "neighborhood_market": {
+        const marketRows: Array<any> = Array.isArray(payload?.markets)
+          ? payload.markets
+          : Array.isArray(payload?.contexts)
+            ? payload.contexts
+            : Array.isArray(context?.requests) && Array.isArray(payload?.sales)
+              ? context.requests.map((request: any) => ({
+                  ...request,
+                  sales: payload.sales,
+                }))
+              : [];
+
+        const ids: string[] = [];
+        for (const market of marketRows) {
+          if (!Array.isArray(market.sales)) continue;
+          const computed = computeNeighborhoodContext({
+            geoKey: String(market.geoKey),
+            geoKind: market.geoKind,
+            windowDays: Number(market.windowDays),
+            sales: market.sales,
+            fetchedAt,
+            sourceLabel: args.citation,
+          });
+          const id: Id<"neighborhoodMarketContext"> = await ctx.runMutation(
+            internal.enrichmentJobs.upsertNeighborhoodContext,
+            {
+              geoKey: computed.geoKey,
+              geoKind: computed.geoKind,
+              windowDays: computed.windowDays,
+              medianDom: computed.medianDom,
+              medianPricePerSqft: computed.medianPricePerSqft,
+              medianListPrice: computed.medianListPrice,
+              inventoryCount: computed.inventoryCount,
+              pendingCount: computed.pendingCount,
+              salesVelocity: computed.salesVelocity,
+              trajectory: computed.trajectory,
+              provenanceSource: args.citation,
+            },
+          );
+          ids.push(id);
+        }
+        resultRef = JSON.stringify(ids);
+        break;
+      }
+      case "portal_estimates": {
+        const estimates: Array<any> = Array.isArray(payload?.estimates)
+          ? payload.estimates
+          : payload
+            ? [payload]
+            : [];
+        const ids: string[] = [];
+        for (const estimate of estimates) {
+          if (
+            estimate?.portal !== "zillow" &&
+            estimate?.portal !== "redfin" &&
+            estimate?.portal !== "realtor"
+          ) {
+            continue;
+          }
+          const id: Id<"portalEstimates"> = await ctx.runMutation(
+            internal.enrichmentJobs.recordPortalEstimate,
+            {
+              propertyId: job.propertyId,
+              portal: estimate.portal,
+              estimateValue: Number(estimate.value ?? estimate.estimateValue ?? 0),
+              estimateLow:
+                typeof estimate.low === "number"
+                  ? estimate.low
+                  : typeof estimate.estimateLow === "number"
+                    ? estimate.estimateLow
+                    : undefined,
+              estimateHigh:
+                typeof estimate.high === "number"
+                  ? estimate.high
+                  : typeof estimate.estimateHigh === "number"
+                    ? estimate.estimateHigh
+                    : undefined,
+              asOfDate:
+                typeof estimate.asOfDate === "string"
+                  ? estimate.asOfDate
+                  : undefined,
+              provenanceSource: args.citation,
+            },
+          );
+          ids.push(id);
+        }
+        resultRef = JSON.stringify(ids);
+        break;
+      }
+      case "recent_sales": {
+        const sales: Array<Record<string, unknown>> = Array.isArray(payload?.sales)
+          ? payload.sales
+          : Array.isArray(payload)
+            ? payload
+            : [];
+        const ids = await replaceRecentComparableSalesRows({
+          ctx,
+          propertyId: job.propertyId,
+          sales,
+          citation: args.citation,
+          fetchedAt,
+        });
+        resultRef = JSON.stringify(ids);
+        break;
+      }
+      case "browser_use_fallback":
+        resultRef = undefined;
+        break;
+    }
+
+    await markJobSucceededRow({
+      ctx,
+      jobId: args.jobId,
+      resultRef,
+      completedAt: fetchedAt,
+    });
+
+    return null;
   },
 });
 

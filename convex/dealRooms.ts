@@ -1,5 +1,6 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { getCurrentUser, requireAuth } from "./lib/session";
 
 /** Get a deal room with access-level-gated property data */
@@ -45,10 +46,46 @@ export const get = query({
       propertyData = filtered as typeof property;
     }
 
+    const enrichment: any = await ctx.runQuery(
+      internal.enrichment.getForPropertyInternal,
+      { propertyId: dealRoom.propertyId },
+    );
+
+    const includeAgentContact = accessLevel === "full";
+    const enrichmentData = enrichment
+      ? {
+          summary: enrichment.summary,
+          neighborhoodContexts: enrichment.neighborhoodContexts,
+          portalEstimates: enrichment.portalEstimates,
+          recentSales: enrichment.recentSales,
+          listingAgents: enrichment.listingAgents.map((agent: any) => ({
+            canonicalAgentId: agent.canonicalAgentId,
+            name: agent.name,
+            brokerage: agent.brokerage,
+            zillowProfileUrl: agent.zillowProfileUrl,
+            redfinProfileUrl: agent.redfinProfileUrl,
+            realtorProfileUrl: agent.realtorProfileUrl,
+            activeListings: agent.activeListings,
+            soldCount: agent.soldCount,
+            avgDaysOnMarket: agent.avgDaysOnMarket,
+            medianListToSellRatio: agent.medianListToSellRatio,
+            priceCutFrequency: agent.priceCutFrequency,
+            recentActivityCount: agent.recentActivityCount,
+            provenance: agent.provenance,
+            lastRefreshedAt: agent.lastRefreshedAt,
+            phone: includeAgentContact ? agent.phone : undefined,
+            email: includeAgentContact ? agent.email : undefined,
+          })),
+          snapshots: accessLevel === "full" ? enrichment.snapshots : undefined,
+          engineInputs: accessLevel === "full" ? enrichment.engineInputs : undefined,
+        }
+      : null;
+
     return {
       dealRoom,
       property: propertyData,
       accessLevel,
+      enrichment: enrichmentData,
     };
   },
 });

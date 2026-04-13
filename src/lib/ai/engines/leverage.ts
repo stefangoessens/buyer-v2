@@ -106,6 +106,48 @@ export function detectListingTrajectory(
   };
 }
 
+export function detectListingAgentPerformance(
+  input: LeverageInput,
+): LeverageSignal | null {
+  if (
+    typeof input.listingAgentAvgDom !== "number" &&
+    typeof input.listingAgentAvgSaleToList !== "number"
+  ) {
+    return null;
+  }
+
+  const domDelta =
+    typeof input.listingAgentAvgDom === "number" &&
+    typeof input.neighborhoodMedianDom === "number" &&
+    input.neighborhoodMedianDom > 0
+      ? ((input.listingAgentAvgDom - input.neighborhoodMedianDom) /
+          input.neighborhoodMedianDom) *
+        100
+      : 0;
+
+  const saleToListDelta =
+    typeof input.listingAgentAvgSaleToList === "number"
+      ? (1 - input.listingAgentAvgSaleToList) * 100
+      : 0;
+
+  const score = domDelta + saleToListDelta;
+  const direction =
+    score > 8 ? "bullish" : score < -8 ? "bearish" : "neutral";
+
+  return {
+    name: "listing_agent_performance",
+    value: Number(score.toFixed(1)),
+    marketReference:
+      typeof input.neighborhoodMedianDom === "number"
+        ? input.neighborhoodMedianDom
+        : "agent baseline",
+    delta: Number(score.toFixed(1)),
+    confidence: 0.68,
+    citation: "Listing agent stats vs local market",
+    direction,
+  };
+}
+
 export function computeLeverageScore(signals: LeverageSignal[]): number {
   if (signals.length === 0) return 50; // neutral baseline
 
@@ -142,6 +184,9 @@ export function analyzeLeverage(input: LeverageInput): LeverageOutput {
 
   const trajectory = detectListingTrajectory(input);
   if (trajectory) signals.push(trajectory);
+
+  const agentPerformance = detectListingAgentPerformance(input);
+  if (agentPerformance) signals.push(agentPerformance);
 
   const score = computeLeverageScore(signals);
   const avgConfidence =
