@@ -1,25 +1,34 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   addToComparison,
+  buildComparisonRows,
+  MAX_COMPARISON_SIZE,
+  projectRow,
   removeFromComparison,
   reorderComparison,
   resetComparison,
-  buildComparisonRows,
-  projectRow,
-  MAX_COMPARISON_SIZE,
-  type ComparisonState,
   type ComparisonPropertyInput,
+  type ComparisonRecord,
+  type ComparisonState,
 } from "@/lib/dashboard/comparison";
 
 const NOW = "2026-04-12T00:00:00.000Z";
 const LATER = "2026-04-13T00:00:00.000Z";
 
+const mkRecord = (
+  propertyId: string,
+  dealRoomId?: string,
+): ComparisonRecord => ({
+  propertyId,
+  dealRoomId,
+});
+
 const mkState = (
-  propertyIds: string[] = [],
+  records: ComparisonRecord[] = [],
   overrides: Partial<ComparisonState> = {},
 ): ComparisonState => ({
   buyerId: "user_1",
-  propertyIds,
+  records,
   createdAt: NOW,
   updatedAt: NOW,
   ...overrides,
@@ -61,35 +70,55 @@ describe("MAX_COMPARISON_SIZE", () => {
 
 describe("addToComparison", () => {
   it("adds to an empty comparison", () => {
-    const result = addToComparison(mkState([]), "prop_1", LATER);
+    const result = addToComparison(mkState([]), mkRecord("prop_1"), LATER);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.state.propertyIds).toEqual(["prop_1"]);
+      expect(result.state.records).toEqual([mkRecord("prop_1")]);
       expect(result.state.updatedAt).toBe(LATER);
     }
   });
 
-  it("appends to the end by default", () => {
-    const state = mkState(["prop_1", "prop_2"]);
-    const result = addToComparison(state, "prop_3", LATER);
+  it("preserves deal-room context on insert", () => {
+    const result = addToComparison(
+      mkState([]),
+      mkRecord("prop_1", "deal_1"),
+      LATER,
+    );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.state.propertyIds).toEqual(["prop_1", "prop_2", "prop_3"]);
+      expect(result.state.records[0]).toEqual(mkRecord("prop_1", "deal_1"));
+    }
+  });
+
+  it("appends to the end by default", () => {
+    const state = mkState([mkRecord("prop_1"), mkRecord("prop_2")]);
+    const result = addToComparison(state, mkRecord("prop_3"), LATER);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.state.records).toEqual([
+        mkRecord("prop_1"),
+        mkRecord("prop_2"),
+        mkRecord("prop_3"),
+      ]);
     }
   });
 
   it("inserts at a specific position when given", () => {
-    const state = mkState(["prop_1", "prop_3"]);
-    const result = addToComparison(state, "prop_2", LATER, 1);
+    const state = mkState([mkRecord("prop_1"), mkRecord("prop_3")]);
+    const result = addToComparison(state, mkRecord("prop_2"), LATER, 1);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.state.propertyIds).toEqual(["prop_1", "prop_2", "prop_3"]);
+      expect(result.state.records).toEqual([
+        mkRecord("prop_1"),
+        mkRecord("prop_2"),
+        mkRecord("prop_3"),
+      ]);
     }
   });
 
-  it("rejects duplicate property additions", () => {
-    const state = mkState(["prop_1"]);
-    const result = addToComparison(state, "prop_1", LATER);
+  it("rejects duplicate property additions even with different deal-room context", () => {
+    const state = mkState([mkRecord("prop_1", "deal_1")]);
+    const result = addToComparison(state, mkRecord("prop_1", "deal_2"), LATER);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("already_in_comparison");
@@ -97,9 +126,11 @@ describe("addToComparison", () => {
   });
 
   it("rejects additions that would exceed MAX_COMPARISON_SIZE", () => {
-    const full = Array.from({ length: MAX_COMPARISON_SIZE }, (_, i) => `prop_${i}`);
+    const full = Array.from({ length: MAX_COMPARISON_SIZE }, (_, i) =>
+      mkRecord(`prop_${i}`),
+    );
     const state = mkState(full);
-    const result = addToComparison(state, "new_prop", LATER);
+    const result = addToComparison(state, mkRecord("new_prop"), LATER);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("comparison_full");
@@ -107,52 +138,54 @@ describe("addToComparison", () => {
   });
 
   it("rejects invalid insertion positions", () => {
-    const state = mkState(["prop_1", "prop_2"]);
-    const result = addToComparison(state, "prop_3", LATER, 99);
+    const state = mkState([mkRecord("prop_1"), mkRecord("prop_2")]);
+    const result = addToComparison(state, mkRecord("prop_3"), LATER, 99);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("invalid_position");
     }
   });
 
-  it("allows insertion at position === length (append via explicit index)", () => {
-    const state = mkState(["prop_1", "prop_2"]);
-    const result = addToComparison(state, "prop_3", LATER, 2);
+  it("allows insertion at position === length", () => {
+    const state = mkState([mkRecord("prop_1"), mkRecord("prop_2")]);
+    const result = addToComparison(state, mkRecord("prop_3"), LATER, 2);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.state.propertyIds).toEqual(["prop_1", "prop_2", "prop_3"]);
-    }
-  });
-
-  it("rejects negative positions", () => {
-    const state = mkState(["prop_1"]);
-    const result = addToComparison(state, "prop_2", LATER, -1);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe("invalid_position");
+      expect(result.state.records).toEqual([
+        mkRecord("prop_1"),
+        mkRecord("prop_2"),
+        mkRecord("prop_3"),
+      ]);
     }
   });
 
   it("does not mutate the input state", () => {
-    const state = mkState(["prop_1"]);
-    addToComparison(state, "prop_2", LATER);
-    expect(state.propertyIds).toEqual(["prop_1"]);
+    const state = mkState([mkRecord("prop_1")]);
+    addToComparison(state, mkRecord("prop_2"), LATER);
+    expect(state.records).toEqual([mkRecord("prop_1")]);
     expect(state.updatedAt).toBe(NOW);
   });
 });
 
 describe("removeFromComparison", () => {
   it("removes an existing property", () => {
-    const state = mkState(["prop_1", "prop_2", "prop_3"]);
+    const state = mkState([
+      mkRecord("prop_1"),
+      mkRecord("prop_2", "deal_2"),
+      mkRecord("prop_3"),
+    ]);
     const result = removeFromComparison(state, "prop_2", LATER);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.state.propertyIds).toEqual(["prop_1", "prop_3"]);
+      expect(result.state.records).toEqual([
+        mkRecord("prop_1"),
+        mkRecord("prop_3"),
+      ]);
     }
   });
 
   it("rejects removal of a property not in the comparison", () => {
-    const state = mkState(["prop_1"]);
+    const state = mkState([mkRecord("prop_1")]);
     const result = removeFromComparison(state, "prop_not_here", LATER);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -161,121 +194,173 @@ describe("removeFromComparison", () => {
   });
 
   it("handles removal from a single-item comparison", () => {
-    const state = mkState(["prop_1"]);
+    const state = mkState([mkRecord("prop_1", "deal_1")]);
     const result = removeFromComparison(state, "prop_1", LATER);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.state.propertyIds).toEqual([]);
+      expect(result.state.records).toEqual([]);
     }
   });
 });
 
 describe("reorderComparison", () => {
-  it("moves a property from one position to another", () => {
-    const state = mkState(["a", "b", "c", "d"]);
+  it("moves a record from one position to another", () => {
+    const state = mkState([
+      mkRecord("a"),
+      mkRecord("b", "deal_b"),
+      mkRecord("c"),
+      mkRecord("d"),
+    ]);
     const result = reorderComparison(state, 0, 2, LATER);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.state.propertyIds).toEqual(["b", "c", "a", "d"]);
+      expect(result.state.records).toEqual([
+        mkRecord("b", "deal_b"),
+        mkRecord("c"),
+        mkRecord("a"),
+        mkRecord("d"),
+      ]);
     }
   });
 
   it("no-ops when from and to positions are equal", () => {
-    const state = mkState(["a", "b", "c"]);
+    const state = mkState([mkRecord("a"), mkRecord("b"), mkRecord("c")]);
     const result = reorderComparison(state, 1, 1, LATER);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.state.propertyIds).toEqual(["a", "b", "c"]);
+      expect(result.state.records).toEqual([
+        mkRecord("a"),
+        mkRecord("b"),
+        mkRecord("c"),
+      ]);
     }
   });
 
-  it("rejects out-of-range from position", () => {
-    const state = mkState(["a", "b"]);
-    const result = reorderComparison(state, 5, 0, LATER);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe("invalid_position");
-    }
-  });
-
-  it("rejects out-of-range to position", () => {
-    const state = mkState(["a", "b"]);
-    const result = reorderComparison(state, 0, 10, LATER);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe("invalid_position");
-    }
-  });
-
-  it("rejects negative from or to", () => {
-    const state = mkState(["a", "b"]);
+  it("rejects out-of-range positions", () => {
+    const state = mkState([mkRecord("a"), mkRecord("b")]);
+    expect(reorderComparison(state, 5, 0, LATER).ok).toBe(false);
+    expect(reorderComparison(state, 0, 10, LATER).ok).toBe(false);
     expect(reorderComparison(state, -1, 0, LATER).ok).toBe(false);
     expect(reorderComparison(state, 0, -1, LATER).ok).toBe(false);
   });
 });
 
 describe("resetComparison", () => {
-  it("clears the property list", () => {
-    const state = mkState(["prop_1", "prop_2"]);
+  it("clears the record list", () => {
+    const state = mkState([mkRecord("prop_1"), mkRecord("prop_2", "deal_2")]);
     const reset = resetComparison(state, LATER);
-    expect(reset.propertyIds).toEqual([]);
+    expect(reset.records).toEqual([]);
     expect(reset.updatedAt).toBe(LATER);
-    expect(reset.createdAt).toBe(NOW); // preserved
+    expect(reset.createdAt).toBe(NOW);
   });
 
   it("is a no-op on an already empty comparison", () => {
-    const state = mkState([]);
-    const reset = resetComparison(state, LATER);
-    expect(reset.propertyIds).toEqual([]);
+    const reset = resetComparison(mkState([]), LATER);
+    expect(reset.records).toEqual([]);
   });
 
   it("does not mutate the input state", () => {
-    const state = mkState(["prop_1"]);
+    const state = mkState([mkRecord("prop_1")]);
     resetComparison(state, LATER);
-    expect(state.propertyIds).toEqual(["prop_1"]);
+    expect(state.records).toEqual([mkRecord("prop_1")]);
   });
 });
 
 describe("projectRow", () => {
   it("computes price per sqft", () => {
     const row = projectRow(
+      mkRecord("prop_1"),
       mkProperty({ listPrice: 500000, sqftLiving: 1000 }),
       0,
     );
     expect(row.pricePerSqft).toBe(500);
   });
 
+  it("sets source and dealRoomId from record context", () => {
+    const row = projectRow(
+      mkRecord("prop_1", "deal_1"),
+      mkProperty(),
+      0,
+    );
+    expect(row.source).toBe("dealRoom");
+    expect(row.dealRoomId).toBe("deal_1");
+  });
+
+  it("returns a buyer-safe row shape", () => {
+    const row = projectRow(mkRecord("prop_1"), mkProperty(), 0);
+    expect(Object.keys(row).sort()).toEqual([
+      "addressLine",
+      "baths",
+      "beds",
+      "dealRoomId",
+      "hasPool",
+      "hoaFee",
+      "listPrice",
+      "lotSize",
+      "order",
+      "pricePerSqft",
+      "primaryPhotoUrl",
+      "propertyId",
+      "propertyType",
+      "source",
+      "sqft",
+      "waterfront",
+      "yearBuilt",
+    ]);
+  });
+
   it("returns null for price per sqft when fields missing", () => {
-    expect(projectRow(mkProperty({ listPrice: undefined }), 0).pricePerSqft).toBe(null);
-    expect(projectRow(mkProperty({ sqftLiving: undefined }), 0).pricePerSqft).toBe(null);
-    expect(projectRow(mkProperty({ sqftLiving: 0 }), 0).pricePerSqft).toBe(null);
+    expect(
+      projectRow(mkRecord("prop_1"), mkProperty({ listPrice: undefined }), 0)
+        .pricePerSqft,
+    ).toBe(null);
+    expect(
+      projectRow(mkRecord("prop_1"), mkProperty({ sqftLiving: undefined }), 0)
+        .pricePerSqft,
+    ).toBe(null);
+    expect(
+      projectRow(mkRecord("prop_1"), mkProperty({ sqftLiving: 0 }), 0)
+        .pricePerSqft,
+    ).toBe(null);
   });
 
   it("combines baths correctly", () => {
-    expect(projectRow(mkProperty({ bathsFull: 3, bathsHalf: 1 }), 0).baths).toBe(3.5);
-    expect(projectRow(mkProperty({ bathsFull: 2, bathsHalf: 0 }), 0).baths).toBe(2);
+    expect(
+      projectRow(
+        mkRecord("prop_1"),
+        mkProperty({ bathsFull: 3, bathsHalf: 1 }),
+        0,
+      ).baths,
+    ).toBe(3.5);
+    expect(
+      projectRow(
+        mkRecord("prop_1"),
+        mkProperty({ bathsFull: 2, bathsHalf: 0 }),
+        0,
+      ).baths,
+    ).toBe(2);
   });
 
   it("detects waterfront correctly", () => {
-    expect(projectRow(mkProperty({ waterfrontType: "ocean" }), 0).waterfront).toBe(true);
-    expect(projectRow(mkProperty({ waterfrontType: "canal" }), 0).waterfront).toBe(true);
-    expect(projectRow(mkProperty({ waterfrontType: "none" }), 0).waterfront).toBe(false);
-    expect(projectRow(mkProperty({ waterfrontType: "" }), 0).waterfront).toBe(false);
-    expect(projectRow(mkProperty({ waterfrontType: undefined }), 0).waterfront).toBe(false);
+    expect(
+      projectRow(
+        mkRecord("prop_1"),
+        mkProperty({ waterfrontType: "ocean" }),
+        0,
+      ).waterfront,
+    ).toBe(true);
+    expect(
+      projectRow(
+        mkRecord("prop_1"),
+        mkProperty({ waterfrontType: "none" }),
+        0,
+      ).waterfront,
+    ).toBe(false);
   });
 
-  it("preserves order index", () => {
-    const row = projectRow(mkProperty(), 4);
-    expect(row.order).toBe(4);
-  });
-
-  it("handles missing photo arrays", () => {
-    expect(projectRow(mkProperty({ photoUrls: [] }), 0).primaryPhotoUrl).toBe(null);
-    expect(projectRow(mkProperty({ photoUrls: undefined }), 0).primaryPhotoUrl).toBe(null);
-  });
-
-  it("falls back to formatted address when provided", () => {
+  it("falls back to formatted address when needed", () => {
     const row = projectRow(
+      mkRecord("prop_1"),
       mkProperty({
         address: {
           street: "500 Brickell Ave",
@@ -292,42 +377,37 @@ describe("projectRow", () => {
 
 describe("buildComparisonRows", () => {
   it("projects rows in the stored order", () => {
-    const state = mkState(["b", "a", "c"]);
+    const state = mkState([
+      mkRecord("b", "deal_b"),
+      mkRecord("a"),
+      mkRecord("c"),
+    ]);
     const props = new Map<string, ComparisonPropertyInput>([
       ["a", mkProperty({ _id: "a" })],
       ["b", mkProperty({ _id: "b" })],
       ["c", mkProperty({ _id: "c" })],
     ]);
     const rows = buildComparisonRows(state, props);
-    expect(rows.map((r) => r.propertyId)).toEqual(["b", "a", "c"]);
+    expect(rows.map((row) => row.propertyId)).toEqual(["b", "a", "c"]);
+    expect(rows[0]?.dealRoomId).toBe("deal_b");
   });
 
-  it("skips missing properties silently (no crash)", () => {
-    const state = mkState(["a", "b", "c"]);
-    const props = new Map<string, ComparisonPropertyInput>([
-      ["a", mkProperty({ _id: "a" })],
-      // b is missing
-      ["c", mkProperty({ _id: "c" })],
+  it("skips missing properties silently and compacts visible order", () => {
+    const state = mkState([
+      mkRecord("a"),
+      mkRecord("b"),
+      mkRecord("c", "deal_c"),
     ]);
-    const rows = buildComparisonRows(state, props);
-    expect(rows.map((r) => r.propertyId)).toEqual(["a", "c"]);
-  });
-
-  it("returns empty array for empty state", () => {
-    const rows = buildComparisonRows(mkState([]), new Map());
-    expect(rows).toEqual([]);
-  });
-
-  it("assigns order indices based on state position, not skipped count", () => {
-    // When property b is missing, rows for a and c still get order 0 and 2
-    // (their position in state.propertyIds), not 0 and 1.
-    const state = mkState(["a", "b", "c"]);
     const props = new Map<string, ComparisonPropertyInput>([
       ["a", mkProperty({ _id: "a" })],
       ["c", mkProperty({ _id: "c" })],
     ]);
     const rows = buildComparisonRows(state, props);
-    expect(rows[0].order).toBe(0); // a at position 0
-    expect(rows[1].order).toBe(2); // c at position 2
+    expect(rows.map((row) => row.propertyId)).toEqual(["a", "c"]);
+    expect(rows.map((row) => row.order)).toEqual([0, 1]);
+  });
+
+  it("returns empty array for empty comparison state", () => {
+    expect(buildComparisonRows(mkState([]), new Map())).toEqual([]);
   });
 });

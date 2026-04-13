@@ -1,5 +1,5 @@
 /**
- * Property comparison state helpers (KIN-843).
+ * Property comparison state helpers (KIN-883).
  *
  * Convex-side mirror of `src/lib/dashboard/comparison.ts`. Keep in sync.
  */
@@ -31,8 +31,15 @@ export interface ComparisonPropertyInput {
   waterfrontType?: string;
 }
 
+export interface ComparisonRecord {
+  propertyId: string;
+  dealRoomId?: string;
+}
+
 export interface ComparisonRow {
   propertyId: string;
+  dealRoomId: string | null;
+  source: "property" | "dealRoom";
   addressLine: string;
   primaryPhotoUrl: string | null;
   listPrice: number | null;
@@ -51,7 +58,7 @@ export interface ComparisonRow {
 
 export interface ComparisonState {
   buyerId: string;
-  propertyIds: string[];
+  records: ComparisonRecord[];
   createdAt: string;
   updatedAt: string;
 }
@@ -75,20 +82,20 @@ export type ComparisonMutationResult<T = ComparisonState> =
 
 export function addToComparison(
   state: ComparisonState,
-  propertyId: string,
+  record: ComparisonRecord,
   now: string,
   position?: number,
 ): ComparisonMutationResult {
-  if (state.propertyIds.includes(propertyId)) {
+  if (state.records.some((entry) => entry.propertyId === record.propertyId)) {
     return {
       ok: false,
       error: {
         code: "already_in_comparison",
-        message: `Property ${propertyId} is already in this comparison.`,
+        message: `Property ${record.propertyId} is already in this comparison.`,
       },
     };
   }
-  if (state.propertyIds.length >= MAX_COMPARISON_SIZE) {
+  if (state.records.length >= MAX_COMPARISON_SIZE) {
     return {
       ok: false,
       error: {
@@ -98,7 +105,7 @@ export function addToComparison(
     };
   }
 
-  const next = state.propertyIds.slice();
+  const next = state.records.slice();
   if (position !== undefined) {
     if (position < 0 || position > next.length) {
       return {
@@ -109,12 +116,12 @@ export function addToComparison(
         },
       };
     }
-    next.splice(position, 0, propertyId);
+    next.splice(position, 0, record);
   } else {
-    next.push(propertyId);
+    next.push(record);
   }
 
-  return { ok: true, state: { ...state, propertyIds: next, updatedAt: now } };
+  return { ok: true, state: { ...state, records: next, updatedAt: now } };
 }
 
 export function removeFromComparison(
@@ -122,7 +129,7 @@ export function removeFromComparison(
   propertyId: string,
   now: string,
 ): ComparisonMutationResult {
-  if (!state.propertyIds.includes(propertyId)) {
+  if (!state.records.some((entry) => entry.propertyId === propertyId)) {
     return {
       ok: false,
       error: {
@@ -131,8 +138,8 @@ export function removeFromComparison(
       },
     };
   }
-  const next = state.propertyIds.filter((id) => id !== propertyId);
-  return { ok: true, state: { ...state, propertyIds: next, updatedAt: now } };
+  const next = state.records.filter((entry) => entry.propertyId !== propertyId);
+  return { ok: true, state: { ...state, records: next, updatedAt: now } };
 }
 
 export function reorderComparison(
@@ -141,7 +148,7 @@ export function reorderComparison(
   toPosition: number,
   now: string,
 ): ComparisonMutationResult {
-  const len = state.propertyIds.length;
+  const len = state.records.length;
   if (fromPosition < 0 || fromPosition >= len) {
     return {
       ok: false,
@@ -163,17 +170,17 @@ export function reorderComparison(
   if (fromPosition === toPosition) {
     return { ok: true, state };
   }
-  const next = state.propertyIds.slice();
+  const next = state.records.slice();
   const [moved] = next.splice(fromPosition, 1);
   next.splice(toPosition, 0, moved);
-  return { ok: true, state: { ...state, propertyIds: next, updatedAt: now } };
+  return { ok: true, state: { ...state, records: next, updatedAt: now } };
 }
 
 export function resetComparison(
   state: ComparisonState,
   now: string,
 ): ComparisonState {
-  return { ...state, propertyIds: [], updatedAt: now };
+  return { ...state, records: [], updatedAt: now };
 }
 
 export function buildComparisonRows(
@@ -181,16 +188,16 @@ export function buildComparisonRows(
   propertyById: Map<string, ComparisonPropertyInput>,
 ): ComparisonRow[] {
   const rows: ComparisonRow[] = [];
-  for (let i = 0; i < state.propertyIds.length; i++) {
-    const id = state.propertyIds[i];
-    const property = propertyById.get(id);
+  for (const record of state.records) {
+    const property = propertyById.get(record.propertyId);
     if (!property) continue;
-    rows.push(projectRow(property, i));
+    rows.push(projectRow(record, property, rows.length));
   }
   return rows;
 }
 
 export function projectRow(
+  record: ComparisonRecord,
   property: ComparisonPropertyInput,
   order: number,
 ): ComparisonRow {
@@ -204,6 +211,8 @@ export function projectRow(
 
   return {
     propertyId: property._id,
+    dealRoomId: record.dealRoomId ?? null,
+    source: record.dealRoomId ? "dealRoom" : "property",
     addressLine,
     primaryPhotoUrl:
       property.photoUrls && property.photoUrls.length > 0
