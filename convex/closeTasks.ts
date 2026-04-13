@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// Close Tasks (KIN-847)
+// Close Tasks (KIN-867)
 //
 // Typed task state for the close phase. Buyers see buyer_visible tasks
 // with a projected (buyer-safe) row shape; broker/admin see all tasks
@@ -10,9 +10,14 @@
 
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc } from "./_generated/dataModel";
 import { requireAuth, requireRole } from "./lib/session";
-import { validateTransition } from "./lib/closeTasks";
+import {
+  buildCloseTaskTransitionPatch,
+  buildCloseTaskUpdatePatch,
+  buildCreateCloseTask,
+  type RawCloseTask,
+} from "./lib/closeTasks";
 
 /**
  * Strip internal-only fields from a task before returning it to a buyer.
@@ -72,6 +77,27 @@ const closeTaskOwnerRoleValidator = v.union(
   v.literal("other"),
 );
 
+const closeTaskRecordValidator = v.object({
+  _id: v.id("closeTasks"),
+  _creationTime: v.number(),
+  dealRoomId: v.id("dealRooms"),
+  contractId: v.optional(v.id("contracts")),
+  title: v.string(),
+  description: v.optional(v.string()),
+  category: closeTaskCategoryValidator,
+  status: closeTaskStatusValidator,
+  visibility: closeTaskVisibilityValidator,
+  ownerRole: closeTaskOwnerRoleValidator,
+  ownerUserId: v.optional(v.id("users")),
+  ownerDisplayName: v.optional(v.string()),
+  dueDate: v.optional(v.string()),
+  blockedReason: v.optional(v.string()),
+  internalNotes: v.optional(v.string()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+  completedAt: v.optional(v.string()),
+});
+
 // ───────────────────────────────────────────────────────────────────────────
 // Queries
 // ───────────────────────────────────────────────────────────────────────────
@@ -88,7 +114,7 @@ export const listByDealRoom = query({
     dealRoomId: v.id("dealRooms"),
     status: v.optional(closeTaskStatusValidator),
   },
-  returns: v.array(v.any()),
+  returns: v.array(closeTaskRecordValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
 
@@ -135,7 +161,7 @@ export const listByDealRoom = query({
 /** Get a single task by id with the same visibility + projection rules. */
 export const getById = query({
   args: { taskId: v.id("closeTasks") },
-  returns: v.union(v.null(), v.any()),
+  returns: v.union(v.null(), closeTaskRecordValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     const task = await ctx.db.get(args.taskId);
@@ -195,22 +221,42 @@ export const create = mutation({
       throw new Error("Deal room not found");
     }
 
-    const id = await ctx.db.insert("closeTasks", {
-      dealRoomId: args.dealRoomId,
-      contractId: args.contractId,
-      title: args.title,
-      description: args.description,
-      category: args.category,
-      status: "pending" as const,
-      visibility: args.visibility,
-      ownerRole: args.ownerRole,
-      ownerUserId: args.ownerUserId,
-      ownerDisplayName: args.ownerDisplayName,
-      dueDate: args.dueDate,
-      internalNotes: args.internalNotes,
-      createdAt: now,
-      updatedAt: now,
-    });
+    if (args.contractId) {
+      const contract = await ctx.db.get(args.contractId);
+      if (!contract) {
+        throw new Error("Contract not found");
+      }
+      if (contract.dealRoomId !== args.dealRoomId) {
+        throw new Error("Contract does not belong to this deal room");
+      }
+    }
+
+    if (args.ownerUserId) {
+      const owner = await ctx.db.get(args.ownerUserId);
+      if (!owner) {
+        throw new Error("Task owner not found");
+      }
+    }
+
+    const id = await ctx.db.insert(
+      "closeTasks",
+      buildCreateCloseTask(
+        {
+          dealRoomId: args.dealRoomId as unknown as string,
+          contractId: args.contractId as unknown as string | undefined,
+          title: args.title,
+          description: args.description,
+          category: args.category,
+          visibility: args.visibility,
+          ownerRole: args.ownerRole,
+          ownerUserId: args.ownerUserId as unknown as string | undefined,
+          ownerDisplayName: args.ownerDisplayName,
+          dueDate: args.dueDate,
+          internalNotes: args.internalNotes,
+        },
+        now,
+      ) as Omit<Doc<"closeTasks">, "_id" | "_creationTime">,
+    );
 
     await ctx.db.insert("auditLog", {
       userId: user._id,
@@ -247,31 +293,17 @@ export const transitionStatus = mutation({
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new Error("Task not found");
 
-    const result = validateTransition(task.status, args.newStatus);
-    if (!result.ok) {
-      throw new Error(`${result.error.code}: ${result.error.message}`);
-    }
-
-    const patch: Partial<Doc<"closeTasks">> = {
-      status: args.newStatus,
-      updatedAt: now,
-    };
-    // Only stamp completedAt on the FRESH transition from a non-completed
-    // state into completed. Repeated same-state "completed" calls (e.g.
-    // retries, webhook replays) must not overwrite the original
-    // completion time or downstream timeline / reporting logic breaks.
-    if (args.newStatus === "completed" && task.status !== "completed") {
-      patch.completedAt = now;
-    }
-    if (args.newStatus === "blocked") {
-      patch.blockedReason = args.blockedReason;
-    }
-    // Leaving blocked — clear the blocked reason.
-    if (task.status === "blocked" && args.newStatus !== "blocked") {
-      patch.blockedReason = undefined;
-    }
-
-    await ctx.db.patch(args.taskId, patch);
+    await ctx.db.patch(
+      args.taskId,
+      buildCloseTaskTransitionPatch(
+        task as unknown as RawCloseTask,
+        {
+          newStatus: args.newStatus,
+          blockedReason: args.blockedReason,
+        },
+        now,
+      ) as Partial<Doc<"closeTasks">>,
+    );
 
     await ctx.db.insert("auditLog", {
       userId: user._id,
@@ -292,7 +324,7 @@ export const transitionStatus = mutation({
 
 /**
  * Update mutable fields on a task: title, description, dueDate,
- * ownerDisplayName, internalNotes. Visibility and category are
+ * owner assignment, and internalNotes. Visibility and category are
  * intentionally immutable post-creation — if you need to change them,
  * create a new task.
  */
@@ -302,6 +334,8 @@ export const update = mutation({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     dueDate: v.optional(v.string()),
+    ownerRole: v.optional(closeTaskOwnerRoleValidator),
+    ownerUserId: v.optional(v.id("users")),
     ownerDisplayName: v.optional(v.string()),
     internalNotes: v.optional(v.string()),
   },
@@ -313,39 +347,37 @@ export const update = mutation({
     const task = await ctx.db.get(args.taskId);
     if (!task) throw new Error("Task not found");
 
-    const patch: Partial<Doc<"closeTasks">> = { updatedAt: now };
-    const changed: string[] = [];
-    if (args.title !== undefined) {
-      patch.title = args.title;
-      changed.push("title");
-    }
-    if (args.description !== undefined) {
-      patch.description = args.description;
-      changed.push("description");
-    }
-    if (args.dueDate !== undefined) {
-      patch.dueDate = args.dueDate;
-      changed.push("dueDate");
-    }
-    if (args.ownerDisplayName !== undefined) {
-      patch.ownerDisplayName = args.ownerDisplayName;
-      changed.push("ownerDisplayName");
-    }
-    if (args.internalNotes !== undefined) {
-      patch.internalNotes = args.internalNotes;
-      changed.push("internalNotes");
+    if (args.ownerUserId) {
+      const owner = await ctx.db.get(args.ownerUserId);
+      if (!owner) {
+        throw new Error("Task owner not found");
+      }
     }
 
-    if (changed.length === 0) return null;
+    const { changedFields, patch } = buildCloseTaskUpdatePatch(
+      task as unknown as RawCloseTask,
+      {
+        title: args.title,
+        description: args.description,
+        dueDate: args.dueDate,
+        ownerRole: args.ownerRole,
+        ownerUserId: args.ownerUserId as unknown as string | undefined,
+        ownerDisplayName: args.ownerDisplayName,
+        internalNotes: args.internalNotes,
+      },
+      now,
+    );
 
-    await ctx.db.patch(args.taskId, patch);
+    if (changedFields.length === 0) return null;
+
+    await ctx.db.patch(args.taskId, patch as Partial<Doc<"closeTasks">>);
 
     await ctx.db.insert("auditLog", {
       userId: user._id,
       action: "close_task_updated",
       entityType: "closeTasks",
       entityId: args.taskId,
-      details: JSON.stringify({ changed }),
+      details: JSON.stringify({ changed: changedFields }),
       timestamp: now,
     });
 
