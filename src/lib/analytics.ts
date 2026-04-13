@@ -18,6 +18,22 @@ import { deepScrubPii } from "@/lib/security/pii-guard";
  */
 export interface AnalyticsEventMap extends LaunchEventMap {
   // ─── Non-launch analytics events ────────────────────────────────────
+  /** Fired when the Chrome extension hands a listing into the intake API. */
+  extension_intake_succeeded: {
+    platform: "zillow" | "redfin" | "realtor";
+    outcome: "created" | "duplicate";
+    authState: "signed_in" | "signed_out";
+  };
+  /** Fired when the Chrome extension intake request fails deterministically. */
+  extension_intake_failed: {
+    code:
+      | "invalid_request"
+      | "backend_unavailable"
+      | "malformed_url"
+      | "missing_listing_id"
+      | "unsupported_url";
+    stage: "request" | "submit";
+  };
   /** Fired on deal room unmount; reports time spent in ms. */
   deal_room_exited: { dealRoomId: string; timeSpentMs: number };
   /** Fired when the leverage analysis section becomes visible. */
@@ -179,6 +195,18 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "funnel",
     owner: "growth",
     whenFired: "Paste input submit on marketing pages",
+    piiSafe: true,
+  },
+  extension_intake_succeeded: {
+    category: "funnel",
+    owner: "growth",
+    whenFired: "Chrome extension intake API resolves to a created/duplicate state",
+    piiSafe: true,
+  },
+  extension_intake_failed: {
+    category: "system",
+    owner: "growth",
+    whenFired: "Chrome extension intake API rejects or cannot reach the backend",
     piiSafe: true,
   },
   teaser_viewed: {

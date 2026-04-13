@@ -24,15 +24,22 @@ The extension will register for `zillow.com`, `redfin.com`, and `realtor.com` ho
 
 ## Forwarding contract
 
-Clicking the Save button sends a `forward_to_intake` message to the service worker, which opens:
+Clicking the Save button sends a `forward_to_intake` message to the service worker, which POSTs the raw tab URL to:
 
 ```
-{buyerV2BaseUrl}/intake?url={encoded_listing_url}&source=extension
+{buyerV2BaseUrl}/api/extension/intake
 ```
 
-- `buyerV2BaseUrl` defaults to `https://buyer-v2.app` (dev users edit `popup.js` to point at `localhost:3000` during local testing)
-- `source=extension` feeds the KIN-860 analytics taxonomy so funnel attribution works correctly
-- The intake web flow (served by the Next.js app) handles signed-in / signed-out / duplicate routing — the extension does not know or care which branch the user ends up in
+The backend route then:
+
+1. canonicalizes the listing URL with the shared intake parser
+2. reuses or creates the `sourceListings` row in the shared intake flow
+3. returns a deterministic `created`, `duplicate`, or `unsupported` outcome plus the explicit `signed_in` / `signed_out` session branch
+4. returns the final `/intake?...` landing URL for the extension to open
+
+- `buyerV2BaseUrl` defaults to `https://buyer-v2.app` (dev users can still point it at `http://localhost:3000`)
+- `source=extension` is preserved on the landing URL so attribution stays aligned with the launch-event contract
+- The extension never canonicalizes or parses portal URLs beyond the minimal popup/badge detection — the backend intake route is the source of truth
 
 ## File layout
 

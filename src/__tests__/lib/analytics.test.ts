@@ -412,10 +412,11 @@ describe("listEventsByCategory()", () => {
   it("returns all funnel events", () => {
     const events = listEventsByCategory("funnel");
     expect(events).toContain("link_pasted");
+    expect(events).toContain("extension_intake_succeeded");
     expect(events).toContain("teaser_viewed");
     expect(events).toContain("registration_started");
     expect(events).toContain("registration_completed");
-    expect(events).toHaveLength(4);
+    expect(events).toHaveLength(5);
   });
 
   it("returns all deal_room events", () => {
@@ -442,10 +443,11 @@ describe("listEventsByCategory()", () => {
 
   it("returns all system events", () => {
     const events = listEventsByCategory("system");
+    expect(events).toContain("extension_intake_failed");
     expect(events).toContain("error_boundary_hit");
     expect(events).toContain("health_check_failed");
     expect(events).toContain("worker_job_failed");
-    expect(events).toHaveLength(3);
+    expect(events).toHaveLength(4);
   });
 
   it("returns all engagement events", () => {

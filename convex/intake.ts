@@ -1,23 +1,156 @@
 import { mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { getSessionContext } from "./lib/session";
+
+const sourcePlatformValidator = v.union(
+  v.literal("zillow"),
+  v.literal("redfin"),
+  v.literal("realtor"),
+);
+
+const extensionUnsupportedCodeValidator = v.union(
+  v.literal("malformed_url"),
+  v.literal("missing_listing_id"),
+  v.literal("unsupported_url"),
+);
+
+const extensionIntakeResultValidator = v.union(
+  v.object({
+    kind: v.literal("created"),
+    authState: v.union(v.literal("signed_in"), v.literal("signed_out")),
+    sourceListingId: v.id("sourceListings"),
+    platform: sourcePlatformValidator,
+    listingId: v.string(),
+    normalizedUrl: v.string(),
+  }),
+  v.object({
+    kind: v.literal("duplicate"),
+    authState: v.union(v.literal("signed_in"), v.literal("signed_out")),
+    sourceListingId: v.id("sourceListings"),
+    platform: sourcePlatformValidator,
+    listingId: v.string(),
+    normalizedUrl: v.string(),
+  }),
+  v.object({
+    kind: v.literal("unsupported"),
+    code: extensionUnsupportedCodeValidator,
+    error: v.string(),
+    platform: v.optional(sourcePlatformValidator),
+  }),
+);
 
 const PORTAL_PATTERNS = [
   {
     platform: "zillow" as const,
     domains: ["zillow.com", "www.zillow.com"],
-    pattern: /(\d+)_zpid/,
+    match(url: URL) {
+      const zpidMatch = url.pathname.match(/(\d+)_zpid/);
+      if (!zpidMatch) return null;
+      return { listingId: zpidMatch[1] };
+    },
   },
   {
     platform: "redfin" as const,
     domains: ["redfin.com", "www.redfin.com"],
-    pattern: /\/home\/(\d+)/,
+    match(url: URL) {
+      const homeMatch = url.pathname.match(/\/home\/(\d+)/);
+      if (!homeMatch) return null;
+      return { listingId: homeMatch[1] };
+    },
   },
   {
     platform: "realtor" as const,
     domains: ["realtor.com", "www.realtor.com"],
-    pattern: /\/realestateandhomes-detail\/([^/]+)/,
+    match(url: URL) {
+      const detailMatch = url.pathname.match(/\/realestateandhomes-detail\/([^/]+)/);
+      if (!detailMatch) return null;
+      return { listingId: detailMatch[1] };
+    },
   },
 ] as const;
+
+type ParsedListingUrlResult =
+  | {
+      success: true;
+      data: {
+        platform: "zillow" | "redfin" | "realtor";
+        listingId: string;
+        normalizedUrl: string;
+        rawUrl: string;
+      };
+    }
+  | {
+      success: false;
+      error: {
+        code: "malformed_url" | "missing_listing_id" | "unsupported_url";
+        message: string;
+        platform?: "zillow" | "redfin" | "realtor";
+      };
+    };
+
+function parseSubmittedListingUrl(input: string): ParsedListingUrlResult {
+  const trimmed = input.trim();
+
+  let url: URL;
+  try {
+    const withProtocol = trimmed.startsWith("http")
+      ? trimmed
+      : `https://${trimmed}`;
+    url = new URL(withProtocol);
+  } catch {
+    return {
+      success: false,
+      error: {
+        code: "malformed_url",
+        message: "Input is not a valid URL",
+      },
+    };
+  }
+
+  const hostname = url.hostname.toLowerCase();
+
+  for (const portal of PORTAL_PATTERNS) {
+    if (
+      !portal.domains.some(
+        (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
+      )
+    ) {
+      continue;
+    }
+
+    const match = portal.match(url);
+    if (!match) {
+      return {
+        success: false,
+        error: {
+          code: "missing_listing_id",
+          message: `URL appears to be ${portal.platform} but no listing ID could be extracted`,
+          platform: portal.platform,
+        },
+      };
+    }
+
+    const normalized = new URL(url.pathname, `https://${portal.domains[0]}`);
+
+    return {
+      success: true,
+      data: {
+        platform: portal.platform,
+        listingId: match.listingId,
+        normalizedUrl: normalized.toString(),
+        rawUrl: trimmed,
+      },
+    };
+  }
+
+  return {
+    success: false,
+    error: {
+      code: "unsupported_url",
+      message: `URL domain "${hostname}" is not a supported real estate portal. Supported: Zillow, Redfin, Realtor.com`,
+    },
+  };
+}
 
 /**
  * Submit a listing URL for intake processing.
@@ -31,80 +164,118 @@ export const submitUrl = mutation({
     v.object({
       success: v.literal(true),
       sourceListingId: v.id("sourceListings"),
-      platform: v.string(),
+      platform: sourcePlatformValidator,
     }),
     v.object({
       success: v.literal(false),
       error: v.string(),
-      code: v.string(),
-    })
+      code: extensionUnsupportedCodeValidator,
+    }),
   ),
   handler: async (ctx, args) => {
-    const trimmed = args.url.trim();
+    const parsed = parseSubmittedListingUrl(args.url);
 
-    // Parse URL
-    let url: URL;
-    try {
-      const withProtocol = trimmed.startsWith("http")
-        ? trimmed
-        : `https://${trimmed}`;
-      url = new URL(withProtocol);
-    } catch {
+    if (!parsed.success) {
       return {
         success: false as const,
-        error: "Invalid URL",
-        code: "malformed_url",
+        error: parsed.error.message,
+        code: parsed.error.code,
       };
     }
 
-    const hostname = url.hostname.toLowerCase();
+    const existing = await ctx.db
+      .query("sourceListings")
+      .withIndex("by_sourceUrl", (q) =>
+        q.eq("sourceUrl", parsed.data.normalizedUrl),
+      )
+      .first();
 
-    // Find matching portal
-    for (const portal of PORTAL_PATTERNS) {
-      if (!portal.domains.some((d) => hostname === d)) continue;
-
-      const match = url.pathname.match(portal.pattern);
-      if (!match) {
-        return {
-          success: false as const,
-          error: `No listing ID found in ${portal.platform} URL`,
-          code: "missing_listing_id",
-        };
-      }
-
-      // Check for existing listing with this URL (use .first() since duplicates possible)
-      const existing = await ctx.db
-        .query("sourceListings")
-        .withIndex("by_sourceUrl", (q) => q.eq("sourceUrl", trimmed))
-        .first();
-
-      if (existing) {
-        return {
-          success: true as const,
-          sourceListingId: existing._id,
-          platform: portal.platform,
-        };
-      }
-
-      // Create new source listing
-      const id = await ctx.db.insert("sourceListings", {
-        sourcePlatform: portal.platform,
-        sourceUrl: trimmed,
-        extractedAt: new Date().toISOString(),
-        status: "pending",
-      });
-
+    if (existing) {
       return {
         success: true as const,
-        sourceListingId: id,
-        platform: portal.platform,
+        sourceListingId: existing._id,
+        platform: parsed.data.platform,
       };
     }
 
+    const sourceListingId = await ctx.db.insert("sourceListings", {
+      sourcePlatform: parsed.data.platform,
+      sourceUrl: parsed.data.normalizedUrl,
+      extractedAt: new Date().toISOString(),
+      status: "pending",
+    });
+
     return {
-      success: false as const,
-      error: `Unsupported portal: ${hostname}`,
-      code: "unsupported_url",
+      success: true as const,
+      sourceListingId,
+      platform: parsed.data.platform,
+    };
+  },
+});
+
+/**
+ * Extension-specific intake entrypoint. It always canonicalizes the raw
+ * browser URL on the backend, reuses existing source listings when possible,
+ * and returns the auth/session branch explicitly so the extension can render
+ * deterministic states without re-implementing portal parsing.
+ */
+export const submitExtensionUrl = mutation({
+  args: {
+    url: v.string(),
+  },
+  returns: extensionIntakeResultValidator,
+  handler: async (ctx, args) => {
+    const parsed = parseSubmittedListingUrl(args.url);
+
+    if (!parsed.success) {
+      return {
+        kind: "unsupported" as const,
+        code: parsed.error.code,
+        error: parsed.error.message,
+        platform: parsed.error.platform,
+      };
+    }
+
+    const session = await getSessionContext(ctx);
+    const authState: "signed_in" | "signed_out" =
+      session.kind === "authenticated" ? "signed_in" : "signed_out";
+
+    const existing = await ctx.db
+      .query("sourceListings")
+      .withIndex("by_sourceUrl", (q) =>
+        q.eq("sourceUrl", parsed.data.normalizedUrl),
+      )
+      .first();
+
+    if (existing) {
+      return {
+        kind: "duplicate" as const,
+        authState,
+        sourceListingId: existing._id,
+        platform: parsed.data.platform,
+        listingId: parsed.data.listingId,
+        normalizedUrl: parsed.data.normalizedUrl,
+      };
+    }
+
+    const sourceListingId = await ctx.db.insert("sourceListings", {
+      sourcePlatform: parsed.data.platform,
+      sourceUrl: parsed.data.normalizedUrl,
+      rawData: JSON.stringify({
+        source: "extension",
+        rawUrl: parsed.data.rawUrl,
+      }),
+      extractedAt: new Date().toISOString(),
+      status: "pending",
+    });
+
+    return {
+      kind: "created" as const,
+      authState,
+      sourceListingId,
+      platform: parsed.data.platform,
+      listingId: parsed.data.listingId,
+      normalizedUrl: parsed.data.normalizedUrl,
     };
   },
 });
@@ -118,36 +289,26 @@ export const processUrl = internalMutation({
     source: v.union(
       v.literal("sms"),
       v.literal("share_import"),
-      v.literal("manual")
+      v.literal("manual"),
     ),
   },
   returns: v.union(v.id("sourceListings"), v.null()),
   handler: async (ctx, args) => {
-    const trimmed = args.url.trim();
-    let url: URL;
-    try {
-      const withProtocol = trimmed.startsWith("http")
-        ? trimmed
-        : `https://${trimmed}`;
-      url = new URL(withProtocol);
-    } catch {
+    const parsed = parseSubmittedListingUrl(args.url);
+
+    if (!parsed.success) {
       return null;
     }
 
-    const hostname = url.hostname.toLowerCase();
-    for (const portal of PORTAL_PATTERNS) {
-      if (!portal.domains.some((d) => hostname === d)) continue;
-      const match = url.pathname.match(portal.pattern);
-      if (!match) return null;
-
-      return await ctx.db.insert("sourceListings", {
-        sourcePlatform: portal.platform,
-        sourceUrl: trimmed,
-        rawData: JSON.stringify({ source: args.source }),
-        extractedAt: new Date().toISOString(),
-        status: "pending",
-      });
-    }
-    return null;
+    return await ctx.db.insert("sourceListings", {
+      sourcePlatform: parsed.data.platform,
+      sourceUrl: parsed.data.normalizedUrl,
+      rawData: JSON.stringify({
+        source: args.source,
+        rawUrl: parsed.data.rawUrl,
+      }),
+      extractedAt: new Date().toISOString(),
+      status: "pending",
+    });
   },
 });

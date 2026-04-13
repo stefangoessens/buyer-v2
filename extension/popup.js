@@ -108,9 +108,24 @@ async function main() {
         buyerV2BaseUrl: "https://buyer-v2.app",
       });
       if (response?.ok) {
-        statusEl.textContent = "Opened in buyer-v2.";
+        if (response.result === "duplicate") {
+          statusEl.textContent =
+            response.authState === "signed_in"
+              ? "Already saved. Opening your buyer-v2 dashboard."
+              : "Already saved. Opening buyer-v2 so you can continue.";
+        } else if (response.authState === "signed_out") {
+          statusEl.textContent =
+            "Saved to buyer-v2. Opening the site so you can continue.";
+        } else {
+          statusEl.textContent = "Saved to buyer-v2. Opening your dashboard.";
+        }
       } else {
-        statusEl.textContent = "Failed to open. Try again.";
+        if (response?.code === "unsupported_url") {
+          statusEl.textContent =
+            "This page is not a supported Zillow, Redfin, or Realtor.com listing.";
+        } else {
+          statusEl.textContent = "Failed to open buyer-v2. Try again.";
+        }
         saveBtn.disabled = false;
         saveBtn.textContent = "Save to buyer-v2";
       }
