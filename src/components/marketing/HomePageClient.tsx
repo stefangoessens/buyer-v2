@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useState } from "react";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { TrustBar } from "@/components/marketing/TrustBar";
 import { FeatureCard } from "@/components/marketing/FeatureCard";
 import { TestimonialCard } from "@/components/marketing/TestimonialCard";
-import { PasteLinkInput } from "@/components/marketing/PasteLinkInput";
+import { PropertyIntakeForm } from "@/components/marketing/PropertyIntakeForm";
 
 const trustStats = [
   { value: "500+", label: "Buyers served" },
@@ -17,9 +16,9 @@ const trustStats = [
 const features = [
   {
     icon: "\uD83D\uDD17",
-    title: "Paste any listing link",
+    title: "Start from a link or address",
     description:
-      "Drop a Zillow, Redfin, or Realtor.com URL. We instantly analyze the property.",
+      "Paste a Zillow, Redfin, or Realtor.com URL, or enter the address directly when you already know the home.",
   },
   {
     icon: "\uD83D\uDCCA",
@@ -63,29 +62,14 @@ const testimonials = [
 ];
 
 export function HomePageClient() {
-  const [submitted, setSubmitted] = useState(false);
-
-  // PasteLinkInput handles track("link_pasted") internally — no duplicate here
-  const handleSubmit = useCallback(async (_url: string) => {
-    setSubmitted(true);
-    // Convex submitUrl mutation will be called when Convex is available
-    // For now, the paste-link flow transitions to the deal room on the next page
-  }, []);
-
   return (
     <>
       {/* Hero */}
       <HeroSection
         title="Get the best deal on your Florida home"
-        subtitle="Paste a Zillow, Redfin, or Realtor link. Get instant AI-powered analysis, fair pricing, and expert buyer representation — for free."
+        subtitle="Paste a Zillow, Redfin, or Realtor link, or enter the address directly. Get instant AI-powered analysis, fair pricing, and expert buyer representation — for free."
       >
-        {submitted ? (
-          <div className="rounded-xl bg-white/10 px-6 py-4 text-lg font-medium text-white backdrop-blur">
-            Analyzing your property...
-          </div>
-        ) : (
-          <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
-        )}
+        <PropertyIntakeForm source="hero" />
       </HeroSection>
 
       {/* Trust Bar */}
@@ -174,16 +158,10 @@ export function HomePageClient() {
             Ready to find your Florida home?
           </h2>
           <p className="mt-4 text-lg text-primary-100">
-            Paste a listing link and get your free AI analysis in seconds.
+            Paste a listing link or enter the address and get your free AI analysis in seconds.
           </p>
           <div className="mt-8">
-            {submitted ? (
-              <div className="rounded-xl bg-white/10 px-6 py-4 text-lg font-medium text-white backdrop-blur">
-                Analyzing your property...
-              </div>
-            ) : (
-              <PasteLinkInput variant="hero" onSubmit={handleSubmit} />
-            )}
+            <PropertyIntakeForm source="hero" />
           </div>
         </div>
       </section>

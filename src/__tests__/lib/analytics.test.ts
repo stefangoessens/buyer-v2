@@ -24,6 +24,12 @@ describe("track() — funnel category", () => {
     ).not.toThrow();
   });
 
+  it("accepts manual_address_submitted without leaking raw address data", () => {
+    expect(() =>
+      track("manual_address_submitted", { source: "hero" }),
+    ).not.toThrow();
+  });
+
   it("accepts teaser_viewed with optional fields", () => {
     expect(() =>
       track("teaser_viewed", { propertyId: "prop_1", source: "paste" }),
@@ -412,10 +418,11 @@ describe("listEventsByCategory()", () => {
   it("returns all funnel events", () => {
     const events = listEventsByCategory("funnel");
     expect(events).toContain("link_pasted");
+    expect(events).toContain("manual_address_submitted");
     expect(events).toContain("teaser_viewed");
     expect(events).toContain("registration_started");
     expect(events).toContain("registration_completed");
-    expect(events).toHaveLength(4);
+    expect(events).toHaveLength(5);
   });
 
   it("returns all deal_room events", () => {

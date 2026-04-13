@@ -20,6 +20,14 @@ import {
   type MatchConfidence,
 } from "./lib/addressMatch";
 
+const matchConfidenceValidator = v.union(
+  v.literal("exact"),
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+  v.literal("none"),
+);
+
 const canonicalAddressValidator = v.object({
   street: v.string(),
   unit: v.optional(v.string()),
@@ -38,7 +46,7 @@ const createAddressIntakeArgs = v.object({
   userId: v.optional(v.id("users")),
 });
 
-const matchCandidateReturn = v.object({
+const matchCandidateSnapshotValidator = v.object({
   propertyId: v.id("properties"),
   canonical: v.object({
     street: v.string(),
@@ -52,6 +60,13 @@ const matchCandidateReturn = v.object({
   score: v.number(),
 });
 
+const storedMatchValidator = v.object({
+  confidence: matchConfidenceValidator,
+  score: v.number(),
+  bestMatchId: v.union(v.id("properties"), v.null()),
+  ambiguous: v.boolean(),
+});
+
 const createAddressIntakeReturn = v.union(
   v.object({
     status: v.literal("matched"),
@@ -60,17 +75,23 @@ const createAddressIntakeReturn = v.union(
       v.literal("exact"),
       v.literal("high"),
     ),
+    score: v.number(),
     intakeId: v.id("sourceListings"),
     canonical: canonicalAddressValidator,
   }),
   v.object({
     status: v.literal("ambiguous"),
-    candidates: v.array(matchCandidateReturn),
+    confidence: matchConfidenceValidator,
+    score: v.number(),
+    candidates: v.array(matchCandidateSnapshotValidator),
     intakeId: v.id("sourceListings"),
     canonical: canonicalAddressValidator,
   }),
   v.object({
     status: v.literal("no_match"),
+    confidence: matchConfidenceValidator,
+    score: v.number(),
+    bestMatchId: v.union(v.id("properties"), v.null()),
     intakeId: v.id("sourceListings"),
     canonical: canonicalAddressValidator,
   }),
@@ -117,6 +138,8 @@ function manualSourceUrl(canonical: CanonicalAddress): string {
   return `manual://address/${encodeURIComponent(canonical.formatted)}`;
 }
 
+const SNAPSHOT_CANDIDATE_LIMIT = 5;
+
 /**
  * Submit a manual address for intake. Runs server-side normalization,
  * creates a sourceListing row, searches for candidate properties, and
@@ -160,6 +183,26 @@ export const createAddressIntake = mutation({
     }));
 
     const matchResult = matchAddress(canonical, candidates);
+    const snapshotCandidates = matchResult.candidates
+      .slice(0, SNAPSHOT_CANDIDATE_LIMIT)
+      .map((candidate) => ({
+        propertyId: candidate.id as Id<"properties">,
+        canonical: {
+          ...candidate.canonical,
+          formatted: candidate.canonical.formatted,
+        },
+        score: candidate.score,
+      }));
+    const snapshot = {
+      canonical,
+      match: {
+        confidence: matchResult.confidence,
+        score: matchResult.score,
+        bestMatchId: (matchResult.bestMatch?.id as Id<"properties"> | undefined) ?? null,
+        ambiguous: matchResult.ambiguous,
+      },
+      candidates: snapshotCandidates,
+    };
 
     // If we already have a sourceListing for this manual URL, reuse it —
     // otherwise insert a new one. This keeps re-submission idempotent.
@@ -173,15 +216,7 @@ export const createAddressIntake = mutation({
       intakeId = existing._id;
       await ctx.db.patch(existing._id, {
         extractedAt: now,
-        rawData: JSON.stringify({
-          canonical,
-          match: {
-            confidence: matchResult.confidence,
-            score: matchResult.score,
-            bestMatchId: matchResult.bestMatch?.id ?? null,
-            ambiguous: matchResult.ambiguous,
-          },
-        }),
+        rawData: JSON.stringify(snapshot),
         status: resolveStatus(matchResult.confidence, matchResult.ambiguous),
         propertyId: shouldAutoMerge(matchResult)
           ? (matchResult.bestMatch!.id as Id<"properties">)
@@ -191,15 +226,7 @@ export const createAddressIntake = mutation({
       intakeId = await ctx.db.insert("sourceListings", {
         sourcePlatform: "manual",
         sourceUrl,
-        rawData: JSON.stringify({
-          canonical,
-          match: {
-            confidence: matchResult.confidence,
-            score: matchResult.score,
-            bestMatchId: matchResult.bestMatch?.id ?? null,
-            ambiguous: matchResult.ambiguous,
-          },
-        }),
+        rawData: JSON.stringify(snapshot),
         extractedAt: now,
         status: resolveStatus(matchResult.confidence, matchResult.ambiguous),
         propertyId: shouldAutoMerge(matchResult)
@@ -234,6 +261,7 @@ export const createAddressIntake = mutation({
         status: "matched" as const,
         propertyId: matchResult.bestMatch.id as Id<"properties">,
         confidence: matchResult.confidence as "exact" | "high",
+        score: matchResult.score,
         intakeId,
         canonical,
       };
@@ -242,14 +270,9 @@ export const createAddressIntake = mutation({
     if (matchResult.ambiguous || matchResult.confidence === "medium") {
       return {
         status: "ambiguous" as const,
-        candidates: matchResult.candidates.map((c) => ({
-          propertyId: c.id as Id<"properties">,
-          canonical: {
-            ...c.canonical,
-            formatted: c.canonical.formatted,
-          },
-          score: c.score,
-        })),
+        confidence: matchResult.confidence,
+        score: matchResult.score,
+        candidates: snapshotCandidates,
         intakeId,
         canonical,
       };
@@ -257,6 +280,9 @@ export const createAddressIntake = mutation({
 
     return {
       status: "no_match" as const,
+      confidence: matchResult.confidence,
+      score: matchResult.score,
+      bestMatchId: (matchResult.bestMatch?.id as Id<"properties"> | undefined) ?? null,
       intakeId,
       canonical,
     };
@@ -285,6 +311,7 @@ function resolveStatus(
 ): "pending" | "extracted" | "failed" | "merged" {
   if (ambiguous) return "pending";
   if (confidence === "exact" || confidence === "high") return "merged";
+  if (confidence === "none") return "failed";
   if (confidence === "medium" || confidence === "low") return "pending";
   return "pending";
 }
@@ -307,14 +334,8 @@ export const getIntakeStatus = query({
       propertyId: v.optional(v.id("properties")),
       extractedAt: v.string(),
       canonical: v.optional(canonicalAddressValidator),
-      match: v.optional(
-        v.object({
-          confidence: v.string(),
-          score: v.number(),
-          bestMatchId: v.union(v.id("properties"), v.null()),
-          ambiguous: v.boolean(),
-        }),
-      ),
+      match: v.optional(storedMatchValidator),
+      candidates: v.optional(v.array(matchCandidateSnapshotValidator)),
     }),
   ),
   handler: async (ctx, args) => {
@@ -324,7 +345,7 @@ export const getIntakeStatus = query({
     let canonical: CanonicalAddress | undefined;
     let match:
       | {
-          confidence: string;
+          confidence: MatchConfidence;
           score: number;
           bestMatchId: Id<"properties"> | null;
           ambiguous: boolean;
@@ -335,14 +356,30 @@ export const getIntakeStatus = query({
         const parsed = JSON.parse(row.rawData) as {
           canonical?: CanonicalAddress;
           match?: {
-            confidence: string;
+            confidence: MatchConfidence;
             score: number;
             bestMatchId: Id<"properties"> | null;
             ambiguous: boolean;
           };
+          candidates?: Array<{
+            propertyId: Id<"properties">;
+            canonical: CanonicalAddress;
+            score: number;
+          }>;
         };
         canonical = parsed.canonical;
         match = parsed.match;
+        const candidates = parsed.candidates;
+        return {
+          intakeId: row._id,
+          sourcePlatform: row.sourcePlatform,
+          status: row.status,
+          propertyId: row.propertyId,
+          extractedAt: row.extractedAt,
+          canonical,
+          match,
+          candidates,
+        };
       } catch {
         // Ignore malformed rawData — intake will still return basics.
       }
@@ -356,6 +393,7 @@ export const getIntakeStatus = query({
       extractedAt: row.extractedAt,
       canonical,
       match,
+      candidates: undefined,
     };
   },
 });

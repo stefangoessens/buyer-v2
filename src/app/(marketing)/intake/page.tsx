@@ -1,44 +1,30 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// /intake — Landing page for inbound URL forwards (KIN-816)
-//
-// This route accepts a `?url=<listing-url>&source=<channel>` query string
-// and hands off to the main intake flow. It's deliberately minimal in
-// v1: the extension (KIN-816), SMS handler (KIN-776), and address entry
-// (KIN-775) all forward here, and a follow-up card will wire in the
-// auth-aware signed-in / signed-out / duplicate branching.
-//
-// For now this page:
-//   1. Validates the forwarded URL with the canonical parser
-//   2. Shows the buyer the detected listing metadata
-//   3. Offers a "Continue" CTA that returns to the homepage where the
-//      existing PasteLinkInput handles the next step
-//
-// The page is a server component so we can read searchParams without a
-// client roundtrip and so SEO can mark the route as noindex (intake is
-// not a discoverable surface).
-// ═══════════════════════════════════════════════════════════════════════════
-
 import Link from "next/link";
 import type { Metadata } from "next";
+import { AddressIntakeStatus } from "@/components/marketing/AddressIntakeStatus";
 import { parseListingUrl } from "@/lib/intake/parser";
 import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
 export const metadata: Metadata = metadataForStaticPage("intake");
 
 interface IntakePageProps {
-  searchParams: Promise<{ url?: string; source?: string }>;
+  searchParams: Promise<{ intakeId?: string; url?: string; source?: string }>;
 }
 
 export default async function IntakePage({ searchParams }: IntakePageProps) {
-  const { url, source } = await searchParams;
+  const { intakeId, url, source } = await searchParams;
+
+  if (intakeId) {
+    return <AddressIntakeStatus intakeId={intakeId} />;
+  }
 
   if (!url) {
     return (
       <main className="mx-auto max-w-xl px-6 py-16">
         <h1 className="text-2xl font-semibold">Intake</h1>
         <p className="mt-4 text-neutral-600">
-          No listing URL was forwarded. Head back to the homepage and paste a
-          Zillow, Redfin, or Realtor.com link to get started.
+          No intake details were forwarded. Head back to the homepage and paste
+          a Zillow, Redfin, or Realtor.com link, or enter the address directly,
+          to get started.
         </p>
         <Link
           href="/"

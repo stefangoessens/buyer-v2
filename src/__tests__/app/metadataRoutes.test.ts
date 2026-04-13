@@ -12,7 +12,7 @@ describe("route metadata pipeline", () => {
   });
 
   it("intake stays non-indexable with a canonical route-level definition", () => {
-    expect(intakeMetadata.title).toBe("Importing listing | buyer-v2");
+    expect(intakeMetadata.title).toBe("Property intake | buyer-v2");
     expect(intakeMetadata.alternates?.canonical).toBe("http://localhost:3000/intake");
     expect(intakeMetadata.robots).toMatchObject({ index: false, follow: false });
   });

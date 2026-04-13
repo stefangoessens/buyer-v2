@@ -103,8 +103,8 @@ export const STATIC_SEO_PAGES = {
   },
   intake: {
     seo: {
-      title: "Importing listing",
-      description: "Importing a listing into buyer-v2.",
+      title: "Property intake",
+      description: "Continuing a listing or address intake in buyer-v2.",
       path: "/intake",
       visibility: "gated",
       kind: "system",

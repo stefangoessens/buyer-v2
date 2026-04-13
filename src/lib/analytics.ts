@@ -130,6 +130,10 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   };
   /** Fired when the pricing FAQ is opened. */
   pricing_faq_viewed: { source: string };
+  /** Fired when a buyer submits a manual address from a public intake surface. */
+  manual_address_submitted: {
+    source: "hero" | "compact";
+  };
 
   // ─── System events ──────────────────────────────────────────────────
   /**
@@ -436,6 +440,12 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "engagement",
     owner: "growth",
     whenFired: "FAQ item expanded",
+    piiSafe: true,
+  },
+  manual_address_submitted: {
+    category: "funnel",
+    owner: "growth",
+    whenFired: "Manual address intake submit on marketing pages",
     piiSafe: true,
   },
 
