@@ -17,7 +17,19 @@ from common.parser_errors import MalformedHTMLError, SchemaShiftError
 from common.property import CanonicalProperty, PropertyPhoto
 from parsers.realtor import (
     RealtorExtractor,
+    _first_int,
+    _first_present,
+    _is_residential_type,
+    _listing_id_from_url,
     _normalize_property_type,
+    _parse_address_line,
+    _parse_beds_baths_sqft,
+    _parse_lot_size_sqft,
+    _parse_price,
+    _pick_residential_type,
+    _safe_dict,
+    _to_float,
+    _to_int,
 )
 
 if TYPE_CHECKING:
@@ -554,3 +566,490 @@ class TestJsonLdGenericTypeDoesNotLeak:
         # property_type must normalize to single_family via __NEXT_DATA__
         # because the generic JSON-LD @type fallback is gated out.
         assert prop.property_type == "single_family"
+
+
+class TestJsonLdEdgeCases:
+    """Cover robustness paths in `_extract_json_ld` / `_from_json_ld_node`."""
+
+    def test_empty_script_and_invalid_json_and_non_dict_are_skipped(self) -> None:
+        # Three `application/ld+json` blocks — an empty one, an invalid one,
+        # and an array containing a string (not a dict) — followed by the
+        # real __NEXT_DATA__ payload. Parser must tolerate each bad JSON-LD
+        # and fall through to __NEXT_DATA__ without raising.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script type="application/ld+json">   </script>'
+            '<script type="application/ld+json">{oops not json}</script>'
+            '<script type="application/ld+json">["skip me"]</script>'
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id":"1231231234",'
+            '"address":{'
+            '"line":"1 Edge Ln",'
+            '"city":"Tampa",'
+            '"state_code":"FL",'
+            '"postal_code":"33602"},'
+            '"type":"condo",'
+            '"description":{"beds":1,"baths":1,"sqft":600,"year_built":2020},'
+            '"list_price":350000,'
+            '"hoa":{"fee":null},'
+            '"days_on_market":4,'
+            '"public_remarks":"Edge-case test listing."'
+            "}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/1-Edge-Ln_Tampa_FL_33602_M12345-67890"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 350_000
+        assert prop.city == "Tampa"
+
+    def test_jsonld_without_listing_marker_is_skipped(self) -> None:
+        # JSON-LD that's a valid dict but NOT a listing (plain Organization
+        # node). The parser must skip it without raising and still extract
+        # via the __NEXT_DATA__ fallback.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script type="application/ld+json">'
+            '{"@context":"https://schema.org","@type":"Organization","name":"Realtor.com"}'
+            "</script>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id":"2342342345",'
+            '"address":{'
+            '"line":"2 Org Way",'
+            '"city":"Orlando",'
+            '"state_code":"FL",'
+            '"postal_code":"32801"},'
+            '"type":"single_family",'
+            '"description":{"beds":3,"baths":2,"sqft":1800,"year_built":2015},'
+            '"list_price":425000,'
+            '"hoa":{"fee":null},'
+            '"days_on_market":9'
+            "}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/2-Org-Way_Orlando_FL_32801_M23456-78901"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 425_000
+        assert prop.city == "Orlando"
+
+    def test_jsonld_offers_list_and_string_image(self) -> None:
+        # JSON-LD variants that the condo fixture doesn't cover:
+        #  - `offers` is a LIST of offers (parser takes offers[0].price).
+        #  - `image` is a single string (parser wraps it as a one-photo tuple).
+        #  - `@type` is a single residential token (no list, no additionalType).
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script type="application/ld+json">{'
+            '"@context":"https://schema.org",'
+            '"@type":"SingleFamilyResidence",'
+            '"name":"3 Offers Dr",'
+            '"address":{'
+            '"streetAddress":"3 Offers Dr",'
+            '"addressLocality":"Jacksonville",'
+            '"addressRegion":"FL",'
+            '"postalCode":"32202"},'
+            '"offers":[{"@type":"Offer","price":675000}],'
+            '"numberOfRooms":3,'
+            '"numberOfBathroomsTotal":2,'
+            '"floorSize":{"@type":"QuantitativeValue","value":1700},'
+            '"yearBuilt":2016,'
+            '"image":"https://ap.rdcpix.com/fake/offers-single.jpg",'
+            '"description":"Single image test listing."'
+            "}</script>"
+            "</head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/3-Offers-Dr_Jacksonville_FL_32202_M34567-89012"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 675_000
+        assert prop.beds == 3.0
+        assert prop.baths == 2.0
+        assert prop.living_area_sqft == 1_700
+        assert prop.year_built == 2016
+        assert len(prop.photos) == 1
+        assert prop.photos[0].url == "https://ap.rdcpix.com/fake/offers-single.jpg"
+        assert prop.property_type == "single_family"
+
+
+class TestNextDataEdgeCases:
+    """Cover tricky `_extract_next_data` / `_find_listing_in_page_props` paths."""
+
+    def test_empty_next_data_blob_is_skipped(self) -> None:
+        # Empty `__NEXT_DATA__` followed by a valid one — the finditer loop
+        # must walk past the empty body without short-circuiting.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">   </script>'
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id":"3453453456",'
+            '"address":{'
+            '"line":"3 Empty Ct",'
+            '"city":"Naples",'
+            '"state_code":"FL",'
+            '"postal_code":"34102"},'
+            '"type":"single_family",'
+            '"description":{"beds":4,"baths":3,"sqft":2500,"year_built":2018},'
+            '"list_price":1250000,'
+            '"hoa":{"fee":null},'
+            '"days_on_market":11'
+            "}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/3-Empty-Ct_Naples_FL_34102_M34567-89013"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 1_250_000
+
+    def test_next_data_non_dict_payload_is_skipped(self) -> None:
+        # A valid-JSON array payload inside a __NEXT_DATA__ block is not a
+        # dict — parser must skip and fall through to the next block.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">[1,2,3]</script>'
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id":"4564564567",'
+            '"address":{'
+            '"line":"4 Array St",'
+            '"city":"Gainesville",'
+            '"state_code":"FL",'
+            '"postal_code":"32601"},'
+            '"type":"townhome",'
+            '"description":{"beds":3,"baths":2,"sqft":1500,"year_built":2011},'
+            '"list_price":275000,'
+            '"hoa":{"fee":null},'
+            '"days_on_market":2'
+            "}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/4-Array-St_Gainesville_FL_32601_M45678-90123"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 275_000
+        assert prop.property_type == "townhouse"
+
+    def test_next_data_without_pageprops_is_skipped(self) -> None:
+        # A valid `__NEXT_DATA__` with no `props.pageProps` is a non-listing
+        # payload — parser falls through to the next block.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"runtimeConfig":{"foo":"bar"}}'
+            "</script>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id":"5675675678",'
+            '"address":{'
+            '"line":"5 Runtime Rd",'
+            '"city":"Sarasota",'
+            '"state_code":"FL",'
+            '"postal_code":"34236"},'
+            '"type":"condo",'
+            '"description":{"beds":2,"baths":2,"sqft":1100,"year_built":2019},'
+            '"list_price":520000,'
+            '"hoa":{"fee":0},'
+            '"days_on_market":0'
+            "}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/5-Runtime-Rd_Sarasota_FL_34236_M56789-01234"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 520_000
+        assert prop.days_on_market == 0
+        assert prop.hoa_monthly_usd == 0
+
+    def test_next_data_pageprops_with_no_listing_is_skipped(self) -> None:
+        # `pageProps` present but none of the known listing keys are set —
+        # parser must move on to the next __NEXT_DATA__ block.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"unrelated":{"foo":"bar"}}}}'
+            "</script>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"home":{'
+            '"listing_id":"6786786789",'
+            '"address":{'
+            '"line":"6 Home Key",'
+            '"city":"Key West",'
+            '"state_code":"FL",'
+            '"postal_code":"33040"},'
+            '"type":"condo",'
+            '"description":{"beds":1,"baths":1,"sqft":750,"year_built":2005},'
+            '"list_price":710000,'
+            '"hoa":{"fee":420},'
+            '"days_on_market":30'
+            "}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/6-Home-Key_Key-West_FL_33040_M67890-12345"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 710_000
+        assert prop.hoa_monthly_usd == 420
+
+    def test_next_data_redux_property_nesting(self) -> None:
+        # `initialReduxState.propertyDetails.property` variant of the Redux
+        # nesting (vs. `.listing`) — covers the second branch of the loop.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"initialReduxState":{"propertyDetails":{"property":{'
+            '"listing_id":"7897897890",'
+            '"address":{'
+            '"line":"7 Redux Ave",'
+            '"city":"Clearwater",'
+            '"state_code":"FL",'
+            '"postal_code":"33755"},'
+            '"type":"Multi-Family",'
+            '"description":{"beds":6,"baths":4,"sqft":3200,"year_built":1985},'
+            '"list_price":950000,'
+            '"hoa":{"fee":null},'
+            '"days_on_market":12'
+            "}}}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/7-Redux-Ave_Clearwater_FL_33755_M78901-23456"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 950_000
+        assert prop.property_type == "multi_family"
+
+    def test_next_data_description_not_dict_is_tolerated(self) -> None:
+        # When `description` is a string (not the nested dict), the parser
+        # must treat it as empty and still return a successful extraction
+        # via other fields; falls back to property-meta HTML for beds/baths.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id":"8908908901",'
+            '"address":{'
+            '"line":"8 Stringy Way",'
+            '"city":"Destin",'
+            '"state_code":"FL",'
+            '"postal_code":"32541"},'
+            '"type":"single_family",'
+            '"description":"just a string, not a dict",'
+            '"list_price":699000,'
+            '"hoa":{"fee":null},'
+            '"days_on_market":15'
+            "}}}}"
+            "</script></head><body>"
+            '<div data-testid="property-meta">3 bed | 2 bath | 1,800 sqft</div>'
+            "</body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/8-Stringy-Way_Destin_FL_32541_M89012-34567"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 699_000
+        # beds/baths/sqft must come from the HTML fallback.
+        assert prop.beds == 3.0
+        assert prop.baths == 2.0
+        assert prop.living_area_sqft == 1_800
+
+    def test_next_data_photos_dict_and_string_entries(self) -> None:
+        # Mixed photos list: one dict with href, one dict with url, one bare
+        # string, and one skipped entry (non-dict non-string). All are
+        # preserved in order with the skipped one dropped.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id":"9019019012",'
+            '"address":{'
+            '"line":"9 Photo Blvd",'
+            '"city":"Cocoa Beach",'
+            '"state_code":"FL",'
+            '"postal_code":"32931"},'
+            '"type":"condo",'
+            '"description":{"beds":2,"baths":2,"sqft":1100,"year_built":2010},'
+            '"list_price":485000,'
+            '"hoa":{"fee":null},'
+            '"days_on_market":6,'
+            '"photos":['
+            '{"href":"https://ap.rdcpix.com/fake/photos-href.jpg"},'
+            '{"url":"https://ap.rdcpix.com/fake/photos-url.jpg"},'
+            '"https://ap.rdcpix.com/fake/photos-bare.jpg",'
+            "42"
+            "]"
+            "}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/9-Photo-Blvd_Cocoa-Beach_FL_32931_M90123-45678"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert len(prop.photos) == 3
+        assert prop.photos[0].url == "https://ap.rdcpix.com/fake/photos-href.jpg"
+        assert prop.photos[1].url == "https://ap.rdcpix.com/fake/photos-url.jpg"
+        assert prop.photos[2].url == "https://ap.rdcpix.com/fake/photos-bare.jpg"
+
+
+class TestHtmlFallbackEdgeCases:
+    """Cover alternative HTML fallback paths."""
+
+    def test_h1_address_and_meta_price_fallback(self) -> None:
+        # No `[data-testid="address-block"]`, no og:title — parser walks to
+        # the `<h1>` tag. No `[data-testid="price"]` — parser reads price
+        # from `meta[twitter:data1]`. Also covers an unknown property-type
+        # label that normalizes to its raw key ("luxury_villa") and an
+        # empty data-label value (skipped).
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<meta name="twitter:data1" content="$820,000">'
+            "</head><body>"
+            "<h1>101 H1 Way, Boca Raton, FL 33432</h1>"
+            '<div data-label="property-type">Luxury Villa</div>'
+            '<div data-label="">ignored</div>'
+            "</body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/101-H1-Way_Boca-Raton_FL_33432_M10101-20202"
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 820_000
+        assert prop.address_line1 == "101 H1 Way"
+        assert prop.city == "Boca Raton"
+        # Unknown raw string normalizes to its key form, not None.
+        assert prop.property_type == "luxury_villa"
+
+
+class TestAssembleMissingRequiredFields:
+    """`_assemble` raises `SchemaShiftError` when required fields are absent."""
+
+    def test_next_data_missing_price_raises_schema_shift(self) -> None:
+        # __NEXT_DATA__ that only carries an address — price is missing, so
+        # the `_assemble` required-fields check must raise.
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script id="__NEXT_DATA__" type="application/json">'
+            '{"props":{"pageProps":{"property":{'
+            '"listing_id":"1112223334",'
+            '"address":{'
+            '"line":"11 Missing Rd",'
+            '"city":"Melbourne",'
+            '"state_code":"FL",'
+            '"postal_code":"32901"},'
+            '"type":"single_family"'
+            "}}}}"
+            "</script></head><body></body></html>"
+        )
+        url = "https://www.realtor.com/realestateandhomes-detail/11-Missing-Rd_Melbourne_FL_32901_M11122-23334"
+        with pytest.raises(SchemaShiftError) as excinfo:
+            RealtorExtractor().extract(html=html, source_url=url)
+        assert excinfo.value.field == "price_usd"
+
+
+class TestHelperUnits:
+    """Fine-grained unit tests for module-private helpers."""
+
+    def test_first_present_prefers_first_non_none_key(self) -> None:
+        assert _first_present({"a": None, "b": 0, "c": 5}, "a", "b", "c") == 0
+        assert _first_present({"a": None}, "a", "b") is None
+        assert _first_present({}, "a") is None
+        assert _first_present({"a": ""}, "a") == ""
+
+    def test_safe_dict_returns_none_on_wrong_type(self) -> None:
+        assert _safe_dict({"a": {"b": {"c": 1}}}, "a", "b") == {"c": 1}
+        # Walking past a non-dict mid-path returns None.
+        assert _safe_dict({"a": "not a dict"}, "a", "b") is None
+        # Terminal value is a scalar → also None.
+        assert _safe_dict({"a": {"b": 42}}, "a", "b") is None
+
+    def test_to_int_handles_all_branches(self) -> None:
+        assert _to_int(None) is None
+        assert _to_int(True) is None  # bool sentinel
+        assert _to_int(5) == 5
+        assert _to_int(5.9) == 5
+        assert _to_int("$1,234,567") == 1_234_567
+        assert _to_int("no digits here") is None
+        # Non-numeric, non-str fallback → None.
+        assert _to_int([1, 2, 3]) is None
+
+    def test_to_float_handles_all_branches(self) -> None:
+        assert _to_float(None) is None
+        assert _to_float(False) is None  # bool sentinel
+        assert _to_float(3) == 3.0
+        assert _to_float(2.5) == 2.5
+        assert _to_float("1,250.5") == 1250.5
+        assert _to_float("nope") is None
+        # Non-numeric, non-str fallback → None.
+        assert _to_float([1, 2, 3]) is None
+
+    def test_first_int_picks_first_digit_run(self) -> None:
+        assert _first_int("$285/mo") == 285
+        assert _first_int("18 days on Realtor") == 18
+        assert _first_int("no digits") is None
+
+    def test_parse_price_suffixes_and_decimal_rules(self) -> None:
+        assert _parse_price("$2.1M") == 2_100_000
+        assert _parse_price("$750K") == 750_000
+        assert _parse_price("$1.5B") == 1_500_000_000
+        assert _parse_price("$1,250,000") == 1_250_000
+        # Bare unsuffixed decimals are rejected (likely a stray numeric).
+        assert _parse_price("1.2") is None
+        # No digits at all → None.
+        assert _parse_price("price on request") is None
+
+    def test_listing_id_from_url_matches_realtor_token(self) -> None:
+        assert (
+            _listing_id_from_url(
+                "https://www.realtor.com/realestateandhomes-detail/Foo_M12345-67890"
+            )
+            == "12345-67890"
+        )
+        assert (
+            _listing_id_from_url(
+                "https://www.realtor.com/realestateandhomes-detail/Foo_M12345-67890?src=share"
+            )
+            == "12345-67890"
+        )
+        assert _listing_id_from_url("https://www.realtor.com/nothing") is None
+
+    def test_is_residential_type_gating(self) -> None:
+        assert _is_residential_type("SingleFamilyResidence") is True
+        assert _is_residential_type("Single Family Home") is True
+        assert _is_residential_type("RealEstateListing") is False
+        assert _is_residential_type("Product") is False
+
+    def test_parse_lot_size_sqft_variants(self) -> None:
+        assert _parse_lot_size_sqft("8,712 sq ft") == 8_712
+        assert _parse_lot_size_sqft("8712 sqft") == 8_712
+        # Acres convert at 43,560 sqft/acre.
+        assert _parse_lot_size_sqft("0.5 acres") == 21_780
+        # 1 acre = exactly 43,560.
+        assert _parse_lot_size_sqft("1 acre") == 43_560
+        assert _parse_lot_size_sqft("unknown") is None
+
+    def test_parse_address_line_rejects_non_matches(self) -> None:
+        assert _parse_address_line("123 Main St, Miami, FL 33101") == {
+            "address_line1": "123 Main St",
+            "city": "Miami",
+            "state": "FL",
+            "postal_code": "33101",
+        }
+        assert _parse_address_line("just a title") is None
+
+    def test_parse_beds_baths_sqft_handles_missing_pieces(self) -> None:
+        full = _parse_beds_baths_sqft("3 bed | 2.5 bath | 1,620 sqft")
+        assert full == {"beds": 3.0, "baths": 2.5, "living_area_sqft": 1_620}
+        # When nothing matches, returns an empty dict (no keys set).
+        assert _parse_beds_baths_sqft("no facts") == {}
+
+    def test_normalize_property_type_edge_cases(self) -> None:
+        assert _normalize_property_type(None) is None
+        assert _normalize_property_type("") is None
+        assert _normalize_property_type("   ") is None
+        # Unknown values pass through as their normalized key form, not None.
+        assert _normalize_property_type("Penthouse Suite") == "penthouse_suite"
+
+    def test_pick_residential_type_list_and_string(self) -> None:
+        # List — picks the first known residential token in map order.
+        assert (
+            _pick_residential_type(
+                ["Product", "RealEstateListing", "SingleFamilyResidence"]
+            )
+            == "SingleFamilyResidence"
+        )
+        # List with non-string items interleaved — skips them.
+        assert _pick_residential_type([42, "Townhome", None]) == "Townhome"
+        # List with no known tokens — falls back to last string entry.
+        assert _pick_residential_type(["Nothing", "Unknown"]) == "Unknown"
+        # List with no strings at all — returns None.
+        assert _pick_residential_type([1, 2, 3]) is None
+        # String and None pass through unchanged.
+        assert _pick_residential_type("Condo") == "Condo"
+        assert _pick_residential_type(None) is None
