@@ -5,9 +5,14 @@ import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, Suspense } from "react";
 import { env } from "@/lib/env";
+import { resolveObservabilityContext } from "@/lib/observability";
 
 // Initialize PostHog (call once, guards against double-init)
 let initialized = false;
+
+const context = resolveObservabilityContext({
+  defaultService: "buyer-v2-web",
+});
 
 export function initPostHog() {
   if (initialized || typeof window === "undefined") return;
@@ -19,6 +24,12 @@ export function initPostHog() {
     capture_pageleave: true,
     persistence: "localStorage+cookie",
     loaded: (ph) => {
+      ph.register({
+        app_environment: context.environment,
+        app_release: context.release,
+        app_service: context.service,
+        app_deployment: context.deployment,
+      });
       if (process.env.NODE_ENV === "development") {
         ph.debug();
       }

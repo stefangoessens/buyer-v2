@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -31,6 +33,7 @@ if TYPE_CHECKING:
 
 _DEFAULT_MAX_CONCURRENT = 4
 _ORCHESTRATOR_VENDOR = "orchestrator"
+logger = logging.getLogger("buyer_v2.fetch.orchestrator")
 
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -178,4 +181,19 @@ class FetchOrchestrator:
     ) -> None:
         self._stats.error_count += 1
         self._stats.attempts += attempts
+        logger.error(
+            "worker_fetch_failed %s",
+            json.dumps(
+                {
+                    "request_id": error.request_id,
+                    "portal": error.portal,
+                    "vendor": error.vendor,
+                    "retryable": error.retryable,
+                    "attempts": attempts,
+                    "error_type": type(error).__name__,
+                    "message": str(error),
+                },
+                sort_keys=True,
+            ),
+        )
         self._metrics.record_fetch(request=request, result=None, error=error)

@@ -1,5 +1,6 @@
 import posthog from "posthog-js";
 import type { LaunchEventMap } from "@buyer-v2/shared/launch-events";
+import { resolveObservabilityContext } from "@/lib/observability";
 import { deepScrubPii } from "@/lib/security/pii-guard";
 
 /**
@@ -473,6 +474,9 @@ export function track<K extends AnalyticsEventName>(
   properties: AnalyticsEventMap[K],
 ): void {
   const metadata = EVENT_METADATA[event];
+  const context = resolveObservabilityContext({
+    defaultService: "buyer-v2-web",
+  });
   // For non-piiSafe events, run deep scrubbing that walks BOTH field
   // names AND string values. This catches PII that leaks into free-text
   // fields like error messages, reason strings, or parser output —
@@ -483,13 +487,20 @@ export function track<K extends AnalyticsEventName>(
           properties as unknown as Record<string, unknown>,
         ) as AnalyticsEventMap[K])
       : properties;
+  const payload = {
+    ...safeProps,
+    app_environment: context.environment,
+    app_release: context.release,
+    app_service: context.service,
+    app_deployment: context.deployment,
+  } satisfies Record<string, unknown>;
 
   if (typeof window !== "undefined" && posthog.__loaded) {
-    posthog.capture(event, safeProps as Record<string, unknown>);
+    posthog.capture(event, payload);
   }
 
   if (process.env.NODE_ENV === "development") {
-    console.log(`[analytics] ${event}`, safeProps);
+    console.log(`[analytics] ${event}`, payload);
   }
 }
 

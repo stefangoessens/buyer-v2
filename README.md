@@ -56,6 +56,13 @@ pnpm workers:service:test
 pnpm workers:test
 ```
 
+## Observability baseline
+
+- Web errors report to Sentry with environment, release, deployment, and service tags.
+- PostHog events register the same release/environment context automatically on both browser and server-emitted events.
+- `GET /api/health` checks the web surface, inspects observability configuration, and probes Convex when configured.
+- `services/extraction` exposes a richer `/health` payload with request counters and latest failure metadata for Railway/service health debugging.
+
 ## Dependency Boundaries
 
 - `@buyer-v2/web` may import from `@buyer-v2/shared` and its local `src/`.

@@ -110,16 +110,32 @@ class TestInMemoryMetricsSink:
             "error_count",
             "total_cost_usd",
             "total_latency_ms",
+            "recent_failures",
             "per_portal",
         }
         assert snap["fetch_count"] == 1
         assert "realtor" in snap["per_portal"]
+        assert snap["recent_failures"] == []
         assert set(snap["per_portal"]["realtor"].keys()) == {
             "fetch_count",
             "error_count",
             "total_cost_usd",
             "total_latency_ms",
         }
+
+    def test_snapshot_includes_recent_failure_metadata(self) -> None:
+        sink = InMemoryMetricsSink()
+        req = _make_request("zillow")
+
+        sink.record_fetch(request=req, result=None, error=_make_error(req))
+
+        snap = sink.snapshot()
+        assert len(snap["recent_failures"]) == 1
+        failure = snap["recent_failures"][0]
+        assert failure["error_type"] == "TransientFetchError"
+        assert failure["portal"] == "zillow"
+        assert failure["request_id"] == req.request_id
+        assert failure["retryable"] is True
 
 
 class TestNullMetricsSink:

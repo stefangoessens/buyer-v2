@@ -37,6 +37,16 @@ class _PortalStats:
 
 
 @dataclass(slots=True)
+class _FailureSample:
+    error_type: str
+    message: str
+    portal: str | None
+    request_id: str
+    vendor: str
+    retryable: bool
+
+
+@dataclass(slots=True)
 class InMemoryMetricsSink:
     """Simple counters for tests and local development."""
 
@@ -47,6 +57,7 @@ class InMemoryMetricsSink:
     per_portal: dict[Portal, _PortalStats] = field(
         default_factory=lambda: defaultdict(_PortalStats)
     )
+    recent_failures: list[_FailureSample] = field(default_factory=list)
 
     def record_fetch(
         self,
@@ -66,6 +77,18 @@ class InMemoryMetricsSink:
         if error is not None:
             self.error_count += 1
             portal_stats.error_count += 1
+            self.recent_failures.insert(
+                0,
+                _FailureSample(
+                    error_type=type(error).__name__,
+                    message=str(error),
+                    portal=error.portal,
+                    request_id=error.request_id,
+                    vendor=error.vendor,
+                    retryable=error.retryable,
+                ),
+            )
+            del self.recent_failures[10:]
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -73,6 +96,17 @@ class InMemoryMetricsSink:
             "error_count": self.error_count,
             "total_cost_usd": self.total_cost_usd,
             "total_latency_ms": self.total_latency_ms,
+            "recent_failures": [
+                {
+                    "error_type": failure.error_type,
+                    "message": failure.message,
+                    "portal": failure.portal,
+                    "request_id": failure.request_id,
+                    "vendor": failure.vendor,
+                    "retryable": failure.retryable,
+                }
+                for failure in self.recent_failures
+            ],
             "per_portal": {
                 portal: {
                     "fetch_count": stats.fetch_count,
