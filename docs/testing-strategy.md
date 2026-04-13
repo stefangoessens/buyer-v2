@@ -22,6 +22,11 @@ KIN-948 establishes the baseline test stack for every buyer-v2 surface without e
 - Cross-layer JSON contracts live under `src/test/fixtures/contracts/` and are decoded by both Vitest and Swift tests.
 - AI eval seed fixtures live in `src/lib/ai/eval/fixtures.ts`.
 
+## Local Bootstrap
+
+- Run `pnpm workers:install` once on a fresh checkout before invoking the Python test commands.
+- `pnpm test:eval` uses `node --import tsx` so the eval harness CLI runs without relying on `tsx`'s IPC shim.
+
 ## Coverage Thresholds
 
 These thresholds are conservative baselines: high enough to catch obvious regressions, low enough to ratchet upward from the current repo state.

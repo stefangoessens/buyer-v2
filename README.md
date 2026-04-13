@@ -60,6 +60,7 @@ pnpm workers:test
 
 - `pnpm test` runs the Vitest suite for web logic, contracts, Convex integration harnesses, and AI eval snapshots.
 - `pnpm test:e2e` runs the Playwright browser smoke checks against a local dev server with test env defaults.
+- `pnpm workers:install` bootstraps the Python worker and extraction-service dev test dependencies.
 - `pnpm workers:test` runs the Python worker and extraction-service pytest suites with coverage thresholds.
 - `pnpm ios:test` runs the Swift package tests.
 - `pnpm test:eval` smoke-tests the pricing eval harness against the seeded fixture set.

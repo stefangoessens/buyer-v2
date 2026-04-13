@@ -6,8 +6,9 @@ Deployable FastAPI worker surface for buyer-v2 extraction tasks.
 
 ```bash
 cd services/extraction
-python -m uvicorn src.main:app --reload
-python -m pytest
+python3 -m pip install -e '.[dev]'
+python3 -m uvicorn src.main:app --reload
+python3 -m pytest
 ```
 
 ## Boundary
