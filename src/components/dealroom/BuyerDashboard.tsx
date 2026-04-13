@@ -1,101 +1,21 @@
 "use client";
 
-import { useMemo } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Card, CardContent } from "@/components/ui/card";
-import type { DashboardDealRoomTile } from "@/lib/dealroom/dashboard-types";
+import { resolveBuyerDashboardState } from "@/lib/dashboard/deal-index-state";
+import { cn } from "@/lib/utils";
 import { DealRoomGrid } from "./DealRoomGrid";
 import { EmptyDashboardState } from "./EmptyDashboardState";
 import { PasteLinkCTA } from "./PasteLinkCTA";
-
-type DealIndexRow = {
-  dealRoomId: string;
-  propertyId: string;
-  status:
-    | "intake"
-    | "analysis"
-    | "tour_scheduled"
-    | "offer_prep"
-    | "offer_sent"
-    | "under_contract"
-    | "closing"
-    | "closed"
-    | "withdrawn";
-  category: "active" | "recent";
-  addressLine: string;
-  listPrice: number | null;
-  beds: number | null;
-  baths: number | null;
-  sqft: number | null;
-  primaryPhotoUrl: string | null;
-  accessLevel: "anonymous" | "registered" | "full";
-  updatedAt: string;
-  hydrated: boolean;
-};
-
-type DealIndex = {
-  active: DealIndexRow[];
-  recent: DealIndexRow[];
-  summary: {
-    activeCount: number;
-    recentCount: number;
-    hasAnyDeals: boolean;
-  };
-};
-
-function mapRowToTile(row: DealIndexRow): DashboardDealRoomTile {
-  return {
-    dealRoomId: row.dealRoomId,
-    propertyId: row.propertyId,
-    address: row.addressLine,
-    city: "",
-    state: "FL",
-    listPrice: row.listPrice ?? 0,
-    beds: row.beds ?? 0,
-    baths: row.baths ?? 0,
-    sqft: row.sqft ?? 0,
-    photoUrl: row.primaryPhotoUrl,
-    score: null,
-    status: mapDealStatus(row.status, row.category),
-    lastActivityAt: row.updatedAt,
-    lastActivityLabel: "",
-  };
-}
-
-function mapDealStatus(
-  status: DealIndexRow["status"],
-  category: DealIndexRow["category"],
-): DashboardDealRoomTile["status"] {
-  if (status === "closed") return "closed";
-  if (status === "withdrawn") return "draft";
-  if (status === "under_contract" || status === "closing") return "pending";
-  if (status === "offer_prep" || status === "offer_sent") return "urgent";
-  if (status === "intake") return "draft";
-  if (category === "recent") return "closed";
-  return "active";
-}
 
 interface BuyerDashboardProps {
   now: string;
 }
 
 export function BuyerDashboard({ now }: BuyerDashboardProps) {
-  const dealIndex = useQuery(api.dashboard.getDealIndex, {}) as
-    | DealIndex
-    | undefined;
-
-  const activeTiles = useMemo<DashboardDealRoomTile[]>(() => {
-    if (!dealIndex) return [];
-    return dealIndex.active.map(mapRowToTile);
-  }, [dealIndex]);
-
-  const recentTiles = useMemo<DashboardDealRoomTile[]>(() => {
-    if (!dealIndex) return [];
-    return dealIndex.recent.map(mapRowToTile);
-  }, [dealIndex]);
-
-  const allTiles = [...activeTiles, ...recentTiles];
+  const dealIndex = useQuery(api.dashboard.getDealIndex, {});
+  const state = resolveBuyerDashboardState(dealIndex);
 
   return (
     <div className="flex flex-col gap-6">
@@ -113,37 +33,65 @@ export function BuyerDashboard({ now }: BuyerDashboardProps) {
 
       <PasteLinkCTA />
 
+      {state.kind !== "loading" && (
+        <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {state.summaryBadges.map((badge) => (
+            <Card
+              key={badge.kind}
+              className={cn(
+                "border-neutral-200 bg-white",
+                badge.tone === "primary" && "border-primary-200 bg-primary-50/40",
+                badge.tone === "warning" && "border-warning-200 bg-warning-50/60",
+              )}
+            >
+              <CardContent className="px-4 py-3">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                  {badge.label}
+                </p>
+                <p
+                  className={cn(
+                    "mt-1 text-lg font-semibold text-neutral-900",
+                    badge.isEmpty && "text-neutral-500",
+                  )}
+                >
+                  {badge.value}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+      )}
+
       <section>
-        <div className="mb-4 flex items-baseline justify-between">
-          <h2 className="text-lg font-semibold text-neutral-900">
-            Your searches
-          </h2>
-          {allTiles.length > 0 && (
+        <div className="mb-4 flex items-baseline justify-between gap-4">
+          <h2 className="text-lg font-semibold text-neutral-900">Your deals</h2>
+          {state.kind === "ready" && (
             <span className="text-xs text-neutral-500">
-              {dealIndex?.summary.activeCount ?? 0} active ·{" "}
-              {dealIndex?.summary.recentCount ?? 0} recent
+              {state.activeDeals.length} active · {state.recentDeals.length} recent
+              {state.hasPartialDeals ? " · details still loading" : ""}
             </span>
           )}
         </div>
-        {dealIndex === undefined ? (
+
+        {state.kind === "loading" ? (
           <Card>
             <CardContent className="py-12 text-center text-sm text-neutral-500">
-              Loading your searches…
+              Loading your deals…
             </CardContent>
           </Card>
-        ) : allTiles.length === 0 ? (
+        ) : state.kind === "empty" ? (
           <EmptyDashboardState />
         ) : (
           <div className="flex flex-col gap-6">
-            {activeTiles.length > 0 && (
-              <DealRoomGrid tiles={activeTiles} now={now} />
+            {state.activeDeals.length > 0 && (
+              <DealRoomGrid rows={state.activeDeals} now={now} />
             )}
-            {recentTiles.length > 0 && (
+            {state.recentDeals.length > 0 && (
               <div>
                 <h3 className="mb-3 text-sm font-semibold text-neutral-600">
                   Recently wrapped up
                 </h3>
-                <DealRoomGrid tiles={recentTiles} now={now} />
+                <DealRoomGrid rows={state.recentDeals} now={now} />
               </div>
             )}
           </div>
