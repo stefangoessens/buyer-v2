@@ -215,10 +215,17 @@ export const reorderWatchlist = mutation({
       }
     }
 
+    // Only patch entries whose position actually changed. The
+    // pure `reorderWatchlist` helper already makes this
+    // optimization; the Convex mirror matches it to avoid write
+    // amplification on no-op reorders. Codex P2 from PR #109.
+    const currentById = new Map(current.map((e) => [e._id, e]));
     const now = new Date().toISOString();
     for (let i = 0; i < args.orderedEntryIds.length; i++) {
       const id = args.orderedEntryIds[i];
       if (!id) continue;
+      const existing = currentById.get(id);
+      if (existing && existing.position === i) continue;
       await ctx.db.patch(id, { position: i, updatedAt: now });
     }
     return null;
