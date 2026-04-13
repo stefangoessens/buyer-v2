@@ -47,11 +47,11 @@ export function PasteLinkInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className={`flex items-center gap-2 ${isHero ? "flex-col sm:flex-row" : ""}`}
+      className={`flex w-full items-center gap-3 ${isHero ? "flex-col" : ""}`}
     >
       <div className="relative w-full">
         <svg
-          className={`absolute top-1/2 left-3 -translate-y-1/2 text-neutral-400 ${isHero ? "size-5" : "size-4"}`}
+          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-neutral-400 ${isHero ? "left-4 size-5" : "left-3 size-4"}`}
           xmlns="http://www.w3.org/2000/svg"
           fill="none"
           viewBox="0 0 24 24"
@@ -72,18 +72,18 @@ export function PasteLinkInput({
           placeholder={placeholder}
           className={
             isHero
-              ? "h-[68px] rounded-3xl border-2 border-primary-200 bg-white pl-10 text-lg"
-              : "h-10 rounded-xl pl-9"
+              ? "h-[60px] rounded-[16px] border border-neutral-200 bg-white pl-12 pr-4 text-base shadow-sm placeholder:text-neutral-400"
+              : "h-11 rounded-[12px] border border-neutral-200 bg-white pl-10 pr-3 text-sm shadow-sm placeholder:text-neutral-400"
           }
         />
       </div>
       <button
         type="submit"
         disabled={!canSubmit}
-        className={`shrink-0 font-semibold text-white transition-colors duration-[var(--duration-normal)] ${
+        className={`shrink-0 font-medium text-white shadow-sm transition-colors duration-[var(--duration-fast)] ${
           isHero
-            ? "h-16 rounded-3xl bg-primary-400 px-8 text-lg hover:bg-primary-500 disabled:bg-primary-200 sm:w-auto w-full"
-            : "h-10 rounded-xl bg-primary-400 px-5 text-sm hover:bg-primary-500 disabled:bg-primary-200"
+            ? "h-[60px] w-full rounded-[12px] bg-primary-400 px-5 text-base hover:bg-primary-500 disabled:bg-primary-200"
+            : "h-11 rounded-[12px] bg-primary-400 px-4 text-sm hover:bg-primary-500 disabled:bg-primary-200"
         }`}
       >
         {isHero ? "Get free analysis" : "Analyze"}
