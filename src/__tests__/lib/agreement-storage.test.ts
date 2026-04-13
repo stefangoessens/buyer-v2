@@ -12,6 +12,7 @@ import {
   buildAgreementSignedPatch,
   buildReplacementDraftInput,
   canReadAgreement,
+  getSignedArtifactStorageId,
   resolveCurrentAgreementReadModel,
   type AgreementActor,
   type AgreementRecordLike,
@@ -74,6 +75,19 @@ describe("agreement storage helpers", () => {
         NOW,
       ),
     ).toThrow("Can only sign sent agreements")
+
+    expect(() =>
+      buildAgreementSignedPatch(
+        agreement({
+          status: "sent",
+          documentStorageId: undefined,
+          signedArtifact: undefined,
+        }),
+        actor(),
+        {},
+        NOW,
+      ),
+    ).toThrow("Signed agreement storage is required")
 
     expect(() =>
       buildAgreementCanceledPatch(
@@ -327,6 +341,7 @@ describe("agreement storage helpers", () => {
       "granted",
     )
     expect(grantedAudit.action).toBe("agreement_artifact_accessed")
+    expect(getSignedArtifactStorageId(agreementRow)).toBe("storage_signed")
 
     const deniedAudit = buildAgreementAccessAudit(
       actor({ role: "buyer", _id: "buyer_2" }),
@@ -339,6 +354,15 @@ describe("agreement storage helpers", () => {
       outcome: "denied",
       artifactStorageId: "storage_signed",
     })
+
+    expect(
+      getSignedArtifactStorageId(
+        agreement({
+          status: "draft",
+          documentStorageId: "storage_draft",
+        }),
+      ),
+    ).toBeUndefined()
   })
 
   it("resolves governing agreements even when legacy timestamp fields are missing", () => {

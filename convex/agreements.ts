@@ -30,6 +30,7 @@ import {
   buildAgreementSignedPatch,
   buildReplacementDraftInput,
   canReadAgreement,
+  getSignedArtifactStorageId,
   resolveCurrentAgreementReadModel,
 } from "./lib/agreements"
 import { applySupersessionState } from "./agreementSupersession"
@@ -403,8 +404,7 @@ export const requestSignedArtifactAccess = mutation({
       return null
     }
 
-    const artifactStorageId =
-      agreement.signedArtifact?.storageId ?? agreement.documentStorageId
+    const artifactStorageId = getSignedArtifactStorageId(agreement)
     if (!artifactStorageId) {
       await ctx.db.insert(
         "auditLog",

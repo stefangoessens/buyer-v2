@@ -143,6 +143,38 @@ export function assertCanManageAgreements(actor: AgreementActor): void {
   }
 }
 
+function resolveSignedStorageIdFromInput<
+  AgreementId extends string,
+  DealRoomId extends string,
+  UserId extends string,
+  StorageId extends string,
+>(
+  agreement: AgreementRecordLike<AgreementId, DealRoomId, UserId, StorageId>,
+  input: RecordAgreementSignatureInput<StorageId>,
+): StorageId | undefined {
+  return (
+    input.signedArtifact?.storageId ??
+    input.documentStorageId ??
+    agreement.signedArtifact?.storageId ??
+    agreement.documentStorageId
+  )
+}
+
+export function getSignedArtifactStorageId<
+  AgreementId extends string,
+  DealRoomId extends string,
+  UserId extends string,
+  StorageId extends string,
+>(
+  agreement: AgreementRecordLike<AgreementId, DealRoomId, UserId, StorageId>,
+): StorageId | undefined {
+  if (agreement.status !== "signed") {
+    return undefined
+  }
+
+  return agreement.signedArtifact?.storageId ?? agreement.documentStorageId
+}
+
 export function normalizeAgreementArtifact<StorageId extends string>(
   artifact: AgreementArtifactInput<StorageId>,
   uploadedAt: string,
@@ -286,11 +318,10 @@ export function buildAgreementSignedPatch<
     throw new Error("Can only sign sent agreements")
   }
 
-  const signedStorageId =
-    input.signedArtifact?.storageId ??
-    input.documentStorageId ??
-    agreement.signedArtifact?.storageId ??
-    agreement.documentStorageId
+  const signedStorageId = resolveSignedStorageIdFromInput(agreement, input)
+  if (!signedStorageId) {
+    throw new Error("Signed agreement storage is required")
+  }
 
   return {
     status: "signed",
@@ -298,12 +329,10 @@ export function buildAgreementSignedPatch<
     updatedAt: now,
     lastUpdatedByUserId: actor._id,
     documentStorageId: signedStorageId,
-    signedArtifact: signedStorageId
-      ? normalizeAgreementArtifact(
-          input.signedArtifact ?? { storageId: signedStorageId },
-          now,
-        )
-      : agreement.signedArtifact,
+    signedArtifact: normalizeAgreementArtifact(
+      input.signedArtifact ?? { storageId: signedStorageId },
+      now,
+    ),
     effectiveStartAt:
       input.effectiveStartAt ?? agreement.effectiveStartAt ?? now,
     effectiveEndAt: input.effectiveEndAt ?? agreement.effectiveEndAt,
@@ -321,11 +350,10 @@ export function buildAgreementSignedAudit<
   input: RecordAgreementSignatureInput<StorageId>,
   now: string,
 ): AgreementAuditEntry<UserId, AgreementId> {
-  const signedStorageId =
-    input.signedArtifact?.storageId ??
-    input.documentStorageId ??
-    agreement.signedArtifact?.storageId ??
-    agreement.documentStorageId
+  const signedStorageId = resolveSignedStorageIdFromInput(agreement, input)
+  if (!signedStorageId) {
+    throw new Error("Signed agreement storage is required")
+  }
 
   return {
     userId: actor._id,
@@ -459,10 +487,7 @@ export function buildAgreementAccessAudit<
       actorRole: actor.role,
       buyerId: agreement.buyerId,
       dealRoomId: agreement.dealRoomId,
-      artifactStorageId:
-        agreement.signedArtifact?.storageId ??
-        agreement.documentStorageId ??
-        null,
+      artifactStorageId: getSignedArtifactStorageId(agreement) ?? null,
     }),
     timestamp: now,
   }
