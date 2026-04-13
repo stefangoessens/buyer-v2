@@ -2440,4 +2440,56 @@ export default defineSchema({
     .index("by_offerId", ["offerId"])
     .index("by_tokenId", ["tokenId"])
     .index("by_reviewStatus", ["reviewStatus"]),
+
+  // ═══ DEAL-ROOM SHARE LINKS (KIN-853) ═══
+  //
+  // Typed share-link state for the "share my deal room" feature.
+  // A buyer creates a scoped link, sends it to a collaborator, and the
+  // collaborator gets a narrow read view of that one deal room. Derived
+  // status ("active" / "expired" / "revoked") is computed at read time
+  // by `convex/lib/shareLink.ts#computeStatus` — we never backfill
+  // "expired" onto the stored row.
+  dealRoomShareLinks: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    createdByUserId: v.id("users"),
+    // URL-safe slug. Unique so we can dedupe / lookup without the _id.
+    slug: v.string(),
+    scope: v.union(
+      v.literal("summary_only"),
+      v.literal("summary_and_documents"),
+      v.literal("full_read"),
+    ),
+    status: v.union(v.literal("active"), v.literal("revoked")),
+    createdAt: v.string(),
+    expiresAt: v.optional(v.string()),
+    revokedAt: v.optional(v.string()),
+    revokedByUserId: v.optional(v.id("users")),
+    accessCount: v.number(),
+    lastAccessedAt: v.optional(v.string()),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_createdByUserId", ["createdByUserId"]),
+
+  // Audit events for the share-link lifecycle. One row per create /
+  // resolve / revoke / denied-access attempt. Kept separately from
+  // `auditLog` because the collaborator who resolves a link has no
+  // user row — the event identity is the link itself.
+  dealRoomShareLinkEvents: defineTable({
+    linkId: v.id("dealRoomShareLinks"),
+    dealRoomId: v.id("dealRooms"),
+    event: v.union(
+      v.literal("created"),
+      v.literal("resolved"),
+      v.literal("revoked"),
+      v.literal("denied_expired"),
+      v.literal("denied_revoked"),
+      v.literal("denied_not_found"),
+    ),
+    actorUserId: v.optional(v.id("users")),
+    timestamp: v.string(),
+    details: v.optional(v.string()),
+  })
+    .index("by_linkId", ["linkId"])
+    .index("by_dealRoomId_and_timestamp", ["dealRoomId", "timestamp"]),
 });
