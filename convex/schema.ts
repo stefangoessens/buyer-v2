@@ -1784,12 +1784,21 @@ export default defineSchema({
   // ═══ PROPERTY COMPARISONS (KIN-843) ═══
   //
   // One record per buyer representing an ordered list of property IDs
-  // they want to compare side-by-side. The list is capped at
-  // MAX_COMPARISON_SIZE and stores just the ordering — row projection
-  // happens at read time from the canonical property table.
+  // they want to compare side-by-side. New rows store explicit compared
+  // records; legacy rows may still have propertyIds-only state until
+  // the next write migrates them. Row projection happens at read time
+  // from the canonical property table.
   propertyComparisons: defineTable({
     buyerId: v.id("users"),
-    propertyIds: v.array(v.id("properties")),
+    records: v.optional(
+      v.array(
+        v.object({
+          propertyId: v.id("properties"),
+          dealRoomId: v.optional(v.id("dealRooms")),
+        }),
+      ),
+    ),
+    propertyIds: v.optional(v.array(v.id("properties"))),
     createdAt: v.string(),
     updatedAt: v.string(),
   })

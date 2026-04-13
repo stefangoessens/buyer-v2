@@ -1,12 +1,13 @@
 /**
- * Property comparison state (KIN-843).
+ * Property comparison state (KIN-883).
  *
  * Pure TS — used by Convex backend and the dashboard comparison UI.
- * A comparison is a buyer-scoped, ordered list of property IDs the
- * user wants to compare side-by-side. The backend stores just the
- * order and metadata; the comparison row projection happens from
- * shared canonical property data so there's a single source of truth
- * for what a "property card" looks like.
+ * A comparison is a buyer-scoped, ordered list of compared records.
+ * Each record always points at the canonical property and may also
+ * carry the deal-room id it came from. The backend stores just the
+ * ordering + record context; the comparison row projection happens
+ * from shared canonical property data so there's a single source of
+ * truth for what a buyer-safe comparison row looks like.
  *
  * Operations: add, remove, reorder, reset. All enforce a cap on the
  * comparison set size so the UI stays manageable.
@@ -41,9 +42,17 @@ export interface ComparisonPropertyInput {
   waterfrontType?: string;
 }
 
+/** One compared record in persisted state. */
+export interface ComparisonRecord {
+  propertyId: string;
+  dealRoomId?: string;
+}
+
 /** Output: the projected comparison row the dashboard consumes. */
 export interface ComparisonRow {
   propertyId: string;
+  dealRoomId: string | null;
+  source: "property" | "dealRoom";
   addressLine: string;
   primaryPhotoUrl: string | null;
   listPrice: number | null;
@@ -63,7 +72,7 @@ export interface ComparisonRow {
 /** The shape of a comparison record as stored in backend state. */
 export interface ComparisonState {
   buyerId: string;
-  propertyIds: string[]; // ordered
+  records: ComparisonRecord[]; // ordered
   createdAt: string;
   updatedAt: string;
 }
@@ -96,20 +105,20 @@ export type ComparisonMutationResult<T = ComparisonState> =
  */
 export function addToComparison(
   state: ComparisonState,
-  propertyId: string,
+  record: ComparisonRecord,
   now: string,
   position?: number,
 ): ComparisonMutationResult {
-  if (state.propertyIds.includes(propertyId)) {
+  if (state.records.some((entry) => entry.propertyId === record.propertyId)) {
     return {
       ok: false,
       error: {
         code: "already_in_comparison",
-        message: `Property ${propertyId} is already in this comparison.`,
+        message: `Property ${record.propertyId} is already in this comparison.`,
       },
     };
   }
-  if (state.propertyIds.length >= MAX_COMPARISON_SIZE) {
+  if (state.records.length >= MAX_COMPARISON_SIZE) {
     return {
       ok: false,
       error: {
@@ -119,7 +128,7 @@ export function addToComparison(
     };
   }
 
-  const next = state.propertyIds.slice();
+  const next = state.records.slice();
   if (position !== undefined) {
     if (position < 0 || position > next.length) {
       return {
@@ -130,14 +139,14 @@ export function addToComparison(
         },
       };
     }
-    next.splice(position, 0, propertyId);
+    next.splice(position, 0, record);
   } else {
-    next.push(propertyId);
+    next.push(record);
   }
 
   return {
     ok: true,
-    state: { ...state, propertyIds: next, updatedAt: now },
+    state: { ...state, records: next, updatedAt: now },
   };
 }
 
@@ -150,7 +159,7 @@ export function removeFromComparison(
   propertyId: string,
   now: string,
 ): ComparisonMutationResult {
-  if (!state.propertyIds.includes(propertyId)) {
+  if (!state.records.some((entry) => entry.propertyId === propertyId)) {
     return {
       ok: false,
       error: {
@@ -160,10 +169,10 @@ export function removeFromComparison(
     };
   }
 
-  const next = state.propertyIds.filter((id) => id !== propertyId);
+  const next = state.records.filter((entry) => entry.propertyId !== propertyId);
   return {
     ok: true,
-    state: { ...state, propertyIds: next, updatedAt: now },
+    state: { ...state, records: next, updatedAt: now },
   };
 }
 
@@ -177,7 +186,7 @@ export function reorderComparison(
   toPosition: number,
   now: string,
 ): ComparisonMutationResult {
-  const len = state.propertyIds.length;
+  const len = state.records.length;
   if (fromPosition < 0 || fromPosition >= len) {
     return {
       ok: false,
@@ -201,12 +210,12 @@ export function reorderComparison(
     return { ok: true, state };
   }
 
-  const next = state.propertyIds.slice();
+  const next = state.records.slice();
   const [moved] = next.splice(fromPosition, 1);
   next.splice(toPosition, 0, moved);
   return {
     ok: true,
-    state: { ...state, propertyIds: next, updatedAt: now },
+    state: { ...state, records: next, updatedAt: now },
   };
 }
 
@@ -218,7 +227,7 @@ export function resetComparison(
   state: ComparisonState,
   now: string,
 ): ComparisonState {
-  return { ...state, propertyIds: [], updatedAt: now };
+  return { ...state, records: [], updatedAt: now };
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -230,18 +239,17 @@ export function resetComparison(
  * property lookup map. Missing properties are skipped silently — the
  * UI shouldn't crash if a property was deleted while the comparison
  * was open in another tab. The caller can detect skipped entries by
- * comparing length of the result vs `state.propertyIds.length`.
+ * comparing length of the result vs `state.records.length`.
  */
 export function buildComparisonRows(
   state: ComparisonState,
   propertyById: Map<string, ComparisonPropertyInput>,
 ): ComparisonRow[] {
   const rows: ComparisonRow[] = [];
-  for (let i = 0; i < state.propertyIds.length; i++) {
-    const id = state.propertyIds[i];
-    const property = propertyById.get(id);
+  for (const record of state.records) {
+    const property = propertyById.get(record.propertyId);
     if (!property) continue;
-    rows.push(projectRow(property, i));
+    rows.push(projectRow(record, property, rows.length));
   }
   return rows;
 }
@@ -253,6 +261,7 @@ export function buildComparisonRows(
  * is a buyer-facing view.
  */
 export function projectRow(
+  record: ComparisonRecord,
   property: ComparisonPropertyInput,
   order: number,
 ): ComparisonRow {
@@ -267,6 +276,8 @@ export function projectRow(
 
   return {
     propertyId: property._id,
+    dealRoomId: record.dealRoomId ?? null,
+    source: record.dealRoomId ? "dealRoom" : "property",
     addressLine,
     primaryPhotoUrl:
       property.photoUrls && property.photoUrls.length > 0
