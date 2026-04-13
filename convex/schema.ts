@@ -2601,6 +2601,21 @@ export default defineSchema({
     confirmedPct: v.optional(v.number()),
     confirmedFlat: v.optional(v.number()),
     disputeReason: v.optional(v.string()),
+    // Snapshot of the limited-access session that authorized submission.
+    // Optional for forward compatibility with rows created before KIN-971.
+    accessKind: v.optional(v.literal("external_access")),
+    accessResource: v.optional(v.literal("offer")),
+    accessAllowedActions: v.optional(
+      v.array(
+        v.union(
+          v.literal("view_offer"),
+          v.literal("submit_response"),
+          v.literal("confirm_compensation"),
+          v.literal("acknowledge_receipt"),
+        ),
+      ),
+    ),
+    accessExpiresAt: v.optional(v.string()),
     // Review state — set by internal users after triaging the response
     reviewStatus: v.union(
       v.literal("unreviewed"),

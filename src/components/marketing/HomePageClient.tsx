@@ -16,19 +16,22 @@ const trustStats = [
 
 const features = [
   {
-    icon: "\uD83D\uDD17",
+    imageSrc: "/images/marketing/features/feature-1.png",
+    imageAlt: "Listing link intake on buyer-v2",
     title: "Paste any listing link",
     description:
       "Drop a Zillow, Redfin, or Realtor.com URL. We instantly analyze the property.",
   },
   {
-    icon: "\uD83D\uDCCA",
+    imageSrc: "/images/marketing/features/feature-2.png",
+    imageAlt: "AI analysis dashboard for a property",
     title: "Get AI-powered analysis",
     description:
       "Fair pricing, comparable sales, leverage signals, and a competitiveness score.",
   },
   {
-    icon: "\uD83D\uDCB0",
+    imageSrc: "/images/marketing/features/feature-3.png",
+    imageAlt: "Savings and buyer representation insights",
     title: "Save with expert representation",
     description:
       "Our licensed brokers negotiate on your behalf. Average savings: $12,400.",
@@ -75,10 +78,7 @@ export function HomePageClient() {
   return (
     <>
       {/* Hero */}
-      <HeroSection
-        title="Get the best deal on your Florida home"
-        subtitle="Paste a Zillow, Redfin, or Realtor link. Get instant AI-powered analysis, fair pricing, and expert buyer representation — for free."
-      >
+      <HeroSection>
         {submitted ? (
           <div className="rounded-xl bg-white/10 px-6 py-4 text-lg font-medium text-white backdrop-blur">
             Analyzing your property...
@@ -101,11 +101,8 @@ export function HomePageClient() {
             {features.map((feature) => (
               <FeatureCard
                 key={feature.title}
-                icon={
-                  <span className="text-2xl" role="img" aria-label={feature.title}>
-                    {feature.icon}
-                  </span>
-                }
+                imageSrc={feature.imageSrc}
+                imageAlt={feature.imageAlt}
                 title={feature.title}
                 description={feature.description}
               />

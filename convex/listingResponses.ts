@@ -17,12 +17,24 @@
  */
 
 import { internal } from "./_generated/api";
-import { query, mutation } from "./_generated/server";
+import {
+  query,
+  mutation,
+  action,
+  internalQuery,
+  internalMutation,
+  type QueryCtx,
+  type MutationCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
 import type { Id } from "./_generated/dataModel";
 import type { TokenDenialReason } from "../packages/shared/src/external-access";
-import { authorizeExternalAccessSession } from "./lib/externalAccessSession";
+import {
+  authorizeListingResponseSubmission,
+  buildListingResponseReviewModel,
+  type ListingResponseReviewModel,
+} from "./lib/listingResponses";
 
 // ═══ Shared validators ═══
 
@@ -57,12 +69,19 @@ const externalAccessRecordEvent = (
   }
 ).externalAccess.recordEvent;
 
+const listingResponsesInternal = (
+  internal as unknown as {
+    listingResponses: {
+      submitResponseInternal: any;
+    };
+  }
+).listingResponses;
+
 // ═══ Inline validation (mirrors src/lib/externalAccess/listingResponse.ts) ═══
 
 const MAX_MESSAGE_LENGTH = 4000;
 const MAX_COUNTER_PRICE = 100_000_000;
 const MAX_EARNEST_MONEY = 10_000_000;
-const DEDUPE_WINDOW_MS = 60_000;
 
 interface ValidationInput {
   responseType: string;
@@ -183,7 +202,141 @@ function deniedSubmissionError(reason: TokenDenialReason): string {
   }
 }
 
+const accessContextValidator = v.object({
+  kind: v.literal("external_access"),
+  tokenId: v.id("externalAccessTokens"),
+  resource: v.literal("offer"),
+  dealRoomId: v.id("dealRooms"),
+  offerId: v.optional(v.id("offers")),
+  role: counterpartyRoleValidator,
+  allowedActions: v.array(
+    v.union(
+      v.literal("view_offer"),
+      v.literal("submit_response"),
+      v.literal("confirm_compensation"),
+      v.literal("acknowledge_receipt"),
+    ),
+  ),
+  expiresAt: v.string(),
+});
+
+const payloadValidator = v.object({
+  message: v.optional(v.string()),
+  counterOffer: v.optional(
+    v.object({
+      counterPrice: v.optional(v.number()),
+      counterEarnestMoney: v.optional(v.number()),
+      counterClosingDate: v.optional(v.string()),
+      requestedConcessions: v.optional(v.string()),
+      sellerCreditsRequested: v.optional(v.number()),
+    }),
+  ),
+  compensation: v.optional(
+    v.object({
+      confirmedPct: v.optional(v.number()),
+      confirmedFlat: v.optional(v.number()),
+      disputeReason: v.optional(v.string()),
+    }),
+  ),
+});
+
+const reviewModelValidator = v.object({
+  id: v.id("listingResponses"),
+  createdAt: v.number(),
+  dealRoomId: v.id("dealRooms"),
+  offerId: v.optional(v.id("offers")),
+  propertyId: v.id("properties"),
+  responseType: responseTypeValidator,
+  counterpartyRole: counterpartyRoleValidator,
+  submittedAt: v.string(),
+  accessContext: accessContextValidator,
+  payload: payloadValidator,
+  review: v.object({
+    status: reviewStatusValidator,
+    reviewedBy: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  }),
+});
+
+async function listReviewModelsByDealRoom(
+  ctx: QueryCtx,
+  args: {
+    dealRoomId: Id<"dealRooms">;
+    reviewStatus?: "unreviewed" | "acknowledged" | "actioned" | "dismissed";
+  },
+): Promise<Array<ListingResponseReviewModel>> {
+  const all = await ctx.db
+    .query("listingResponses")
+    .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
+    .collect();
+
+  const filtered = args.reviewStatus
+    ? all.filter((response) => response.reviewStatus === args.reviewStatus)
+    : all;
+
+  return filtered
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+    .map(buildListingResponseReviewModel);
+}
+
+async function listReviewModelsByOffer(
+  ctx: QueryCtx,
+  args: { offerId: Id<"offers"> },
+): Promise<Array<ListingResponseReviewModel>> {
+  const all = await ctx.db
+    .query("listingResponses")
+    .withIndex("by_offerId", (q) => q.eq("offerId", args.offerId))
+    .collect();
+
+  return all
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+    .map(buildListingResponseReviewModel);
+}
+
+async function listUnreviewedModels(
+  ctx: QueryCtx,
+  args: { limit?: number },
+): Promise<Array<ListingResponseReviewModel>> {
+  const unreviewed = await ctx.db
+    .query("listingResponses")
+    .withIndex("by_reviewStatus", (q) => q.eq("reviewStatus", "unreviewed"))
+    .collect();
+
+  return unreviewed
+    .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt))
+    .slice(0, args.limit ?? 50)
+    .map(buildListingResponseReviewModel);
+}
+
 // ═══ Queries ═══
+
+export const listByDealRoomInternal = internalQuery({
+  args: {
+    dealRoomId: v.id("dealRooms"),
+    reviewStatus: v.optional(reviewStatusValidator),
+  },
+  returns: v.array(reviewModelValidator),
+  handler: async (ctx, args) => {
+    return await listReviewModelsByDealRoom(ctx, args);
+  },
+});
+
+export const listByOfferInternal = internalQuery({
+  args: { offerId: v.id("offers") },
+  returns: v.array(reviewModelValidator),
+  handler: async (ctx, args) => {
+    return await listReviewModelsByOffer(ctx, args);
+  },
+});
+
+export const listUnreviewedInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  returns: v.array(reviewModelValidator),
+  handler: async (ctx, args) => {
+    return await listUnreviewedModels(ctx, args);
+  },
+});
 
 /**
  * List responses for a deal room (broker/admin only). Internal review
@@ -194,21 +347,11 @@ export const listByDealRoom = query({
     dealRoomId: v.id("dealRooms"),
     reviewStatus: v.optional(reviewStatusValidator),
   },
-  returns: v.array(v.any()),
+  returns: v.array(reviewModelValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (user.role !== "broker" && user.role !== "admin") return [];
-
-    const all = await ctx.db
-      .query("listingResponses")
-      .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
-      .collect();
-
-    const filtered = args.reviewStatus
-      ? all.filter((r) => r.reviewStatus === args.reviewStatus)
-      : all;
-
-    return filtered.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+    return await listReviewModelsByDealRoom(ctx, args);
   },
 });
 
@@ -219,16 +362,11 @@ export const listByDealRoom = query({
  */
 export const listByOffer = query({
   args: { offerId: v.id("offers") },
-  returns: v.array(v.any()),
+  returns: v.array(reviewModelValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (user.role !== "broker" && user.role !== "admin") return [];
-
-    const all = await ctx.db
-      .query("listingResponses")
-      .withIndex("by_offerId", (q) => q.eq("offerId", args.offerId))
-      .collect();
-    return all.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+    return await listReviewModelsByOffer(ctx, args);
   },
 });
 
@@ -238,68 +376,85 @@ export const listByOffer = query({
  */
 export const listUnreviewed = query({
   args: { limit: v.optional(v.number()) },
-  returns: v.array(v.any()),
+  returns: v.array(reviewModelValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (user.role !== "broker" && user.role !== "admin") return [];
-
-    const unreviewed = await ctx.db
-      .query("listingResponses")
-      .withIndex("by_reviewStatus", (q) => q.eq("reviewStatus", "unreviewed"))
-      .collect();
-
-    return unreviewed
-      .sort((a, b) => a.submittedAt.localeCompare(b.submittedAt))
-      .slice(0, args.limit ?? 50);
+    return await listUnreviewedModels(ctx, args);
   },
 });
 
-// ═══ Mutations ═══
+// ═══ Write path ═══
 
-/**
- * Submit a listing-side response. Authorized by an external access
- * token (KIN-828). Does NOT require requireAuth — instead, the caller
- * supplies a valid token that was previously issued by a broker/admin.
- *
- * Note: in a production flow this mutation would be called from a
- * public HTTP action that also verifies the token signature. For the
- * Convex-direct path (used by internal tools for testing), the token
- * is looked up by its hash directly.
- */
-export const submitResponse = mutation({
+const submitResponseArgs = {
+  hashedToken: v.string(),
+  dealRoomId: v.id("dealRooms"),
+  offerId: v.optional(v.id("offers")),
+  responseType: responseTypeValidator,
+  message: v.optional(v.string()),
+  counterPrice: v.optional(v.number()),
+  counterEarnestMoney: v.optional(v.number()),
+  counterClosingDate: v.optional(v.string()),
+  requestedConcessions: v.optional(v.string()),
+  sellerCreditsRequested: v.optional(v.number()),
+  confirmedPct: v.optional(v.number()),
+  confirmedFlat: v.optional(v.number()),
+  disputeReason: v.optional(v.string()),
+};
+
+async function submitResponseHandler(
+  ctx: MutationCtx,
   args: {
-    hashedToken: v.string(),
-    dealRoomId: v.id("dealRooms"),
-    offerId: v.optional(v.id("offers")),
-    responseType: responseTypeValidator,
-    message: v.optional(v.string()),
-    counterPrice: v.optional(v.number()),
-    counterEarnestMoney: v.optional(v.number()),
-    counterClosingDate: v.optional(v.string()),
-    requestedConcessions: v.optional(v.string()),
-    sellerCreditsRequested: v.optional(v.number()),
-    confirmedPct: v.optional(v.number()),
-    confirmedFlat: v.optional(v.number()),
-    disputeReason: v.optional(v.string()),
+    hashedToken: string;
+    dealRoomId: Id<"dealRooms">;
+    offerId?: Id<"offers">;
+    responseType:
+      | "offer_acknowledged"
+      | "offer_countered"
+      | "offer_rejected"
+      | "compensation_confirmed"
+      | "compensation_disputed"
+      | "generic_acknowledged";
+    message?: string;
+    counterPrice?: number;
+    counterEarnestMoney?: number;
+    counterClosingDate?: string;
+    requestedConcessions?: string;
+    sellerCreditsRequested?: number;
+    confirmedPct?: number;
+    confirmedFlat?: number;
+    disputeReason?: string;
   },
-  returns: v.id("listingResponses"),
-  handler: async (ctx, args) => {
-    const now = new Date().toISOString();
+): Promise<Id<"listingResponses">> {
+  const now = new Date().toISOString();
 
-    // Look up and validate the token
-    const token = await ctx.db
-      .query("externalAccessTokens")
-      .withIndex("by_hashedToken", (q) => q.eq("hashedToken", args.hashedToken))
-      .unique();
-    const authorized = authorizeExternalAccessSession({
-      token,
-      hashedToken: args.hashedToken,
-      intendedAction: "submit_response",
-      intendedDealRoomId: args.dealRoomId,
-      intendedOfferId: args.offerId,
-      now,
-    });
-    if (!authorized.ok) {
+  const token = await ctx.db
+    .query("externalAccessTokens")
+    .withIndex("by_hashedToken", (q) => q.eq("hashedToken", args.hashedToken))
+    .unique();
+
+  const recent = token
+    ? await ctx.db
+        .query("listingResponses")
+        .withIndex("by_tokenId", (q) => q.eq("tokenId", token._id))
+        .collect()
+    : [];
+
+  const authorized = authorizeListingResponseSubmission({
+    token,
+    hashedToken: args.hashedToken,
+    dealRoomId: args.dealRoomId,
+    offerId: args.offerId,
+    responseType: args.responseType,
+    now,
+    existingResponses: recent.map((response) => ({
+      responseType: response.responseType,
+      submittedAt: response.submittedAt,
+    })),
+  });
+
+  if (!authorized.ok) {
+    if (authorized.kind === "denied") {
       await ctx.runMutation(externalAccessRecordEvent, {
         tokenId: token?._id,
         eventType: "denied",
@@ -310,177 +465,159 @@ export const submitResponse = mutation({
       });
       throw new Error(deniedSubmissionError(authorized.reason));
     }
-    const { session, token: validToken } = authorized;
 
     await ctx.runMutation(externalAccessRecordEvent, {
-      tokenId: validToken._id,
-      eventType: "accessed",
-      dealRoomId: validToken.dealRoomId,
+      tokenId: authorized.token._id,
+      eventType: "denied",
+      dealRoomId: authorized.token.dealRoomId,
       attemptedAction: "submit_response",
-      summary: `Authorized ${session.scope.resource} submission access`,
+      denialReason: "duplicate_submission",
+      summary: `Rejected duplicate ${args.responseType} submission`,
     });
+    throw new Error(
+      "DUPLICATE_SUBMISSION: identical response submitted within the last 60 seconds",
+    );
+  }
 
-    // Verify the offer (if supplied) belongs to the same deal room AND
-    // matches the token's offer scope if the token was issued for a
-    // specific offer. Without this check, a counterparty holding a token
-    // scoped to offer A could submit a response against offer B in the
-    // same room, bypassing the token's least-privilege boundary.
-    if (args.offerId) {
-      const offer = await ctx.db.get(args.offerId);
-      if (!offer) {
-        await ctx.runMutation(externalAccessRecordEvent, {
-          tokenId: validToken._id,
-          eventType: "denied",
-          dealRoomId: validToken.dealRoomId,
-          attemptedAction: "submit_response",
-          denialReason: "scope_mismatch",
-          summary: "Submission referenced an unknown offer",
-        });
-        throw new Error("Offer not found");
-      }
-      if (offer.dealRoomId !== args.dealRoomId) {
-        await ctx.runMutation(externalAccessRecordEvent, {
-          tokenId: validToken._id,
-          eventType: "denied",
-          dealRoomId: validToken.dealRoomId,
-          attemptedAction: "submit_response",
-          denialReason: "scope_mismatch",
-          summary: "Submission targeted an offer outside the deal room scope",
-        });
-        throw new Error("Offer does not belong to the specified deal room");
-      }
-      if (
-        validToken.offerId !== undefined &&
-        validToken.offerId !== args.offerId
-      ) {
-        await ctx.runMutation(externalAccessRecordEvent, {
-          tokenId: validToken._id,
-          eventType: "denied",
-          dealRoomId: validToken.dealRoomId,
-          attemptedAction: "submit_response",
-          denialReason: "scope_mismatch",
-          summary: "Submission targeted an offer outside the token scope",
-        });
-        throw new Error(
-          "TOKEN_OFFER_SCOPE_MISMATCH: token is scoped to a specific offer that does not match the submission",
-        );
-      }
-    } else if (validToken.offerId !== undefined) {
-      // Token is scoped to an offer but the submission didn't target one.
-      // Reject: the caller must declare which offer they're responding to.
+  const { accessContext, session, token: validToken } = authorized;
+
+  await ctx.runMutation(externalAccessRecordEvent, {
+    tokenId: validToken._id,
+    eventType: "accessed",
+    dealRoomId: validToken.dealRoomId,
+    attemptedAction: "submit_response",
+    summary: `Authorized ${session.scope.resource} submission access`,
+  });
+
+  if (args.offerId) {
+    const offer = await ctx.db.get(args.offerId);
+    if (!offer) {
       await ctx.runMutation(externalAccessRecordEvent, {
         tokenId: validToken._id,
         eventType: "denied",
         dealRoomId: validToken.dealRoomId,
         attemptedAction: "submit_response",
         denialReason: "scope_mismatch",
-        summary: "Submission omitted the required offer scope",
+        summary: "Submission referenced an unknown offer",
       });
-      throw new Error(
-        "TOKEN_OFFER_SCOPE_MISMATCH: token is scoped to a specific offer but submission has no offerId",
-      );
+      throw new Error("Offer not found");
     }
-
-    // Validate the payload shape
-    try {
-      validateInline(
-        {
-          responseType: args.responseType,
-          offerId: args.offerId,
-          message: args.message,
-          counterPrice: args.counterPrice,
-          counterEarnestMoney: args.counterEarnestMoney,
-          counterClosingDate: args.counterClosingDate,
-          confirmedPct: args.confirmedPct,
-          confirmedFlat: args.confirmedFlat,
-          disputeReason: args.disputeReason,
-        },
-        now,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Invalid payload";
+    if (offer.dealRoomId !== args.dealRoomId) {
       await ctx.runMutation(externalAccessRecordEvent, {
         tokenId: validToken._id,
         eventType: "denied",
         dealRoomId: validToken.dealRoomId,
         attemptedAction: "submit_response",
-        denialReason: "payload_invalid",
-        summary: message.slice(0, 200),
+        denialReason: "scope_mismatch",
+        summary: "Submission targeted an offer outside the deal room scope",
       });
-      throw error;
+      throw new Error("Offer does not belong to the specified deal room");
     }
+  }
 
-    // Dedupe: reject if the same token+type was submitted within 60s
-    const recent = await ctx.db
-      .query("listingResponses")
-      .withIndex("by_tokenId", (q) => q.eq("tokenId", validToken._id))
-      .collect();
-    const nowMs = Date.parse(now);
-    const duplicate = recent.find((r) => {
-      if (r.responseType !== args.responseType) return false;
-      const submittedMs = Date.parse(r.submittedAt);
-      if (Number.isNaN(submittedMs)) return false;
-      return nowMs - submittedMs < DEDUPE_WINDOW_MS;
-    });
-    if (duplicate) {
-      await ctx.runMutation(externalAccessRecordEvent, {
-        tokenId: validToken._id,
-        eventType: "denied",
-        dealRoomId: validToken.dealRoomId,
-        attemptedAction: "submit_response",
-        denialReason: "duplicate_submission",
-        summary: `Rejected duplicate ${args.responseType} submission`,
-      });
-      throw new Error(
-        "DUPLICATE_SUBMISSION: identical response submitted within the last 60 seconds",
-      );
-    }
-
-    // Load deal room to snapshot propertyId
-    const dealRoom = await ctx.db.get(args.dealRoomId);
-    if (!dealRoom) throw new Error("Deal room not found");
-
-    const id = await ctx.db.insert("listingResponses", {
-      tokenId: validToken._id,
-      dealRoomId: args.dealRoomId,
-      offerId: args.offerId,
-      propertyId: dealRoom.propertyId,
-      counterpartyRole: validToken.role,
-      responseType: args.responseType,
-      message: args.message?.trim(),
-      counterPrice: args.counterPrice,
-      counterEarnestMoney: args.counterEarnestMoney,
-      counterClosingDate: args.counterClosingDate,
-      requestedConcessions: args.requestedConcessions?.trim(),
-      sellerCreditsRequested: args.sellerCreditsRequested,
-      confirmedPct: args.confirmedPct,
-      confirmedFlat: args.confirmedFlat,
-      disputeReason: args.disputeReason?.trim(),
-      reviewStatus: "unreviewed",
-      submittedAt: now,
-    });
+  try {
+    validateInline(
+      {
+        responseType: args.responseType,
+        offerId: args.offerId,
+        message: args.message,
+        counterPrice: args.counterPrice,
+        counterEarnestMoney: args.counterEarnestMoney,
+        counterClosingDate: args.counterClosingDate,
+        confirmedPct: args.confirmedPct,
+        confirmedFlat: args.confirmedFlat,
+        disputeReason: args.disputeReason,
+      },
+      now,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid payload";
     await ctx.runMutation(externalAccessRecordEvent, {
       tokenId: validToken._id,
-      eventType: "submitted",
+      eventType: "denied",
       dealRoomId: validToken.dealRoomId,
       attemptedAction: "submit_response",
-      summary: `Submitted ${args.responseType}`,
+      denialReason: "payload_invalid",
+      summary: message.slice(0, 200),
     });
+    throw error;
+  }
 
-    // Audit log
-    await ctx.db.insert("auditLog", {
-      action: "listing_response_submitted",
-      entityType: "listingResponses",
-      entityId: id,
-      details: JSON.stringify({
-        tokenId: validToken._id,
-        responseType: args.responseType,
-        dealRoomId: args.dealRoomId,
-      }),
-      timestamp: now,
-    });
+  const dealRoom = await ctx.db.get(args.dealRoomId);
+  if (!dealRoom) throw new Error("Deal room not found");
 
-    return id;
+  const id = await ctx.db.insert("listingResponses", {
+    tokenId: validToken._id,
+    dealRoomId: args.dealRoomId,
+    offerId: args.offerId,
+    propertyId: dealRoom.propertyId,
+    counterpartyRole: validToken.role,
+    responseType: args.responseType,
+    message: args.message?.trim(),
+    counterPrice: args.counterPrice,
+    counterEarnestMoney: args.counterEarnestMoney,
+    counterClosingDate: args.counterClosingDate,
+    requestedConcessions: args.requestedConcessions?.trim(),
+    sellerCreditsRequested: args.sellerCreditsRequested,
+    confirmedPct: args.confirmedPct,
+    confirmedFlat: args.confirmedFlat,
+    disputeReason: args.disputeReason?.trim(),
+    accessKind: accessContext.kind,
+    accessResource: accessContext.resource,
+    accessAllowedActions: accessContext.allowedActions,
+    accessExpiresAt: accessContext.expiresAt,
+    reviewStatus: "unreviewed",
+    submittedAt: now,
+  });
+
+  await ctx.runMutation(externalAccessRecordEvent, {
+    tokenId: validToken._id,
+    eventType: "submitted",
+    dealRoomId: validToken.dealRoomId,
+    attemptedAction: "submit_response",
+    summary: `Submitted ${args.responseType}`,
+  });
+
+  await ctx.db.insert("auditLog", {
+    action: "listing_response_submitted",
+    entityType: "listingResponses",
+    entityId: id,
+    details: JSON.stringify({
+      tokenId: validToken._id,
+      responseType: args.responseType,
+      dealRoomId: args.dealRoomId,
+      accessKind: accessContext.kind,
+      accessResource: accessContext.resource,
+      accessExpiresAt: accessContext.expiresAt,
+    }),
+    timestamp: now,
+  });
+
+  return id;
+}
+
+/**
+ * Internal transactional persistence for a limited-access listing-side
+ * response submission. The public entrypoint is an action so the
+ * external path stays separated from internal broker/admin mutations.
+ */
+export const submitResponseInternal = internalMutation({
+  args: submitResponseArgs,
+  returns: v.id("listingResponses"),
+  handler: async (ctx, args) => {
+    return await submitResponseHandler(ctx, args);
+  },
+});
+
+export const submitResponse = action({
+  args: submitResponseArgs,
+  returns: v.id("listingResponses"),
+  handler: async (ctx, args) => {
+    const responseId: Id<"listingResponses"> = await ctx.runMutation(
+      listingResponsesInternal.submitResponseInternal,
+      args,
+    );
+    return responseId;
   },
 });
 
