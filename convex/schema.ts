@@ -617,10 +617,32 @@ export default defineSchema({
     startAt: v.string(), // ISO-8601 with timezone offset
     endAt: v.string(), // ISO-8601 with timezone offset
     timezone: v.string(), // IANA timezone name
+    requestedWindow: v.optional(
+      v.object({
+        startAt: v.string(),
+        endAt: v.string(),
+        timezone: v.string(),
+      })
+    ),
+    normalizedWindow: v.optional(
+      v.object({
+        startUtc: v.string(),
+        endUtc: v.string(),
+        durationMs: v.number(),
+      })
+    ),
     recurring: v.optional(
       v.object({
         daysOfWeek: v.array(v.number()), // 0-6 (Sun=0)
         until: v.optional(v.string()), // ISO-8601 date
+      })
+    ),
+    constraints: v.optional(
+      v.object({
+        minimumNoticeMinutes: v.optional(v.number()),
+        bufferBeforeMinutes: v.optional(v.number()),
+        bufferAfterMinutes: v.optional(v.number()),
+        maximumDurationMinutes: v.optional(v.number()),
       })
     ),
     status: availabilityStatus,
