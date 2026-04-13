@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Image from "next/image";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { TrustBar } from "@/components/marketing/TrustBar";
@@ -5,6 +6,9 @@ import { FeatureCard } from "@/components/marketing/FeatureCard";
 import { TestimonialCard } from "@/components/marketing/TestimonialCard";
 import { HeroInput } from "@/components/marketing/HeroInput";
 import { BentoCard } from "@/components/marketing/BentoCard";
+import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
+
+export const metadata: Metadata = metadataForStaticPage("home");
 
 /* ─── Data ────────────────────────────────────────────────────────────── */
 
