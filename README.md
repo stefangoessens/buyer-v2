@@ -76,3 +76,8 @@ pnpm workers:test
 - **Hosting**: Railway (Next.js + Python services, per-PR preview environments)
 - **CI**: GitHub Actions
 - **Tracking**: Linear (project `buyer-v2`, team `Kindservices` / KIN)
+
+## Deployment
+
+- Railway topology and environment promotion rules live in
+  [`docs/platform/railway-topology.md`](./docs/platform/railway-topology.md).

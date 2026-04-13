@@ -1,5 +1,9 @@
 import "server-only";
-import { readEnv, webServerEnvSpec } from "@buyer-v2/shared";
+import {
+  readEnv,
+  type DeploymentEnvironment,
+  webServerEnvSpec,
+} from "@buyer-v2/shared";
 
 /**
  * Server-only environment variables.
@@ -8,5 +12,7 @@ import { readEnv, webServerEnvSpec } from "@buyer-v2/shared";
  */
 export const serverEnv = readEnv(webServerEnvSpec, process.env);
 
+export const appEnv = serverEnv.APP_ENV as DeploymentEnvironment;
+
 /** Check if we're in production */
-export const isProduction = serverEnv.NODE_ENV === "production";
+export const isProduction = appEnv === "production";

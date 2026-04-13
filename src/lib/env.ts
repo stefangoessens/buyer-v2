@@ -1,4 +1,9 @@
-import { hasValue, readEnv, webPublicEnvSpec } from "@buyer-v2/shared";
+import {
+  hasValue,
+  readEnv,
+  type DeploymentEnvironment,
+  webPublicEnvSpec,
+} from "@buyer-v2/shared";
 
 /**
  * Typed public environment variables.
@@ -6,6 +11,8 @@ import { hasValue, readEnv, webPublicEnvSpec } from "@buyer-v2/shared";
  * All default to empty string when not set (graceful degradation).
  */
 export const env = readEnv(webPublicEnvSpec, process.env);
+
+export const appEnv = env.NEXT_PUBLIC_APP_ENV as DeploymentEnvironment;
 
 /** Check if a specific integration is configured */
 export const isConfigured = {

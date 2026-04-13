@@ -35,6 +35,18 @@ jobs:
             exit 1
           fi
 
+      - name: Health check extraction worker
+        if: vars.EXTRACTION_SERVICE_URL != ''
+        run: |
+          response=$(curl -sf "${{ vars.EXTRACTION_SERVICE_URL }}/health" || echo '{"status":"unknown"}')
+          echo "Extraction health check response: $response"
+          if echo "$response" | grep -q '"status":"ok"'; then
+            echo "✅ Extraction health check passed"
+          else
+            echo "::error::Extraction health check failed: $response"
+            exit 1
+          fi
+
       - name: Post-deploy summary
         run: |
           echo "## Production Deploy" >> $GITHUB_STEP_SUMMARY
@@ -42,4 +54,10 @@ jobs:
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** main" >> $GITHUB_STEP_SUMMARY
           echo "- **Railway:** Auto-deployed via GitHub integration" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ vars.PRODUCTION_URL }}" ]; then
+            echo "- **Web health:** ${{ vars.PRODUCTION_URL }}/api/health" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -n "${{ vars.EXTRACTION_SERVICE_URL }}" ]; then
+            echo "- **Extraction health:** ${{ vars.EXTRACTION_SERVICE_URL }}/health" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "- **Convex:** Requires manual \`npx convex deploy\` for schema changes" >> $GITHUB_STEP_SUMMARY

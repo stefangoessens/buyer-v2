@@ -11,3 +11,5 @@ def test_health():
     data = response.json()
     assert data["status"] == "ok"
     assert data["service"] == "extraction"
+    assert data["environment"] == "local"
+    assert data["version"] == "0.0.0"

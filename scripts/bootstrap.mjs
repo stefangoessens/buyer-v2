@@ -8,6 +8,10 @@ const workspaceRoot = process.cwd();
 const bootstrapFiles = [
   { template: ".env.example", target: ".env.local" },
   { template: "python-workers/.env.example", target: "python-workers/.env" },
+  {
+    template: "services/extraction/.env.example",
+    target: "services/extraction/.env",
+  },
 ];
 
 async function pathExists(filePath) {

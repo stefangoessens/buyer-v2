@@ -1,15 +1,13 @@
+from src.settings import get_settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="buyer-v2 extraction worker", version="0.0.1")
-
-import os
-
-allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+settings = get_settings()
+app = FastAPI(title="buyer-v2 extraction worker", version=settings.service_version)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=list(settings.cors_origins),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
@@ -18,10 +16,15 @@ app.add_middleware(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "extraction", "version": "0.0.1"}
+    return {
+        "status": "ok",
+        "service": settings.service_name,
+        "environment": settings.app_env,
+        "version": settings.service_version,
+    }
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=settings.port)

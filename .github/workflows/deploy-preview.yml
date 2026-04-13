@@ -28,9 +28,11 @@ jobs:
 
             **Surfaces deployed:**
             - Web app (Next.js)
-            - Python workers (if changed)
+            - Extraction worker service (if changed)
 
-            **Health check:** \`/api/health\` on the preview URL
+            **Health checks:**
+            - Web: \`/api/health\` on the preview URL
+            - Extraction: \`/health\` on the extraction preview URL
 
             **Note:** Convex uses the dev deployment for preview environments. Production Convex is only used on main.`
             });
