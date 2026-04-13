@@ -51,9 +51,7 @@ function parseCompsDoc(doc: unknown): {
     output?: string;
     reviewState?: "pending" | "approved" | "rejected";
   };
-  if (record.reviewState === "pending") {
-    return { status: "pending", data: null };
-  }
+  // Render pending outputs — reviewState stays in DB for broker queue.
   if (record.reviewState === "rejected" || !record.output) {
     return { status: "unavailable", data: null };
   }
