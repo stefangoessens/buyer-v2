@@ -185,6 +185,23 @@ class BrightDataUnlockerClient:
     def monthly_spent_usd(self) -> float:
         return self._budget.monthly_spent_usd
 
+    def observability_snapshot(self) -> dict[str, Any]:
+        return {
+            "vendor": _VENDOR,
+            "configured": {
+                "token_configured": bool(self._token),
+                "zone_configured": bool(self._zone),
+            },
+            "limits": {
+                "max_requests_per_minute": self._max_requests_per_min,
+                "monthly_budget_usd": self._monthly_budget_usd,
+                "fallback_cost_per_request_usd": self._fallback_cost,
+            },
+            "usage": {
+                "monthly_spent_usd": self.monthly_spent_usd,
+            },
+        }
+
     async def aclose(self) -> None:
         if self._owns_client and self._http_client is not None:
             await self._http_client.aclose()

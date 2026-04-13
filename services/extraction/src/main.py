@@ -1,10 +1,20 @@
+from __future__ import annotations
+
+import os
 import uuid
+from contextlib import asynccontextmanager
 from time import perf_counter
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from .contracts import (
+    ErrorResponse,
+    ExtractListingRequest,
+    ExtractListingResponse,
+    FetchObservabilityResponse,
+)
 from .observability import (
     HealthState,
     capture_exception,
@@ -12,10 +22,25 @@ from .observability import (
     log_event,
     resolve_context,
 )
+from .runtime import (
+    ExtractionRuntime,
+    ExtractionRuntimeError,
+    close_runtime,
+    get_runtime,
+)
 
-app = FastAPI(title="buyer-v2 extraction worker", version="0.0.1")
 
-import os
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    await close_runtime()
+
+
+app = FastAPI(
+    title="buyer-v2 extraction worker",
+    version="0.0.1",
+    lifespan=lifespan,
+)
 
 context = resolve_context(default_service="buyer-v2-extraction", version=app.version)
 health_state = HealthState()
@@ -40,6 +65,8 @@ async def observe_requests(request: Request, call_next):
 
     try:
         response = await call_next(request)
+    except ExtractionRuntimeError:
+        raise
     except Exception as error:
         health_state.record_failure(
             route=request.url.path,
@@ -81,6 +108,14 @@ async def observe_requests(request: Request, call_next):
     return response
 
 
+@app.exception_handler(ExtractionRuntimeError)
+async def handle_runtime_error(_: object, exc: ExtractionRuntimeError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.error.model_dump(exclude_none=True),
+    )
+
+
 @app.get("/health")
 async def health():
     return {
@@ -102,6 +137,33 @@ async def health():
         },
         "health": health_state.snapshot(),
     }
+
+
+@app.get("/metrics/fetch", response_model=FetchObservabilityResponse)
+async def fetch_metrics(
+    runtime: ExtractionRuntime = Depends(get_runtime),
+) -> FetchObservabilityResponse:
+    return runtime.fetch_observability()
+
+
+@app.post(
+    "/extract",
+    response_model=ExtractListingResponse,
+    responses={
+        400: {"model": ErrorResponse},
+        422: {"model": ErrorResponse},
+        429: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+        502: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
+    },
+)
+async def extract_listing(
+    request: ExtractListingRequest,
+    runtime: ExtractionRuntime = Depends(get_runtime),
+) -> ExtractListingResponse:
+    return await runtime.extract(request)
 
 
 if __name__ == "__main__":
