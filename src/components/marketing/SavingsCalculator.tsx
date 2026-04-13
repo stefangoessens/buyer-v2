@@ -1,125 +1,450 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Input } from "@/components/ui/input";
+import {
+  calculateSavings,
+  defaultCalculatorInput,
+  formatUSD,
+  parseRawField,
+  type SavingsCalculatorInput,
+} from "@/lib/pricing/savingsCalculator";
+import {
+  CALCULATOR_DISCLOSURES,
+  getHeadlineDisclosures,
+  type Disclosure,
+} from "@/lib/pricing/disclosures";
 
-function toNumber(value: string, fallback: number) {
-  const n = Number(String(value).replace(/[,$\s]/g, ""));
-  return Number.isFinite(n) ? n : fallback;
+/**
+ * Raw-string edit state. Each field is stored as exactly what the user
+ * typed (or the initial numeric default rendered to a string). This is
+ * the source of truth while editing — the parsed numeric `input` is
+ * derived from this state on every render via `parseRawField`.
+ *
+ * Keeping the raw string separate preserves transient decimal input
+ * like `"2."` that would otherwise be lost if we round-tripped through
+ * `Number(...)` on every keystroke — the bug that codex flagged on PR
+ * #45 where typing `2.5` would immediately collapse to `25`.
+ */
+type RawInput = Record<keyof SavingsCalculatorInput, string>;
+
+function toRawInput(input: SavingsCalculatorInput): RawInput {
+  return {
+    purchasePrice: String(input.purchasePrice),
+    totalCommissionPercent: String(input.totalCommissionPercent),
+    buyerAgentCommissionPercent: String(input.buyerAgentCommissionPercent),
+    buyerCreditPercent: String(input.buyerCreditPercent),
+  };
 }
 
-const money = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
+function parseRawInput(raw: RawInput): SavingsCalculatorInput {
+  return {
+    purchasePrice: parseRawField(raw.purchasePrice),
+    totalCommissionPercent: parseRawField(raw.totalCommissionPercent),
+    buyerAgentCommissionPercent: parseRawField(raw.buyerAgentCommissionPercent),
+    buyerCreditPercent: parseRawField(raw.buyerCreditPercent),
+  };
+}
 
-export function SavingsCalculator() {
-  const [homePrice, setHomePrice] = useState("650000");
-  const [commissionPct, setCommissionPct] = useState("3");
-  const [rebatePct, setRebatePct] = useState("1.5");
+/**
+ * Interactive savings calculator + commission education module for
+ * the public site (KIN-772).
+ *
+ * The component is intentionally thin: all math lives in
+ * `src/lib/pricing/savingsCalculator.ts` and all legal copy lives in
+ * `src/lib/pricing/disclosures.ts`. This file only owns UI state and
+ * composition.
+ *
+ * Two variants:
+ *   - "full"    — standalone pricing page layout (default)
+ *   - "compact" — homepage teaser with fewer controls and inline headline
+ */
+export function SavingsCalculator({
+  variant = "full",
+  initialPurchasePrice = 500_000,
+}: {
+  variant?: "full" | "compact";
+  initialPurchasePrice?: number;
+}) {
+  const [raw, setRaw] = useState<RawInput>(() =>
+    toRawInput(defaultCalculatorInput(initialPurchasePrice))
+  );
 
-  const calc = useMemo(() => {
-    const price = Math.max(0, toNumber(homePrice, 0));
-    const commission = Math.max(0, toNumber(commissionPct, 0));
-    const rebate = Math.max(0, toNumber(rebatePct, 0));
+  // Derive the parsed calculator input from the raw edit state.
+  // Memoized so calculator runs only when a raw field actually changes.
+  const input = useMemo(() => parseRawInput(raw), [raw]);
+  const calculation = useMemo(() => calculateSavings(input), [input]);
 
-    const commissionDollars = (price * commission) / 100;
-    const rebateDollars = (price * rebate) / 100;
-
-    return {
-      price,
-      commission,
-      rebate,
-      commissionDollars,
-      rebateDollars,
-    };
-  }, [homePrice, commissionPct, rebatePct]);
+  const updateField = (field: keyof SavingsCalculatorInput, next: string) => {
+    setRaw((prev) => ({ ...prev, [field]: next }));
+  };
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-      <div className="rounded-[24px] border border-neutral-200/80 bg-white p-8 shadow-sm">
-        <h2 className="text-xl font-semibold tracking-tight text-neutral-800">Estimate your potential savings</h2>
-        <p className="mt-2 text-sm leading-relaxed text-neutral-500">
-          Adjust a few assumptions to get a quick back-of-the-envelope estimate.
-        </p>
-
-        <div className="mt-6 grid grid-cols-1 gap-5">
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-neutral-700">Home price</span>
-            <Input
-              inputMode="numeric"
-              value={homePrice}
-              onChange={(e) => setHomePrice(e.target.value)}
-              placeholder="650000"
-              className="h-12 rounded-[12px]"
-            />
-          </label>
-
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <label className="grid gap-2">
-              <span className="text-sm font-medium text-neutral-700">Buyer agent commission (%)</span>
-              <Input
-                inputMode="decimal"
-                value={commissionPct}
-                onChange={(e) => setCommissionPct(e.target.value)}
-                placeholder="3"
-                className="h-12 rounded-[12px]"
-              />
-            </label>
-            <label className="grid gap-2">
-              <span className="text-sm font-medium text-neutral-700">Estimated rebate (%)</span>
-              <Input
-                inputMode="decimal"
-                value={rebatePct}
-                onChange={(e) => setRebatePct(e.target.value)}
-                placeholder="1.5"
-                className="h-12 rounded-[12px]"
-              />
-            </label>
-          </div>
+    <div className="mx-auto w-full max-w-5xl">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
+        {/* Controls */}
+        <div className="lg:col-span-3">
+          <CalculatorControls raw={raw} onChange={updateField} />
         </div>
 
-        <p className="mt-6 text-xs leading-relaxed text-neutral-400">
-          Estimates are illustrative only and can vary by brokerage agreement, lender requirements, and transaction structure.
-        </p>
+        {/* Result + headline disclosures */}
+        <div className="lg:col-span-2">
+          <CalculatorResultPanel calculation={calculation} />
+        </div>
       </div>
 
-      <div className="rounded-[24px] bg-neutral-50 p-8">
-        <div className="flex items-baseline justify-between gap-6">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Estimated rebate</p>
-            <p className="mt-2 text-4xl font-semibold tracking-tight text-neutral-800">{money.format(calc.rebateDollars)}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-neutral-500">At {calc.rebate.toFixed(1)}%</p>
-            <p className="mt-1 text-xs text-neutral-400">Home price: {money.format(calc.price)}</p>
-          </div>
-        </div>
+      {/* Commission education accordion (full variant only) */}
+      {variant === "full" && <CommissionEducation />}
 
-        <div className="mt-6 rounded-[20px] bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between text-sm text-neutral-600">
-            <span>Commission at {calc.commission.toFixed(1)}%</span>
-            <span className="font-semibold text-neutral-800">{money.format(calc.commissionDollars)}</span>
-          </div>
-          <div className="mt-3 flex items-center justify-between text-sm text-neutral-600">
-            <span>Rebate portion</span>
-            <span className="font-semibold text-primary-700">{money.format(calc.rebateDollars)}</span>
-          </div>
-        </div>
+      {/* Full disclosure accordion (full variant only) */}
+      {variant === "full" && <FullDisclosures />}
+    </div>
+  );
+}
 
-        <div className="mt-6 rounded-[20px] bg-primary-700 p-6 text-white">
-          <p className="text-sm font-medium text-white/80">Want exact numbers for your deal?</p>
-          <p className="mt-1 text-lg font-semibold">Paste a listing link and we’ll run the analysis.</p>
-          <a
-            href="/get-started"
-            className="mt-5 inline-flex items-center justify-center rounded-[12px] bg-white px-4 py-3 text-sm font-medium text-primary-700 transition-colors duration-[var(--duration-fast)] hover:bg-neutral-100"
-          >
-            Get started
-          </a>
-        </div>
+// MARK: - Controls
+
+function CalculatorControls({
+  raw,
+  onChange,
+}: {
+  raw: RawInput;
+  onChange: (field: keyof SavingsCalculatorInput, next: string) => void;
+}) {
+  return (
+    <div className="rounded-2xl bg-white p-6 shadow-md ring-1 ring-neutral-200 lg:p-8">
+      <h3 className="text-xl font-semibold text-neutral-900">
+        Estimate your savings
+      </h3>
+      <p className="mt-1 text-sm text-neutral-600">
+        Adjust the assumptions to see how buyer-v2 stacks up against a standard
+        Florida commission.
+      </p>
+
+      <div className="mt-6 space-y-5">
+        {/* Purchase price */}
+        <FieldRow
+          id="purchase-price"
+          label="Purchase price"
+          suffix="USD"
+          value={raw.purchasePrice}
+          onChange={(v) => onChange("purchasePrice", v)}
+          placeholder="500000"
+          inputMode="numeric"
+        />
+
+        {/* Total commission */}
+        <FieldRow
+          id="total-commission"
+          label="Total commission"
+          suffix="%"
+          value={raw.totalCommissionPercent}
+          onChange={(v) => onChange("totalCommissionPercent", v)}
+          placeholder="6"
+          inputMode="decimal"
+          help="Historically 5–6% of purchase price. Always negotiable."
+        />
+
+        {/* Buyer-agent split */}
+        <FieldRow
+          id="buyer-agent"
+          label="Buyer-agent commission"
+          suffix="%"
+          value={raw.buyerAgentCommissionPercent}
+          onChange={(v) => onChange("buyerAgentCommissionPercent", v)}
+          placeholder="3"
+          inputMode="decimal"
+          help="The portion of the total commission paid to the buyer's side."
+        />
+
+        {/* Buyer credit */}
+        <FieldRow
+          id="buyer-credit"
+          label="Buyer credit (our rebate)"
+          suffix="%"
+          value={raw.buyerCreditPercent}
+          onChange={(v) => onChange("buyerCreditPercent", v)}
+          placeholder="33"
+          inputMode="decimal"
+          help="Percentage of the buyer-agent commission we return to you at closing."
+        />
       </div>
     </div>
   );
 }
 
+function FieldRow({
+  id,
+  label,
+  suffix,
+  value,
+  onChange,
+  placeholder,
+  inputMode,
+  help,
+}: {
+  id: string;
+  label: string;
+  suffix: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  inputMode: "numeric" | "decimal";
+  help?: string;
+}) {
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        className="block text-sm font-medium text-neutral-800"
+      >
+        {label}
+      </label>
+      <div className="mt-1.5 flex items-center rounded-xl border border-neutral-300 bg-white focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-100">
+        <input
+          id={id}
+          type="text"
+          inputMode={inputMode}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-xl bg-transparent px-4 py-3 text-base text-neutral-900 placeholder:text-neutral-400 focus:outline-none"
+        />
+        <span className="pr-4 text-sm font-medium text-neutral-500">
+          {suffix}
+        </span>
+      </div>
+      {help && (
+        <p className="mt-1.5 text-xs text-neutral-500">{help}</p>
+      )}
+    </div>
+  );
+}
+
+// MARK: - Result panel
+
+function CalculatorResultPanel({
+  calculation,
+}: {
+  calculation: ReturnType<typeof calculateSavings>;
+}) {
+  if (calculation.kind === "error") {
+    return (
+      <div className="rounded-2xl bg-neutral-50 p-6 shadow-md ring-1 ring-neutral-200 lg:p-8">
+        <h3 className="text-base font-semibold text-neutral-900">
+          Let&rsquo;s fix those inputs
+        </h3>
+        <ul className="mt-3 space-y-2 text-sm text-neutral-700">
+          {calculation.errors.map((err, i) => (
+            <li
+              key={`${err.kind}-${i}`}
+              className="flex items-start gap-2 rounded-lg bg-white p-3 ring-1 ring-neutral-200"
+            >
+              <span className="mt-0.5 text-base" aria-hidden>
+                !
+              </span>
+              <span>{err.message}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  const { result } = calculation;
+
+  if (result.isZeroCommission) {
+    return (
+      <div className="rounded-2xl bg-neutral-50 p-6 shadow-md ring-1 ring-neutral-200 lg:p-8">
+        <p className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          No buyer-agent commission
+        </p>
+        <h3 className="mt-2 text-xl font-semibold text-neutral-900">
+          This listing has no buyer-side commission
+        </h3>
+        <p className="mt-3 text-sm text-neutral-700">
+          We&rsquo;ll tell you up front before we engage. No buyer credit to
+          calculate because there&rsquo;s no commission to rebate.
+        </p>
+        <HeadlineDisclosures />
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl bg-gradient-to-br from-primary-700 to-primary-800 p-6 text-white shadow-lg lg:p-8">
+      <p className="text-xs font-semibold uppercase tracking-wide text-primary-200">
+        Estimated buyer credit
+      </p>
+      <p className="mt-2 text-4xl font-bold lg:text-5xl">
+        {formatUSD(result.buyerCreditAmount)}
+      </p>
+      <p className="mt-2 text-sm text-primary-100">
+        at closing on a {formatUSD(result.input.purchasePrice)} purchase
+      </p>
+
+      <dl className="mt-6 space-y-3 border-t border-primary-600/50 pt-5 text-sm">
+        <ResultRow
+          label="Seller-paid commission"
+          value={formatUSD(result.totalCommissionAmount)}
+        />
+        <ResultRow
+          label="Buyer-agent share"
+          value={formatUSD(result.buyerAgentCommissionAmount)}
+        />
+        <ResultRow
+          label="Your credit back"
+          value={formatUSD(result.buyerCreditAmount)}
+          emphasized
+        />
+        <ResultRow
+          label="Effective buyer commission"
+          value={`${result.effectiveBuyerCommissionPercent}%`}
+        />
+      </dl>
+
+      <HeadlineDisclosures dark />
+    </div>
+  );
+}
+
+function ResultRow({
+  label,
+  value,
+  emphasized,
+}: {
+  label: string;
+  value: string;
+  emphasized?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <dt className="text-primary-100">{label}</dt>
+      <dd
+        className={
+          emphasized
+            ? "text-lg font-semibold text-white"
+            : "text-sm font-medium text-primary-50"
+        }
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+// MARK: - Headline disclosures (inline)
+
+function HeadlineDisclosures({ dark = false }: { dark?: boolean }) {
+  const headlines = getHeadlineDisclosures();
+  return (
+    <div
+      className={`mt-6 border-t pt-4 text-xs ${
+        dark
+          ? "border-primary-600/50 text-primary-100"
+          : "border-neutral-200 text-neutral-600"
+      }`}
+    >
+      <p className="font-semibold">Important</p>
+      <ul className="mt-2 space-y-2">
+        {headlines.map((d) => (
+          <li key={d.id}>
+            <span className={dark ? "text-white" : "text-neutral-900"}>
+              {d.label}:
+            </span>{" "}
+            {d.body}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// MARK: - Commission education (full variant only)
+
+function CommissionEducation() {
+  return (
+    <section className="mt-12 rounded-2xl bg-neutral-50 p-6 ring-1 ring-neutral-200 lg:p-10">
+      <h3 className="text-xl font-semibold text-neutral-900">
+        How commissions work in Florida
+      </h3>
+      <div className="mt-4 grid grid-cols-1 gap-6 text-sm text-neutral-700 md:grid-cols-3">
+        <EducationBlock
+          step="1"
+          title="The seller pays at closing"
+          body="Historically the seller pays a single total commission out of proceeds. That total is split between the listing side and the buyer's side."
+        />
+        <EducationBlock
+          step="2"
+          title="The split is always negotiable"
+          body="After the 2024 NAR settlement, buyer-agent compensation is explicitly negotiated between the parties. No number is fixed in stone."
+        />
+        <EducationBlock
+          step="3"
+          title="We rebate part back to you"
+          body="buyer-v2 credits a portion of the buyer-agent commission to you at closing. You keep the rebate; we keep a smaller service fee."
+        />
+      </div>
+    </section>
+  );
+}
+
+function EducationBlock({
+  step,
+  title,
+  body,
+}: {
+  step: string;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div>
+      <div className="flex size-8 items-center justify-center rounded-full bg-primary-500 text-sm font-bold text-white">
+        {step}
+      </div>
+      <h4 className="mt-3 text-base font-semibold text-neutral-900">
+        {title}
+      </h4>
+      <p className="mt-1.5 text-sm leading-relaxed text-neutral-700">
+        {body}
+      </p>
+    </div>
+  );
+}
+
+// MARK: - Full disclosures (full variant only)
+
+function FullDisclosures() {
+  return (
+    <section className="mt-12 rounded-2xl bg-white p-6 ring-1 ring-neutral-200 lg:p-10">
+      <h3 className="text-lg font-semibold text-neutral-900">
+        Full disclosures
+      </h3>
+      <p className="mt-1 text-sm text-neutral-600">
+        These disclosures apply to every savings estimate on this page.
+      </p>
+      <dl className="mt-5 space-y-5">
+        {CALCULATOR_DISCLOSURES.map((d) => (
+          <DisclosureBlock key={d.id} disclosure={d} />
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function DisclosureBlock({ disclosure }: { disclosure: Disclosure }) {
+  const severityClass =
+    disclosure.severity === "strong"
+      ? "border-l-4 border-accent-500 bg-accent-50"
+      : disclosure.severity === "emphasis"
+        ? "border-l-4 border-primary-500 bg-primary-50/60"
+        : "border-l-4 border-neutral-300 bg-neutral-50";
+  return (
+    <div className={`rounded-r-lg p-4 ${severityClass}`}>
+      <dt className="text-sm font-semibold text-neutral-900">
+        {disclosure.label}
+      </dt>
+      <dd className="mt-1 text-sm text-neutral-700">{disclosure.body}</dd>
+    </div>
+  );
+}

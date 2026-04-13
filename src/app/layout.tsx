@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { inter, fontVariables } from "@/app/fonts";
 import { Providers } from "@/app/providers";
+import { appSurfaceDefinitions } from "@/lib/app-shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "buyer-v2",
-  description: "AI-native Florida buyer brokerage",
+  ...appSurfaceDefinitions.marketing.metadata,
 };
 
 export default function RootLayout({

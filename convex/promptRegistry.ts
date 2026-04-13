@@ -1,6 +1,7 @@
 import { query, internalQuery, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { generateVersionHash, buildVersionContent } from "./lib/promptVersion";
+import { getCurrentUser, requireRole } from "./lib/session";
 
 // ═══ Queries ═══
 
@@ -40,13 +41,7 @@ export const listVersions = query({
   args: { engineType: v.string() },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return [];
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) => q.eq("authSubject", identity.subject))
-      .unique();
+    const user = await getCurrentUser(ctx);
     if (!user || (user.role !== "broker" && user.role !== "admin")) return [];
 
     return await ctx.db
@@ -141,16 +136,7 @@ export const activateVersion = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Authentication required");
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_authSubject", (q) => q.eq("authSubject", identity.subject))
-      .unique();
-    if (!user || user.role !== "admin") {
-      throw new Error("Only admins can activate prompt versions");
-    }
+    const user = await requireRole(ctx, "admin");
 
     const target = await ctx.db
       .query("promptRegistry")

@@ -1,28 +1,33 @@
 import "server-only";
+import {
+  requireEnvKeys,
+  readEnv,
+  validateEnv,
+  webServerEnvSpec,
+} from "@buyer-v2/shared";
+
+type EnvSource = Record<string, string | undefined>;
 
 /**
  * Server-only environment variables.
  * Importing this module in a client component will cause a build error.
  * These secrets must never be exposed to the browser.
  */
-export const serverEnv = {
-  // Convex deploy key (CI/CD)
-  CONVEX_DEPLOY_KEY: process.env.CONVEX_DEPLOY_KEY ?? "",
+export function readServerEnv(source: EnvSource = process.env) {
+  return readEnv(webServerEnvSpec, source);
+}
 
-  // AI providers
-  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+export function getServerEnvIssues(source: EnvSource = process.env) {
+  return validateEnv(webServerEnvSpec, source);
+}
 
-  // Sentry (server-side)
-  SENTRY_AUTH_TOKEN: process.env.SENTRY_AUTH_TOKEN ?? "",
-  SENTRY_DSN: process.env.SENTRY_DSN ?? "",
+export function requireServerEnv<
+  const TKeys extends readonly (keyof typeof webServerEnvSpec)[],
+>(...keys: TKeys) {
+  return requireEnvKeys(webServerEnvSpec, keys, process.env);
+}
 
-  // PostHog (server-side)
-  POSTHOG_PERSONAL_API_KEY: process.env.POSTHOG_PERSONAL_API_KEY ?? "",
-
-  // Runtime
-  NODE_ENV: process.env.NODE_ENV ?? "development",
-} as const;
+export const serverEnv = readServerEnv();
 
 /** Check if we're in production */
 export const isProduction = serverEnv.NODE_ENV === "production";

@@ -9,37 +9,143 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify-deploy:
-    name: Verify production deploy
+  changes:
+    name: Detect promoted surfaces
     runs-on: ubuntu-latest
-    # Railway deploys automatically on push to main.
-    # This job waits and verifies the deploy is healthy.
+    permissions:
+      contents: read
+    outputs:
+      ci: ${{ steps.filter.outputs.ci }}
+      convex: ${{ steps.filter.outputs.convex }}
+      shared: ${{ steps.filter.outputs.shared }}
+      web: ${{ steps.filter.outputs.web }}
+      workers: ${{ steps.filter.outputs.workers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ci:
+              - '.github/**'
+              - 'scripts/**'
+            web:
+              - 'src/**'
+              - 'next.config.ts'
+              - 'instrumentation-client.ts'
+              - 'postcss.config.mjs'
+              - 'eslint.config.mjs'
+              - 'tsconfig.json'
+              - 'vitest.config.ts'
+              - 'playwright.config.ts'
+              - '.env.example'
+            convex:
+              - 'convex/**'
+            shared:
+              - 'packages/shared/**'
+            workers:
+              - 'python-workers/**'
+              - 'services/extraction/**'
+              - 'railway.json'
+              - '.env.example'
+
+  production-web:
+    name: Verify production web deploy
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.web == 'true' ||
+      needs.changes.outputs.shared == 'true' ||
+      needs.changes.outputs.convex == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Wait for Railway deploy
-        run: |
-          echo "Railway deploys automatically via GitHub integration."
-          echo "Waiting 120s for deploy to propagate..."
-          sleep 120
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-      - name: Health check
-        if: vars.PRODUCTION_URL != ''
+      - name: Wait for Railway web deploy
+        run: sleep 120
+
+      - name: Verify production web health
         run: |
-          response=$(curl -sf "${{ vars.PRODUCTION_URL }}/api/health" || echo '{"status":"unknown"}')
-          echo "Health check response: $response"
-          if echo "$response" | grep -q '"status":"ok"'; then
-            echo "✅ Production health check passed"
-          else
-            echo "::error::Production health check failed: $response"
-            exit 1
+          url="${{ vars.PRODUCTION_WEB_URL }}"
+          if [ -z "$url" ]; then
+            url="${{ vars.PRODUCTION_URL }}"
           fi
 
-      - name: Post-deploy summary
+          node scripts/verify-health.mjs \
+            --label "production web" \
+            --url "$url" \
+            --path "/api/health" \
+            --timeout-seconds "300" \
+            --interval-seconds "15"
+
+  production-workers:
+    name: Verify production worker deploy
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.workers == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Wait for Railway worker deploy
+        run: sleep 120
+
+      - name: Verify production worker health
         run: |
-          echo "## Production Deploy" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch:** main" >> $GITHUB_STEP_SUMMARY
-          echo "- **Railway:** Auto-deployed via GitHub integration" >> $GITHUB_STEP_SUMMARY
-          echo "- **Convex:** Requires manual \`npx convex deploy\` for schema changes" >> $GITHUB_STEP_SUMMARY
+          node scripts/verify-health.mjs \
+            --label "production worker" \
+            --url "${{ vars.PRODUCTION_EXTRACTION_URL }}" \
+            --path "/health" \
+            --timeout-seconds "300" \
+            --interval-seconds "15"
+
+  production-summary:
+    name: Production deploy summary
+    needs:
+      - production-web
+      - production-workers
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Fail when production verification fails
+        env:
+          WEB_RESULT: ${{ needs.production-web.result }}
+          WORKERS_RESULT: ${{ needs.production-workers.result }}
+        run: |
+          echo "production-web=$WEB_RESULT"
+          echo "production-workers=$WORKERS_RESULT"
+
+          for result in "$WEB_RESULT" "$WORKERS_RESULT"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error::Production deployment verification failed."
+              exit 1
+            fi
+          done
+
+          {
+            echo "## Production deploy"
+            echo ""
+            echo "- Commit: ${{ github.sha }}"
+            echo "- Web verification: $WEB_RESULT"
+            echo "- Worker verification: $WORKERS_RESULT"
+          } >> "$GITHUB_STEP_SUMMARY"

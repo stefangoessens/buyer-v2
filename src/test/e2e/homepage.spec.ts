@@ -28,7 +28,7 @@ test.describe("Homepage", () => {
 
     // Features section
     await expect(
-      page.getByText("AI-powered analysis").first()
+      page.getByRole("heading", { name: "Get AI-powered analysis" })
     ).toBeVisible();
   });
 

@@ -13,6 +13,10 @@ export const collectBuyerData = internalQuery({
       .query("buyerProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .unique();
+    const messagePreferences = await ctx.db
+      .query("messageDeliveryPreferences")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .unique();
 
     const dealRooms = await ctx.db
       .query("dealRooms")
@@ -49,6 +53,7 @@ export const collectBuyerData = internalQuery({
       exportedAt: new Date().toISOString(),
       user,
       profile,
+      messagePreferences,
       dealRooms,
       agreements,
       tours,

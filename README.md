@@ -8,9 +8,69 @@ AI-native Florida buyer brokerage platform. Next.js + Convex + Railway Python wo
 
 ```bash
 pnpm install
-npx convex dev          # local Convex backend (in one terminal)
-pnpm dev                # Next.js dev server (in another terminal)
+pnpm bootstrap
+pnpm dev:backend        # local Convex backend (terminal 1)
+pnpm dev:web            # Next.js App Router app (terminal 2)
 ```
+
+## Web Runtime Baseline
+
+- Public browser-safe config lives in `src/lib/env.ts` and is sourced from `webPublicEnvSpec`.
+- Server-only secrets live in `src/lib/env.server.ts` and are sourced from `webServerEnvSpec`.
+- The App Router baseline is split into `(marketing)`, `(dealroom)`, `(app)`, and `(admin)` route groups so new feature modules can land without moving existing surfaces.
+- `NEXT_PUBLIC_APP_URL` is the canonical web origin used by metadata, sitemap, and robots generation.
+
+## Repository Layout
+
+```text
+.
+├── .                         # @buyer-v2/web (Next.js App Router app)
+├── convex/                   # @buyer-v2/convex workspace
+├── ios/BuyerV2/              # Swift Package / SwiftUI app workspace
+├── packages/shared/          # contracts, config metadata, shared TS utilities
+├── python-workers/           # reusable Python worker library
+└── services/extraction/      # deployable FastAPI extraction worker
+```
+
+## Local Commands
+
+```bash
+# web + backend
+pnpm dev:web
+pnpm dev:backend
+pnpm build:web
+pnpm build:backend
+
+# shared package
+pnpm typecheck:shared
+
+# iOS
+pnpm ios:open
+pnpm build:ios
+pnpm ios:test
+
+# python workers
+pnpm workers:lib:test
+pnpm workers:service:dev
+pnpm workers:service:test
+pnpm workers:test
+```
+
+## Observability baseline
+
+- Web errors report to Sentry with environment, release, deployment, and service tags.
+- PostHog events register the same release/environment context automatically on both browser and server-emitted events.
+- `GET /api/health` checks the web surface, inspects observability configuration, and probes Convex when configured.
+- `services/extraction` exposes a richer `/health` payload with request counters and latest failure metadata for Railway/service health debugging.
+
+## Dependency Boundaries
+
+- `@buyer-v2/web` may import from `@buyer-v2/shared` and its local `src/`.
+- `convex/` may import from `@buyer-v2/shared`, but never from web-only `src/`.
+- `ios/BuyerV2` consumes typed backend boundaries over network APIs; it does not
+  import JavaScript or Python code directly.
+- `python-workers` owns reusable Python worker primitives.
+- `services/extraction` is the deployable Python worker service wrapper.
 
 ## Read Order
 
@@ -30,3 +90,8 @@ pnpm dev                # Next.js dev server (in another terminal)
 - **Hosting**: Railway (Next.js + Python services, per-PR preview environments)
 - **CI**: GitHub Actions
 - **Tracking**: Linear (project `buyer-v2`, team `Kindservices` / KIN)
+
+## Delivery Workflow
+
+- CI/CD and preview promotion rules are documented in [docs/ci-cd-preview-workflow.md](./docs/ci-cd-preview-workflow.md).
+- The extraction worker deploy surface uses [services/extraction/railway.json](./services/extraction/railway.json).

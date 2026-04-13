@@ -1,0 +1,13 @@
+{
+  "name": "@buyer-v2/convex",
+  "private": true,
+  "scripts": {
+    "codegen": "convex codegen",
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "convex": "^1.35.1"
+  }
+}

@@ -1,8 +1,9 @@
 "use client";
 
 import { ConvexReactClient } from "convex/react";
+import { env } from "@/lib/env";
 
-const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
+const convexUrl = env.NEXT_PUBLIC_CONVEX_URL;
 
 export const convex = convexUrl
   ? new ConvexReactClient(convexUrl)

@@ -4,21 +4,32 @@ import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, Suspense } from "react";
+import { env } from "@/lib/env";
+import { resolveObservabilityContext } from "@/lib/observability";
 
 // Initialize PostHog (call once, guards against double-init)
 let initialized = false;
 
+const context = resolveObservabilityContext({
+  defaultService: "buyer-v2-web",
+});
+
 export function initPostHog() {
   if (initialized || typeof window === "undefined") return;
-  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+  if (!env.NEXT_PUBLIC_POSTHOG_KEY) return;
 
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
-    api_host:
-      process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://us.i.posthog.com",
+  posthog.init(env.NEXT_PUBLIC_POSTHOG_KEY, {
+    api_host: env.NEXT_PUBLIC_POSTHOG_HOST,
     capture_pageview: false, // We handle this manually below
     capture_pageleave: true,
     persistence: "localStorage+cookie",
     loaded: (ph) => {
+      ph.register({
+        app_environment: context.environment,
+        app_release: context.release,
+        app_service: context.service,
+        app_deployment: context.deployment,
+      });
       if (process.env.NODE_ENV === "development") {
         ph.debug();
       }
@@ -34,7 +45,7 @@ export function PostHogProvider({ children }: { children: ReactNode }) {
     initPostHog();
   }, []);
 
-  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+  if (!env.NEXT_PUBLIC_POSTHOG_KEY) {
     return <>{children}</>;
   }
 

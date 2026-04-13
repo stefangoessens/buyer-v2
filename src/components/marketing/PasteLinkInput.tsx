@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import type { LinkPastedSource } from "@buyer-v2/shared/launch-events";
 import { Input } from "@/components/ui/input";
 import { track } from "@/lib/analytics";
 
 interface PasteLinkInputProps {
   onSubmit?: (url: string) => void;
   placeholder?: string;
-  variant?: "hero" | "compact";
+  variant?: Extract<LinkPastedSource, "hero" | "compact">;
 }
 
 function isValidPropertyUrl(url: string): boolean {

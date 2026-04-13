@@ -1,0 +1,146 @@
+name: Staging Deploy
+
+on:
+  push:
+    branches: [staging]
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect promoted surfaces
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      ci: ${{ steps.filter.outputs.ci }}
+      convex: ${{ steps.filter.outputs.convex }}
+      shared: ${{ steps.filter.outputs.shared }}
+      web: ${{ steps.filter.outputs.web }}
+      workers: ${{ steps.filter.outputs.workers }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ci:
+              - '.github/**'
+              - 'scripts/**'
+            web:
+              - 'src/**'
+              - 'next.config.ts'
+              - 'instrumentation-client.ts'
+              - 'postcss.config.mjs'
+              - 'eslint.config.mjs'
+              - 'tsconfig.json'
+              - 'vitest.config.ts'
+              - 'playwright.config.ts'
+              - '.env.example'
+            convex:
+              - 'convex/**'
+            shared:
+              - 'packages/shared/**'
+            workers:
+              - 'python-workers/**'
+              - 'services/extraction/**'
+              - 'railway.json'
+              - '.env.example'
+
+  staging-web:
+    name: Verify staging web deploy
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.web == 'true' ||
+      needs.changes.outputs.shared == 'true' ||
+      needs.changes.outputs.convex == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Wait for Railway staging web deploy
+        run: sleep 120
+
+      - name: Verify staging web health
+        run: |
+          node scripts/verify-health.mjs \
+            --label "staging web" \
+            --url "${{ vars.STAGING_WEB_URL }}" \
+            --path "/api/health" \
+            --timeout-seconds "300" \
+            --interval-seconds "15"
+
+  staging-workers:
+    name: Verify staging worker deploy
+    needs: changes
+    if: |
+      needs.changes.outputs.ci == 'true' ||
+      needs.changes.outputs.workers == 'true'
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Wait for Railway staging worker deploy
+        run: sleep 120
+
+      - name: Verify staging worker health
+        run: |
+          node scripts/verify-health.mjs \
+            --label "staging worker" \
+            --url "${{ vars.STAGING_EXTRACTION_URL }}" \
+            --path "/health" \
+            --timeout-seconds "300" \
+            --interval-seconds "15"
+
+  staging-summary:
+    name: Staging deploy summary
+    needs:
+      - staging-web
+      - staging-workers
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Fail when staging verification fails
+        env:
+          WEB_RESULT: ${{ needs.staging-web.result }}
+          WORKERS_RESULT: ${{ needs.staging-workers.result }}
+        run: |
+          echo "staging-web=$WEB_RESULT"
+          echo "staging-workers=$WORKERS_RESULT"
+
+          for result in "$WEB_RESULT" "$WORKERS_RESULT"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error::Staging deployment verification failed."
+              exit 1
+            fi
+          done
+
+          {
+            echo "## Staging deploy"
+            echo ""
+            echo "- Commit: ${{ github.sha }}"
+            echo "- Web verification: $WEB_RESULT"
+            echo "- Worker verification: $WORKERS_RESULT"
+          } >> "$GITHUB_STEP_SUMMARY"
