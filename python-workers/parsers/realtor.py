@@ -304,8 +304,9 @@ class RealtorExtractor:
 
         Primary score (``bucket``): distinct signal categories.
           * ``price``           — non-None list_price/price/current_price
-          * ``usable_address``  — address dict with >=2 of line/city/state/zip,
-                                  OR a usable location.address
+          * ``usable_address``  — direct ``address`` dict with >=2 of
+                                  line/city/state/zip (matches what
+                                  ``_next_to_raw`` actually projects)
           * ``structured_facts``— nested description dict (with beds/baths/sqft
                                   fields) OR top-level beds/baths/sqft/lot/
                                   year_built/year aliases
@@ -664,28 +665,27 @@ def _has_price_signal(prop: dict[str, Any]) -> bool:
 def _has_usable_address(prop: dict[str, Any]) -> bool:
     """True iff ``prop`` exposes >=2 populated address components.
 
-    Accepts both the direct ``address`` dict and the ``location.address``
-    nesting used by some Realtor templates. A lone city or a lone zip is
-    treated as insufficient — we want at least two of line/city/state/zip
-    to avoid scoring an obvious stub as usable.
+    Only the direct ``address`` dict is counted — that is the sole shape
+    ``_next_to_raw`` projects. Scoring ``location.address`` as usable
+    would let the ranker prefer a candidate whose address fields the
+    projector cannot actually extract, regressing a sibling with a real
+    ``address`` dict to a missing-field SchemaShiftError.
+    A lone city or a lone zip is insufficient — we want at least two of
+    line/city/state/zip to avoid scoring an obvious stub as usable.
     """
-    for address in (prop.get("address"), _safe_dict(prop, "location", "address")):
-        if not isinstance(address, dict):
-            continue
-        components = 0
-        if _clean_str(_first_present(address, "line", "street_address", "line1")):
-            components += 1
-        if _clean_str(address.get("city")):
-            components += 1
-        if _clean_str(_first_present(address, "state_code", "state")):
-            components += 1
-        if _clean_str(
-            _first_present(address, "postal_code", "zip", "zip_code")
-        ):
-            components += 1
-        if components >= 2:
-            return True
-    return False
+    address = prop.get("address")
+    if not isinstance(address, dict):
+        return False
+    components = 0
+    if _clean_str(_first_present(address, "line", "street_address", "line1")):
+        components += 1
+    if _clean_str(address.get("city")):
+        components += 1
+    if _clean_str(_first_present(address, "state_code", "state")):
+        components += 1
+    if _clean_str(_first_present(address, "postal_code", "zip", "zip_code")):
+        components += 1
+    return components >= 2
 
 
 def _has_structured_facts(prop: dict[str, Any]) -> bool:

@@ -793,3 +793,77 @@ class TestJsonLdMainEntityEdgeCases:
         assert prop.city == "Miami"
         assert prop.state == "FL"
         assert prop.postal_code == "33139"
+
+    def test_blank_residence_offer_falls_back_to_outer_offer(self) -> None:
+        """Codex P1 regression: a blank ``mainEntity.offers.price`` must not
+        override a real outer-node price.
+
+        Previously ``_merge_leaves`` treated an empty-string residence
+        price as authoritative, so the merged offers dict surfaced
+        ``price=""`` → ``_to_int`` → ``None`` → missing-price
+        ``SchemaShiftError``. ``_normalize_offers`` must drop placeholder
+        offers whose price is missing, ``None``, or blank so the outer
+        offer survives.
+        """
+        payload = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 640000},
+            "address": {
+                "@type": "PostalAddress",
+                "streetAddress": "77 Blank Price Ln",
+                "addressLocality": "Orlando",
+                "addressRegion": "FL",
+                "postalCode": "32801",
+            },
+            "mainEntity": {
+                "@type": "SingleFamilyResidence",
+                "numberOfBedrooms": 3,
+                "numberOfBathroomsTotal": 2,
+                "floorSize": {
+                    "@type": "QuantitativeValue",
+                    "value": 1_650,
+                    "unitText": "sqft",
+                },
+                "offers": {"@type": "Offer", "price": ""},
+            },
+        }
+        html = self._html_with_json_ld(payload)
+        url = "https://www.redfin.com/FL/Orlando/77-blank-price-ln/home/30000006"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+
+        # Outer offer must win when the residence offer is a blank placeholder.
+        assert prop.price_usd == 640_000
+        assert prop.beds == 3.0
+        assert prop.baths == 2.0
+        assert prop.living_area_sqft == 1_650
+
+    def test_blank_residence_offer_list_falls_back_to_outer(self) -> None:
+        """A list with only blank-price dicts on the residence side must also
+        fall back to the outer offer, not surface the blank dict and drop
+        the outer price via ``_merge_leaves``."""
+        payload = {
+            "@context": "https://schema.org",
+            "@type": "Product",
+            "offers": {"@type": "Offer", "price": 995000},
+            "address": {
+                "@type": "PostalAddress",
+                "streetAddress": "88 List Blank Ct",
+                "addressLocality": "Tampa",
+                "addressRegion": "FL",
+                "postalCode": "33602",
+            },
+            "mainEntity": {
+                "@type": "SingleFamilyResidence",
+                "numberOfBedrooms": 4,
+                "numberOfBathroomsTotal": 3,
+                "offers": [
+                    {"@type": "Offer", "price": None},
+                    {"@type": "Offer", "price": "   "},
+                ],
+            },
+        }
+        html = self._html_with_json_ld(payload)
+        url = "https://www.redfin.com/FL/Tampa/88-list-blank-ct/home/30000007"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+        assert prop.price_usd == 995_000

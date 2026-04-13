@@ -1513,3 +1513,65 @@ class TestNextDataPropertyDetailsEdgeCases:
         prop = RealtorExtractor().extract(html=html, source_url=url)
         # Zero must be preserved — not coerced to None or dropped.
         assert prop.year_built == 0
+
+    def test_location_address_sibling_does_not_outrank_real_address(self) -> None:
+        """Codex P1 regression: a sibling with only ``location.address`` must
+        NOT outrank an earlier candidate with a real ``address`` dict.
+
+        ``_next_to_raw`` only projects ``prop["address"]``. Previously
+        ``_has_usable_address`` also counted ``location.address``, which
+        gave a later sibling a higher bucket even though the projector
+        could not extract its address, causing the merged raw dict to
+        lose all address fields and raise ``SchemaShiftError``.
+        """
+        page_props = {
+            "property": {
+                "list_price": 725000,
+                "address": {
+                    "line": "500 Real Address Way",
+                    "city": "Weston",
+                    "state_code": "FL",
+                    "postal_code": "33326",
+                },
+                "description": {
+                    "beds": 3,
+                    "baths": 2,
+                    "sqft": 1800,
+                    "year_built": 2010,
+                },
+            },
+            "listing": {
+                "list_price": 725000,
+                "location": {
+                    "address": {
+                        "line": "IGNORED — location.address only",
+                        "city": "Fantasy City",
+                        "state_code": "FL",
+                        "postal_code": "00000",
+                    }
+                },
+                "description": {
+                    "beds": 3,
+                    "baths": 2,
+                    "sqft": 1800,
+                    "year_built": 2010,
+                    "lot_sqft": 8000,
+                },
+                "photos": [
+                    {"href": "https://ap.rdcpix.com/ignored-1.jpg"},
+                    {"href": "https://ap.rdcpix.com/ignored-2.jpg"},
+                ],
+            },
+        }
+        html = _html_with_next_data(page_props)
+        url = (
+            "https://www.realtor.com/realestateandhomes-detail/"
+            "500-Real-Address-Way_Weston_FL_33326_M55555-66666"
+        )
+        prop = RealtorExtractor().extract(html=html, source_url=url)
+        # The real `address` candidate must win — the `location.address`
+        # sibling is not projectable so it must not outrank.
+        assert prop.address_line1 == "500 Real Address Way"
+        assert prop.city == "Weston"
+        assert prop.postal_code == "33326"
+        assert prop.price_usd == 725_000

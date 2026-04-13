@@ -622,16 +622,26 @@ def _normalize_offers(raw: Any) -> dict[str, Any] | None:
 
     schema.org allows ``offers`` to be a single Offer dict, a list of
     Offer dicts, or a list that mixes dicts and scalars. Return the first
-    dict entry, or ``None`` when no usable dict is present — never an
-    empty list. This prevents ``_merge_leaves([], outer_offers)`` from
-    collapsing to ``[]`` and silently dropping the outer price.
+    dict entry whose ``price`` is populated, or ``None`` when no usable
+    dict is present — never an empty list.
+
+    Dicts whose ``price`` is missing, ``None``, or blank ``""`` are
+    treated as placeholders and dropped so the caller's residence-first
+    ``_merge_leaves`` falls back to the outer-node offer instead of
+    letting a blank residence price override a real outer price.
     """
+    candidates: list[dict[str, Any]] = []
     if isinstance(raw, dict):
-        return raw
-    if isinstance(raw, list):
-        for entry in raw:
-            if isinstance(entry, dict):
-                return entry
+        candidates.append(raw)
+    elif isinstance(raw, list):
+        candidates.extend(entry for entry in raw if isinstance(entry, dict))
+    for entry in candidates:
+        price = entry.get("price")
+        if price is None:
+            continue
+        if isinstance(price, str) and not price.strip():
+            continue
+        return entry
     return None
 
 
