@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { getCurrentUser, requireAuth } from "./lib/session";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { buildOfferFlowProfile, loadBuyerProfileView } from "./lib/buyerProfile";
 
 /**
  * Offer cockpit backend for KIN-791.
@@ -108,10 +109,11 @@ export const getCockpit = query({
 
     const buyerId = isOwner ? user._id : dealRoom.buyerId;
 
-    const [draft, scenarios, eligibility] = await Promise.all([
+    const [draft, scenarios, eligibility, buyerProfileView] = await Promise.all([
       loadDraft(ctx, args.dealRoomId, buyerId),
       loadOfferScenarios(ctx, dealRoom.propertyId),
       loadEligibility(ctx, buyerId, args.dealRoomId),
+      loadBuyerProfileView(ctx, buyerId, user.role !== "buyer"),
     ]);
 
     const formattedAddress =
@@ -126,6 +128,7 @@ export const getCockpit = query({
       draft,
       scenarios,
       eligibility,
+      buyerProfile: buildOfferFlowProfile(buyerProfileView),
       canEdit: isOwner && eligibility.isEligible,
       viewerRole: user.role,
     };

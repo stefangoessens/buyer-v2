@@ -19,6 +19,7 @@ import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+import { buildTourFlowProfile, loadBuyerProfileView } from "./lib/buyerProfile";
 
 /**
  * Look up the buyer's current signed agreement state directly from the
@@ -283,7 +284,7 @@ export const createDraft = mutation({
     dealRoomId: v.id("dealRooms"),
     propertyId: v.id("properties"),
     preferredWindows: v.array(windowValidator),
-    attendeeCount: v.number(),
+    attendeeCount: v.optional(v.number()),
     buyerNotes: v.optional(v.string()),
   },
   returns: v.id("tourRequests"),
@@ -312,6 +313,11 @@ export const createDraft = mutation({
       ctx,
       dealRoom.buyerId,
     );
+    const buyerProfile = buildTourFlowProfile(
+      await loadBuyerProfileView(ctx, dealRoom.buyerId, false),
+    );
+    const attendeeCount =
+      args.attendeeCount ?? buyerProfile.attendeeCountDefault;
 
     // Validate input BEFORE persisting. Invalid drafts never hit storage.
     // Import the validator dynamically to avoid circular deps with tests.
@@ -320,7 +326,7 @@ export const createDraft = mutation({
       dealRoomId: args.dealRoomId,
       propertyId: args.propertyId,
       preferredWindows: args.preferredWindows,
-      attendeeCount: args.attendeeCount,
+      attendeeCount,
       buyerNotes: args.buyerNotes,
       agreementStateSnapshot,
     }, now);
@@ -369,7 +375,7 @@ export const createDraft = mutation({
       entityId: id,
       details: JSON.stringify({
         propertyId: args.propertyId,
-        attendeeCount: args.attendeeCount,
+        attendeeCount: validation.attendeeCount,
         windowCount: args.preferredWindows.length,
       }),
       timestamp: now,
