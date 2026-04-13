@@ -81,9 +81,15 @@ describe("sitemap — KIN-812 regression", () => {
 
   it("does NOT include gated/private routes", () => {
     const urls = sitemap().map((e) => e.url);
+    expect(urls).not.toContain("https://buyerv2.com/intake");
     expect(urls).not.toContain("https://buyerv2.com/dashboard");
+    expect(urls).not.toContain("https://buyerv2.com/compare");
+    expect(urls).not.toContain("https://buyerv2.com/favourites");
+    expect(urls).not.toContain("https://buyerv2.com/profile");
+    expect(urls).not.toContain("https://buyerv2.com/reports");
     expect(urls).not.toContain("https://buyerv2.com/console");
     expect(urls).not.toContain("https://buyerv2.com/property");
+    expect(urls).not.toContain("https://buyerv2.com/dealroom");
   });
 });
 

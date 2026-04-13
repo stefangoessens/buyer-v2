@@ -6,7 +6,11 @@ import {
   findPublicCity,
 } from "@/lib/locations/selectors";
 import { CityPageTemplate } from "@/components/marketing/locations/CityPageTemplate";
-import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
+import {
+  metadataForCity,
+  metadataForMissingPage,
+  structuredDataForCity,
+} from "@/lib/seo/pageDefinitions";
 
 /**
  * Dynamic city landing page route (KIN-818).
@@ -35,24 +39,15 @@ export async function generateMetadata({
     // Unknown or draft slug → noindex. Mirrors the pattern used by
     // /blog/[slug] and /legal/[slug] so the route registry doesn't
     // need explicit entries for error states.
-    return buildMetadata({
+    return metadataForMissingPage({
       title: "City not found",
       description:
         "The city guide you're looking for doesn't exist, is still in draft, or has moved.",
       path: "/cities/not-found",
-      visibility: "gated",
-      kind: "system",
     });
   }
 
-  return buildMetadata({
-    title: city.pageTitle,
-    description: city.summary,
-    path: `/cities/${city.slug}`,
-    visibility: "public",
-    kind: "marketing",
-    lastModified: city.lastUpdated,
-  });
+  return metadataForCity(city);
 }
 
 export default async function CityPage({
@@ -67,14 +62,7 @@ export default async function CityPage({
     notFound();
   }
 
-  const jsonLd = buildStructuredData({
-    title: city.pageTitle,
-    description: city.summary,
-    path: `/cities/${city.slug}`,
-    visibility: "public",
-    kind: "marketing",
-    lastModified: city.lastUpdated,
-  });
+  const jsonLd = structuredDataForCity(city);
 
   return (
     <>

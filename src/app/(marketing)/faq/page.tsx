@@ -7,7 +7,10 @@ import {
 } from "@/components/marketing/content/ContentPageTemplate";
 import { FAQSection } from "@/components/marketing/content/FAQSection";
 import type { ContentPageMeta } from "@/lib/content/types";
-import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
+import {
+  metadataForStaticPage,
+  structuredDataForStaticPage,
+} from "@/lib/seo/pageDefinitions";
 
 const META: ContentPageMeta = {
   slug: "faq",
@@ -17,13 +20,7 @@ const META: ContentPageMeta = {
     "How buyer-v2 works, how the buyer credit is calculated, and what happens when you engage us — in plain language.",
 };
 
-export const metadata: Metadata = buildMetadata({
-  title: "FAQ",
-  description: META.description,
-  path: "/faq",
-  visibility: "public",
-  kind: "faq",
-});
+export const metadata: Metadata = metadataForStaticPage("faq");
 
 /**
  * FAQPage JSON-LD derived from the same filtered FAQ entries the
@@ -35,16 +32,7 @@ function buildFAQStructuredData() {
     question: e.question,
     answer: e.answer,
   }));
-  return buildStructuredData(
-    {
-      title: "FAQ",
-      description: META.description,
-      path: "/faq",
-      visibility: "public",
-      kind: "faq",
-    },
-    { faqEntries: entries }
-  );
+  return structuredDataForStaticPage("faq", { faqEntries: entries });
 }
 
 export default function FAQPage() {

@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { Card, CardContent } from "@/components/ui/card";
+import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
-export const metadata: Metadata = {
-  title: "Profile | buyer-v2",
-  description: "Account, notifications, and buyer preferences.",
-};
+export const metadata: Metadata = metadataForStaticPage("profile");
 
 export default function ProfilePage() {
   return (

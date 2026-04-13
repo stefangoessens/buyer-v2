@@ -11,7 +11,7 @@ import {
   DisclosureList,
 } from "@/components/marketing/content/PricingSections";
 import type { ContentPageMeta } from "@/lib/content/types";
-import { buildMetadata } from "@/lib/seo/builder";
+import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
 const META: ContentPageMeta = {
   slug: "pricing",
@@ -21,13 +21,7 @@ const META: ContentPageMeta = {
     "buyer-v2 never charges buyers up front. Our fee comes out of the buyer-agent commission at closing, and we rebate a portion of it back to you.",
 };
 
-export const metadata: Metadata = buildMetadata({
-  title: META.title,
-  description: META.description,
-  path: "/pricing",
-  visibility: "public",
-  kind: "marketing",
-});
+export const metadata: Metadata = metadataForStaticPage("pricing");
 
 export default function PricingPage() {
   const sections = filterPublic(PRICING_SECTIONS);

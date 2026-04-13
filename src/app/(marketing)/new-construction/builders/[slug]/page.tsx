@@ -7,7 +7,11 @@ import {
   findPublicBuilder,
 } from "@/lib/newConstruction/selectors";
 import { BuilderPageTemplate } from "@/components/marketing/newConstruction/BuilderPageTemplate";
-import { buildMetadata, buildStructuredData } from "@/lib/seo/builder";
+import {
+  metadataForMissingPage,
+  metadataForNewConstructionBuilder,
+  structuredDataForNewConstructionBuilder,
+} from "@/lib/seo/pageDefinitions";
 
 /**
  * Dynamic new-construction builder landing page (KIN-823).
@@ -35,24 +39,15 @@ export async function generateMetadata({
   const builder = findPublicBuilder(NEW_CONSTRUCTION_CATALOG, slug);
 
   if (!builder) {
-    return buildMetadata({
+    return metadataForMissingPage({
       title: "Builder not found",
       description:
         "The builder guide you're looking for doesn't exist, is still in draft, or has moved.",
       path: "/new-construction/builders/not-found",
-      visibility: "gated",
-      kind: "system",
     });
   }
 
-  return buildMetadata({
-    title: builder.pageTitle,
-    description: builder.summary,
-    path: `/new-construction/builders/${builder.slug}`,
-    visibility: "public",
-    kind: "marketing",
-    lastModified: builder.lastUpdated,
-  });
+  return metadataForNewConstructionBuilder(builder);
 }
 
 export default async function BuilderPage({
@@ -72,14 +67,7 @@ export default async function BuilderPage({
     builder.slug
   );
 
-  const jsonLd = buildStructuredData({
-    title: builder.pageTitle,
-    description: builder.summary,
-    path: `/new-construction/builders/${builder.slug}`,
-    visibility: "public",
-    kind: "marketing",
-    lastModified: builder.lastUpdated,
-  });
+  const jsonLd = structuredDataForNewConstructionBuilder(builder);
 
   return (
     <>

@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { Card, CardContent } from "@/components/ui/card";
+import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
-export const metadata: Metadata = {
-  title: "Reports | buyer-v2",
-  description: "All your deal-room reports and analyses.",
-};
+export const metadata: Metadata = metadataForStaticPage("reports");
 
 export default function ReportsPage() {
   return (

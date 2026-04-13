@@ -1,15 +1,8 @@
 import type { Metadata } from "next";
 import { SavingsCalculator } from "@/components/marketing/SavingsCalculator";
-import { buildMetadata } from "@/lib/seo/builder";
+import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
-export const metadata: Metadata = buildMetadata({
-  title: "Savings Calculator",
-  description:
-    "Estimate your buyer credit on a Florida home purchase. See how buyer-v2's commission rebate model works and what you could save at closing.",
-  path: "/savings",
-  visibility: "public",
-  kind: "marketing",
-});
+export const metadata: Metadata = metadataForStaticPage("savings");
 
 export default function SavingsPage() {
   return (
