@@ -1,8 +1,9 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { requireAuth } from "./lib/session";
 
-/** Request a tour — requires signed tour_pass agreement */
+/** Request a tour — requires a current signed governing agreement */
 export const requestTour = mutation({
   args: {
     dealRoomId: v.id("dealRooms"),
@@ -14,17 +15,15 @@ export const requestTour = mutation({
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
 
-    // Check for signed tour_pass agreement
-    const agreements = await ctx.db
-      .query("agreements")
-      .withIndex("by_buyerId_and_type", (q) =>
-        q.eq("buyerId", user._id).eq("type", "tour_pass")
-      )
-      .collect();
-    const hasTourPass = agreements.some((a) => a.status === "signed");
+    const governingAgreement = await ctx.runQuery(
+      internal.agreements.getCurrentGoverningInternal,
+      { buyerId: user._id },
+    );
 
-    if (!hasTourPass) {
-      throw new Error("A signed Tour Pass agreement is required before requesting a tour");
+    if (!governingAgreement || governingAgreement.status !== "signed") {
+      throw new Error(
+        "A signed Tour Pass or Full Representation agreement is required before requesting a tour",
+      );
     }
 
     // Validate deal room belongs to this buyer

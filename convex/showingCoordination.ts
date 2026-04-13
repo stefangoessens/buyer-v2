@@ -17,8 +17,10 @@
 
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { requireAuth } from "./lib/session";
 import type { Doc } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 
 // ═══ Inline filter helpers (mirror src/lib/tours/coordinationFilters.ts) ═══
 
@@ -58,46 +60,27 @@ function isStaleInternal(request: TourRequest, nowIso: string): boolean {
 }
 
 /**
- * Load the live agreement state for a buyer — the authoritative
- * current status (signed, canceled, replaced, etc.) derived from the
- * `agreements` table. Used by the prereq detector to catch agreements
- * that were canceled or replaced AFTER the tour request was submitted.
+ * Load the authoritative governing agreement state for a buyer using the
+ * typed read model in `convex/agreements.ts`. Used by the prereq detector
+ * to catch agreements that were canceled or replaced AFTER the tour request
+ * was submitted.
  */
+type AgreementReadCtx = Pick<QueryCtx, "runQuery"> | Pick<MutationCtx, "runQuery">;
+
 async function loadLiveAgreementState(
-  ctx: { db: { query: (t: "agreements") => unknown } } & { db: { query: typeof import("./_generated/server").query extends never ? never : (t: "agreements") => unknown } },
+  ctx: AgreementReadCtx,
   buyerId: TourRequest["buyerId"],
 ): Promise<{
   type: "none" | "tour_pass" | "full_representation";
   status: "none" | "draft" | "sent" | "signed" | "replaced" | "canceled";
 }> {
-  // Use a looser type for ctx.db since this runs from both query + mutation contexts.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db: any = (ctx as any).db;
-  const agreements = await db
-    .query("agreements")
-    .withIndex("by_buyerId", (q: { eq: (field: string, value: unknown) => unknown }) =>
-      q.eq("buyerId", buyerId),
-    )
-    .collect();
+  const governing = await ctx.runQuery(
+    internal.agreements.getCurrentGoverningInternal,
+    { buyerId },
+  );
 
-  // Prefer full_representation over tour_pass (stronger grant)
-  const signedFullRep = agreements
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((a: any) => a.type === "full_representation" && a.status === "signed")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .sort((a: any, b: any) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
-    .at(0);
-  if (signedFullRep) return { type: "full_representation", status: "signed" };
-
-  const signedTourPass = agreements
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((a: any) => a.type === "tour_pass" && a.status === "signed")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .sort((a: any, b: any) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
-    .at(0);
-  if (signedTourPass) return { type: "tour_pass", status: "signed" };
-
-  return { type: "none", status: "none" };
+  if (!governing) return { type: "none", status: "none" };
+  return { type: governing.type, status: governing.status };
 }
 
 function detectPrereqFailuresInternal(

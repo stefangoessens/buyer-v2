@@ -17,13 +17,13 @@
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 
 /**
- * Look up the buyer's current signed agreement state directly from the
- * `agreements` table. Returns the newest signed tour_pass OR
- * full_representation for this buyer, or null if none exists.
+ * Look up the buyer's authoritative current governing agreement using the
+ * typed backend read model from `convex/agreements.ts`.
  *
  * This is the source of truth for tour eligibility — never trust a
  * client-supplied agreement snapshot (security regression: a malicious
@@ -38,38 +38,24 @@ async function loadCurrentAgreementSnapshot(
   status: "none" | "draft" | "sent" | "signed" | "replaced" | "canceled";
   signedAt?: string;
 }> {
-  const agreements = await ctx.db
-    .query("agreements")
-    .withIndex("by_buyerId", (q) => q.eq("buyerId", buyerId))
-    .collect();
+  const governing = await ctx.runQuery(
+    internal.agreements.getCurrentGoverningInternal,
+    { buyerId },
+  );
 
-  // Prefer full_representation over tour_pass (it grants broader access).
-  // Within each type, pick the most recently signed.
-  const signedFullRep = agreements
-    .filter((a) => a.type === "full_representation" && a.status === "signed")
-    .sort((a, b) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
-    .at(0);
-  if (signedFullRep) {
+  if (!governing) {
     return {
-      type: "full_representation",
-      status: "signed",
-      signedAt: signedFullRep.signedAt,
+      type: "none",
+      status: "none",
+      signedAt: undefined,
     };
   }
 
-  const signedTourPass = agreements
-    .filter((a) => a.type === "tour_pass" && a.status === "signed")
-    .sort((a, b) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
-    .at(0);
-  if (signedTourPass) {
-    return {
-      type: "tour_pass",
-      status: "signed",
-      signedAt: signedTourPass.signedAt,
-    };
-  }
-
-  return { type: "none", status: "none" };
+  return {
+    type: governing.type,
+    status: governing.status,
+    signedAt: governing.signedAt,
+  };
 }
 
 // ═══ Inline input validation ═══
