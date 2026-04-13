@@ -335,6 +335,36 @@ describe("projectInternalSummary", () => {
     expect(summary.status).toBe("available");
     expect(summary.keyFacts.length).toBe(3);
   });
+
+  it("preserves raw severity on non-visible statuses (codex P2 fix)", () => {
+    // Codex flagged that projectInternalSummary was calling through
+    // projectBuyerSummary, which downgrades severity to "info" on
+    // pending/review_required/unavailable statuses. Broker/admin need
+    // the true severity for ops ordering, so the internal projection
+    // must preserve it.
+    const pending = projectInternalSummary(
+      mkAnalysis({
+        status: "queued",
+        severity: "critical",
+        extractedPageCount: 0,
+        totalPageCount: 0,
+      }),
+    );
+    expect(pending.status).toBe("pending");
+    expect(pending.severity).toBe("critical");
+
+    const reviewReq = projectInternalSummary(
+      mkAnalysis({ status: "review_required", severity: "high" }),
+    );
+    expect(reviewReq.status).toBe("review_required");
+    expect(reviewReq.severity).toBe("high");
+
+    const failed = projectInternalSummary(
+      mkAnalysis({ status: "failed", severity: "critical" }),
+    );
+    expect(failed.status).toBe("unavailable");
+    expect(failed.severity).toBe("critical");
+  });
 });
 
 describe("filterForBuyer", () => {

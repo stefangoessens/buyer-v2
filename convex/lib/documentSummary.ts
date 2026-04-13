@@ -76,18 +76,23 @@ export interface InternalDocumentSummary extends BuyerDocumentSummary {
   reviewedAt: string | null;
 }
 
-export function projectBuyerSummary(
+function buildBaseSummary(
   analysis: RawFileAnalysis,
+  severityPolicy: "raw" | "buyer_downgrade",
 ): BuyerDocumentSummary {
   const status = computeSummaryStatus(analysis);
+  const severity =
+    severityPolicy === "raw"
+      ? analysis.severity
+      : status === "available" || status === "partial"
+        ? analysis.severity
+        : "info";
   return {
     documentId: analysis.documentId,
     fileName: analysis.fileName,
     documentType: analysis.documentType,
     status,
-    severity: status === "available" || status === "partial"
-      ? analysis.severity
-      : "info",
+    severity,
     headline: buildHeadline(analysis, status),
     keyFacts: extractBuyerSafeFacts(analysis),
     progress: status === "partial" ? computeProgress(analysis) : null,
@@ -96,11 +101,17 @@ export function projectBuyerSummary(
   };
 }
 
+export function projectBuyerSummary(
+  analysis: RawFileAnalysis,
+): BuyerDocumentSummary {
+  return buildBaseSummary(analysis, "buyer_downgrade");
+}
+
 export function projectInternalSummary(
   analysis: RawFileAnalysis,
 ): InternalDocumentSummary {
   return {
-    ...projectBuyerSummary(analysis),
+    ...buildBaseSummary(analysis, "raw"),
     reviewState: analysis.reviewState,
     reviewNotes: analysis.reviewNotes ?? null,
     confidence: analysis.confidence,
@@ -193,9 +204,9 @@ export function filterForBuyer(
   return analyses.filter((a) => a.reviewState !== "rejected");
 }
 
-export function sortByPriority(
-  summaries: BuyerDocumentSummary[],
-): BuyerDocumentSummary[] {
+export function sortByPriority<T extends BuyerDocumentSummary>(
+  summaries: T[],
+): T[] {
   const severityOrder: Record<Severity, number> = {
     critical: 0,
     high: 1,

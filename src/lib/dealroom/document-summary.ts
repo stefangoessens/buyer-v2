@@ -109,22 +109,29 @@ export interface InternalDocumentSummary extends BuyerDocumentSummary {
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Project a raw file analysis into the buyer-safe summary shape.
- * Internal fields are stripped here — callers can never accidentally
- * leak them to a buyer-facing surface.
+ * Build the base summary row shared by buyer and internal projections.
+ * `severityPolicy` controls whether the raw engine severity is passed
+ * through ("raw" — used for broker/admin) or downgraded to "info" on
+ * non-visible statuses ("buyer_downgrade" — avoids showing a buyer a
+ * "critical" badge on a document that hasn't been approved yet).
  */
-export function projectBuyerSummary(
+function buildBaseSummary(
   analysis: RawFileAnalysis,
+  severityPolicy: "raw" | "buyer_downgrade",
 ): BuyerDocumentSummary {
   const status = computeSummaryStatus(analysis);
+  const severity =
+    severityPolicy === "raw"
+      ? analysis.severity
+      : status === "available" || status === "partial"
+        ? analysis.severity
+        : "info";
   return {
     documentId: analysis.documentId,
     fileName: analysis.fileName,
     documentType: analysis.documentType,
     status,
-    severity: status === "available" || status === "partial"
-      ? analysis.severity
-      : "info",
+    severity,
     headline: buildHeadline(analysis, status),
     keyFacts: extractBuyerSafeFacts(analysis),
     progress: status === "partial" ? computeProgress(analysis) : null,
@@ -133,12 +140,30 @@ export function projectBuyerSummary(
   };
 }
 
-/** Project into the full internal summary (broker/admin view). */
+/**
+ * Project a raw file analysis into the buyer-safe summary shape.
+ * Internal fields are stripped here — callers can never accidentally
+ * leak them to a buyer-facing surface. Severity is downgraded to
+ * "info" on non-visible statuses so buyers don't see urgency badges
+ * on unreviewed documents.
+ */
+export function projectBuyerSummary(
+  analysis: RawFileAnalysis,
+): BuyerDocumentSummary {
+  return buildBaseSummary(analysis, "buyer_downgrade");
+}
+
+/**
+ * Project into the full internal summary (broker/admin view).
+ * Preserves the raw severity — broker/admin need the true urgency
+ * level even on pending/review-required/unavailable analyses, or
+ * severity-based ops ordering hides urgent items.
+ */
 export function projectInternalSummary(
   analysis: RawFileAnalysis,
 ): InternalDocumentSummary {
   return {
-    ...projectBuyerSummary(analysis),
+    ...buildBaseSummary(analysis, "raw"),
     reviewState: analysis.reviewState,
     reviewNotes: analysis.reviewNotes ?? null,
     confidence: analysis.confidence,
@@ -288,10 +313,12 @@ export function filterForBuyer(
 /**
  * Sort summaries for the deal-room document panel: critical severity
  * first, then high → low → info, then most recently uploaded.
+ * Generic so InternalDocumentSummary passes through with its full
+ * type preserved.
  */
-export function sortByPriority(
-  summaries: BuyerDocumentSummary[],
-): BuyerDocumentSummary[] {
+export function sortByPriority<T extends BuyerDocumentSummary>(
+  summaries: T[],
+): T[] {
   const severityOrder: Record<Severity, number> = {
     critical: 0,
     high: 1,

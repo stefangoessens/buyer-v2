@@ -169,12 +169,12 @@ export const listByDealRoom = query({
       return { role: "buyer" as const, summaries };
     }
 
-    const summaries = raw.map(projectInternalSummary);
-    // Sort internal rows using the same severity order as buyer-facing rows.
-    const sorted = sortByPriority(summaries).map(
-      (_, i) => summaries[i],
-    );
-    return { role: "internal" as const, summaries: sorted };
+    // Sort internal rows using the same severity order as buyer-facing
+    // rows. `sortByPriority` returns the correctly ordered array; use
+    // it directly — reconstructing from the original unsorted array
+    // would bury high-severity items.
+    const summaries = sortByPriority(raw.map(projectInternalSummary));
+    return { role: "internal" as const, summaries };
   },
 });
 
