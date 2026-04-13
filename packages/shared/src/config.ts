@@ -77,18 +77,22 @@ export const webPublicEnvSpec = {
   NEXT_PUBLIC_AUTH_PROVIDER: {
     defaultValue: "clerk",
     description: "Primary web auth provider. Clerk is primary; Auth0 is the fallback.",
+    visibility: "public",
   },
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: {
     defaultValue: "",
     description: "Clerk publishable key for web session bootstrapping.",
+    visibility: "public",
   },
   NEXT_PUBLIC_AUTH0_DOMAIN: {
     defaultValue: "",
     description: "Fallback Auth0 tenant domain for browser auth flows.",
+    visibility: "public",
   },
   NEXT_PUBLIC_AUTH0_CLIENT_ID: {
     defaultValue: "",
     description: "Fallback Auth0 client ID for browser auth flows.",
+    visibility: "public",
   },
   NEXT_PUBLIC_POSTHOG_KEY: {
     defaultValue: "",
@@ -125,26 +129,32 @@ export const webServerEnvSpec = {
   CLERK_SECRET_KEY: {
     defaultValue: "",
     description: "Clerk server secret for Next.js server-side session validation.",
+    visibility: "server",
   },
   CLERK_JWT_ISSUER_DOMAIN: {
     defaultValue: "",
     description: "Issuer/domain for Clerk JWTs accepted by Convex.",
+    visibility: "server",
   },
   CONVEX_CLERK_APPLICATION_ID: {
     defaultValue: "convex",
     description: "Audience/application ID Convex should require for Clerk-issued tokens.",
+    visibility: "server",
   },
   AUTH0_ISSUER_BASE_URL: {
     defaultValue: "",
     description: "Fallback Auth0 issuer base URL accepted by Convex.",
+    visibility: "server",
   },
   AUTH0_API_AUDIENCE: {
     defaultValue: "",
     description: "Fallback Auth0 audience/application ID accepted by Convex.",
+    visibility: "server",
   },
   AUTH0_CLIENT_SECRET: {
     defaultValue: "",
     description: "Fallback Auth0 server secret for web session flows.",
+    visibility: "server",
   },
   ANTHROPIC_API_KEY: {
     defaultValue: "",
