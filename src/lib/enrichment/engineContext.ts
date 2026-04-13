@@ -2,7 +2,7 @@ import type {
   CompCandidate,
   LeverageInput,
   PricingInput,
-} from "@/lib/ai/engines/types";
+} from "../ai/engines/types";
 import type {
   ListingAgentProfile,
   NeighborhoodContext,

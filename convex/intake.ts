@@ -1,4 +1,5 @@
-import { mutation, internalMutation } from "./_generated/server";
+import { mutation, internalMutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 const PORTAL_PATTERNS = [
@@ -79,6 +80,20 @@ export const submitUrl = mutation({
         .first();
 
       if (existing) {
+        // If a previous run failed, kick off a retry rather than
+        // stranding the buyer on the failed state.
+        if (existing.status === "failed") {
+          await ctx.db.patch(existing._id, {
+            status: "pending",
+            errorCode: undefined,
+            errorMessage: undefined,
+          });
+          await ctx.scheduler.runAfter(
+            0,
+            internal.extractionRunner.runExtractionJob,
+            { sourceListingId: existing._id, url: trimmed },
+          );
+        }
         return {
           success: true as const,
           sourceListingId: existing._id,
@@ -93,6 +108,14 @@ export const submitUrl = mutation({
         extractedAt: new Date().toISOString(),
         status: "pending",
       });
+
+      // Fire-and-forget: the action will update the row through
+      // internal mutations as it progresses.
+      await ctx.scheduler.runAfter(
+        0,
+        internal.extractionRunner.runExtractionJob,
+        { sourceListingId: id, url: trimmed },
+      );
 
       return {
         success: true as const,
@@ -149,5 +172,39 @@ export const processUrl = internalMutation({
       });
     }
     return null;
+  },
+});
+
+/**
+ * Polling query for the paste-link flow. The client calls this
+ * repeatedly after `submitUrl` returns a sourceListingId — when
+ * status flips to "complete" the client redirects to the property
+ * page, and when it flips to "failed" the client renders the
+ * typed error with a retry affordance.
+ */
+export const getIntakeStatus = query({
+  args: { sourceListingId: v.id("sourceListings") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      status: v.string(),
+      sourceUrl: v.string(),
+      sourcePlatform: v.string(),
+      propertyId: v.optional(v.id("properties")),
+      errorCode: v.optional(v.string()),
+      errorMessage: v.optional(v.string()),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const listing = await ctx.db.get(args.sourceListingId);
+    if (!listing) return null;
+    return {
+      status: listing.status,
+      sourceUrl: listing.sourceUrl,
+      sourcePlatform: listing.sourcePlatform,
+      propertyId: listing.propertyId,
+      errorCode: listing.errorCode,
+      errorMessage: listing.errorMessage,
+    };
   },
 });

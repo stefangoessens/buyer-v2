@@ -200,6 +200,65 @@ export const webServerEnvSpec = {
     visibility: "server",
     required: true,
   },
+
+  // ─── Extraction service (Python FastAPI @ services/extraction/) ────
+  EXTRACTION_SERVICE_URL: {
+    defaultValue: "http://localhost:8000",
+    description:
+      "Base URL of the FastAPI extraction service. Convex actions POST to ${EXTRACTION_SERVICE_URL}/extract to fetch + parse a listing URL.",
+    visibility: "server",
+    format: "url",
+  },
+
+  // ─── Bright Data Web Unlocker (primary fetch path) ────────────────
+  BRIGHT_DATA_UNLOCKER_TOKEN: {
+    defaultValue: "",
+    description:
+      "Bright Data Web Unlocker API token. Read by the Python fetch client; never logged or returned in responses.",
+    visibility: "server",
+  },
+  BRIGHT_DATA_ZONE: {
+    defaultValue: "",
+    description:
+      "Name of the Bright Data zone configured as a Web Unlocker product (e.g. 'web_unlocker1'). Required whenever BRIGHT_DATA_UNLOCKER_TOKEN is set.",
+    visibility: "server",
+  },
+  BRIGHT_DATA_MAX_REQUESTS_PER_MIN: {
+    defaultValue: "60",
+    description: "Per-client Bright Data rate limit (requests/minute).",
+    visibility: "server",
+  },
+  BRIGHT_DATA_MONTHLY_BUDGET_USD: {
+    defaultValue: "500",
+    description: "Monthly Bright Data spend cap (USD) enforced in-process.",
+    visibility: "server",
+  },
+
+  // ─── Browser Use fallback (long-tail + parser drift recovery) ─────
+  BROWSER_USE_MODE: {
+    defaultValue: "off",
+    description:
+      "Browser Use fallback mode: 'cloud' (cloud.browser-use.com API), 'local' (OSS package), or 'off' (disabled).",
+    visibility: "server",
+  },
+  BROWSER_USE_API_KEY: {
+    defaultValue: "",
+    description:
+      "Browser Use Cloud API key (starts with bu_). Used when BROWSER_USE_MODE=cloud.",
+    visibility: "server",
+  },
+  BROWSER_USE_API_BASE_URL: {
+    defaultValue: "https://api.browser-use.com",
+    description: "Browser Use Cloud API host (no /api/v3 suffix).",
+    visibility: "server",
+    format: "url",
+  },
+  BROWSER_USE_LLM_MODEL: {
+    defaultValue: "claude-sonnet-4.6",
+    description:
+      "Model the Browser Use agent drives with. Cloud accepts 'gemini-3-flash', 'claude-sonnet-4.6', 'claude-opus-4.6'.",
+    visibility: "server",
+  },
 } as const satisfies EnvSpec;
 
 export const bootstrapEnvFiles = [
