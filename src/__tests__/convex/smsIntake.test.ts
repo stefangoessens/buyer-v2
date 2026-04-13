@@ -162,6 +162,23 @@ describe("convex/smsIntake.processInboundSms", () => {
     expect(tables.smsIntakeMessages).toHaveLength(1);
   });
 
+  it("returns an explicit invalid_url reply when the message has no listing URL", async () => {
+    const { ctx, tables } = createTestCtx();
+
+    const result = await processInboundSmsInternal(ctx as any, {
+      messageSid: "SM-text-only",
+      fromPhone: "+13055551234",
+      toPhone: "+14155550000",
+      body: "Can you text me the details?",
+    });
+
+    expect(result.outcome).toBe("invalid_url");
+    expect(result.replySent).toBe(true);
+    expect(result.replyBody).toContain("couldn't find a listing link");
+    expect(tables.sourceListings).toHaveLength(0);
+    expect(tables.smsIntakeMessages).toHaveLength(1);
+  });
+
   it("suppresses outbound replies for suppressed phone hashes", async () => {
     const normalized = normalizePhone("+13055551234");
     const phoneHash = await hashPhone(normalized!);

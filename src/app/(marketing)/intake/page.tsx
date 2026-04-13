@@ -18,19 +18,22 @@
 // not a discoverable surface).
 // ═══════════════════════════════════════════════════════════════════════════
 
+import React from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { parseListingUrl } from "@/lib/intake/parser";
+import { verifySignedLink } from "@/lib/intake/sms";
+import { getSmsSignedLinkSecret } from "@/lib/intake/smsServer";
 import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
 export const metadata: Metadata = metadataForStaticPage("intake");
 
 interface IntakePageProps {
-  searchParams: Promise<{ url?: string; source?: string }>;
+  searchParams: Promise<{ url?: string; source?: string; t?: string; sig?: string }>;
 }
 
 export default async function IntakePage({ searchParams }: IntakePageProps) {
-  const { url, source } = await searchParams;
+  const { url, source, t, sig } = await searchParams;
 
   if (!url) {
     return (
@@ -50,7 +53,43 @@ export default async function IntakePage({ searchParams }: IntakePageProps) {
     );
   }
 
-  const parsed = parseListingUrl(url);
+  let forwardedUrl = url;
+
+  if (source === "sms") {
+    const params = new URLSearchParams({
+      url,
+      source,
+    });
+    if (t) params.set("t", t);
+    if (sig) params.set("sig", sig);
+
+    const verified = await verifySignedLink(
+      `https://buyer-v2.local/intake?${params.toString()}`,
+      getSmsSignedLinkSecret(),
+    );
+
+    if (!verified.valid) {
+      return (
+        <main className="mx-auto max-w-xl px-6 py-16">
+          <h1 className="text-2xl font-semibold">This text link is invalid or expired</h1>
+          <p className="mt-4 text-neutral-600">
+            Reply with the listing link again to get a fresh buyer-v2 intake
+            link, or paste the listing on the homepage.
+          </p>
+          <Link
+            href="/"
+            className="mt-6 inline-block rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white"
+          >
+            Go to homepage
+          </Link>
+        </main>
+      );
+    }
+
+    forwardedUrl = verified.normalizedUrl;
+  }
+
+  const parsed = parseListingUrl(forwardedUrl);
 
   if (!parsed.success) {
     return (
