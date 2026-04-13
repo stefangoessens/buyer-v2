@@ -124,6 +124,17 @@ function validateInline(input: ValidationInput, nowIso: string): void {
     input.responseType === "compensation_confirmed" ||
     input.responseType === "compensation_disputed"
   ) {
+    // Require at least one concrete compensation field — otherwise the
+    // response is a vacuous "confirmed" with no actual data, which
+    // creates invalid review records.
+    if (
+      input.confirmedPct === undefined &&
+      input.confirmedFlat === undefined
+    ) {
+      throw new Error(
+        "MISSING_COMPENSATION_PAYLOAD: compensation_* responses require confirmedPct or confirmedFlat",
+      );
+    }
     if (
       typeof input.confirmedPct === "number" &&
       (input.confirmedPct < 0 || input.confirmedPct > 100)
@@ -290,13 +301,31 @@ export const submitResponse = mutation({
       .unique();
     const validToken = validateTokenForSubmission(token, args.dealRoomId, now);
 
-    // Verify the offer (if supplied) belongs to the same deal room
+    // Verify the offer (if supplied) belongs to the same deal room AND
+    // matches the token's offer scope if the token was issued for a
+    // specific offer. Without this check, a counterparty holding a token
+    // scoped to offer A could submit a response against offer B in the
+    // same room, bypassing the token's least-privilege boundary.
     if (args.offerId) {
       const offer = await ctx.db.get(args.offerId);
       if (!offer) throw new Error("Offer not found");
       if (offer.dealRoomId !== args.dealRoomId) {
         throw new Error("Offer does not belong to the specified deal room");
       }
+      if (
+        validToken.offerId !== undefined &&
+        validToken.offerId !== args.offerId
+      ) {
+        throw new Error(
+          "TOKEN_OFFER_SCOPE_MISMATCH: token is scoped to a specific offer that does not match the submission",
+        );
+      }
+    } else if (validToken.offerId !== undefined) {
+      // Token is scoped to an offer but the submission didn't target one.
+      // Reject: the caller must declare which offer they're responding to.
+      throw new Error(
+        "TOKEN_OFFER_SCOPE_MISMATCH: token is scoped to a specific offer but submission has no offerId",
+      );
     }
 
     // Validate the payload shape

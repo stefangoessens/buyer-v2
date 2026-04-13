@@ -221,6 +221,16 @@ export function validateListingResponse(
       };
     }
     const comp = input.compensation;
+    // Require at least one concrete compensation field — a compensation
+    // response with neither confirmedPct nor confirmedFlat is vacuous
+    // and creates invalid review records.
+    if (comp.confirmedPct === undefined && comp.confirmedFlat === undefined) {
+      return {
+        ok: false,
+        code: "missing_compensation_payload",
+        message: `${input.responseType} requires at least one of confirmedPct or confirmedFlat`,
+      };
+    }
     if (
       typeof comp.confirmedPct === "number" &&
       (comp.confirmedPct < 0 || comp.confirmedPct > 100)
