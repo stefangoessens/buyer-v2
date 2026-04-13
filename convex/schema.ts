@@ -372,9 +372,23 @@ export default defineSchema({
       v.literal("pending"),
       v.literal("accepted"),
       v.literal("rejected"),
-      v.literal("expired")
+      v.literal("expired"),
+      v.literal("withdrawn"),
+      v.literal("superseded")
     ),
-  }).index("by_offerId", ["offerId"]),
+    // KIN-792: version-history chain fields. A counter is "superseded"
+    // when a newer version is appended by the opposing party; "responded"
+    // when the receiver accepts/rejects it. `brokerNotes` and
+    // `responderUserId` are internal-only and stripped from buyer views
+    // by `projectBuyerChain`.
+    supersededAt: v.optional(v.string()),
+    respondedAt: v.optional(v.string()),
+    responderUserId: v.optional(v.id("users")),
+    brokerNotes: v.optional(v.string()),
+    expiresAt: v.optional(v.string()),
+  })
+    .index("by_offerId", ["offerId"])
+    .index("by_offerId_and_version", ["offerId", "version"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CONTRACTS
