@@ -21,6 +21,7 @@ import type * as buyerProfiles from "../buyerProfiles.js";
 import type * as buyerUpdateEvents from "../buyerUpdateEvents.js";
 import type * as closeDashboard from "../closeDashboard.js";
 import type * as communicationTemplates from "../communicationTemplates.js";
+import type * as contracts from "../contracts.js";
 import type * as copilot from "../copilot.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dealRooms from "../dealRooms.js";
@@ -85,6 +86,7 @@ declare const fullApi: ApiFromModules<{
   buyerUpdateEvents: typeof buyerUpdateEvents;
   closeDashboard: typeof closeDashboard;
   communicationTemplates: typeof communicationTemplates;
+  contracts: typeof contracts;
   copilot: typeof copilot;
   dashboard: typeof dashboard;
   dealRooms: typeof dealRooms;
