@@ -16,7 +16,8 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { supersessionReason } from "./lib/validators";
 
 // ═══ Helpers ═══
 
@@ -37,6 +38,17 @@ async function canReadBuyer(
 // to the algorithm must be made in BOTH places.
 
 type AgreementLike = Doc<"agreements">;
+
+export const SUPERSESSION_REASONS = [
+  "upgrade_to_full_representation",
+  "correction",
+  "amendment",
+  "renewal",
+  "replace_expired",
+  "broker_decision",
+] as const;
+
+export type SupersessionReason = (typeof SUPERSESSION_REASONS)[number];
 
 function walkChainInternal(
   head: AgreementLike,
@@ -67,7 +79,7 @@ function buildChainsInternal(
   return heads.map((head) => walkChainInternal(head, byId));
 }
 
-function resolveCurrentGoverningInternal(
+export function resolveCurrentGoverningFromRows(
   agreements: AgreementLike[],
 ): AgreementLike | null {
   const chains = buildChainsInternal(agreements);
@@ -85,6 +97,100 @@ function resolveCurrentGoverningInternal(
     .filter((a) => a.type === "tour_pass")
     .sort((a, b) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""));
   return tourPass[0] ?? null;
+}
+
+export async function applySupersessionState(
+  ctx: MutationCtx,
+  args: {
+    predecessor: AgreementLike;
+    successor: AgreementLike;
+    reason: SupersessionReason;
+    actorUserId?: Id<"users">;
+  },
+): Promise<{ supersededAt: string }> {
+  const { predecessor, successor } = args;
+
+  if (predecessor._id === successor._id) {
+    throw new Error("An agreement cannot supersede itself");
+  }
+
+  if (predecessor.buyerId !== successor.buyerId) {
+    throw new Error(
+      "Predecessor and successor must belong to the same buyer",
+    );
+  }
+
+  if (predecessor.status !== "signed") {
+    throw new Error(
+      `Cannot supersede predecessor in status "${predecessor.status}" — only signed agreements can be superseded`,
+    );
+  }
+
+  if (predecessor.replacedById !== undefined) {
+    throw new Error(
+      "Predecessor has already been superseded — resolve the existing chain first",
+    );
+  }
+
+  if (successor.status === "canceled" || successor.status === "replaced") {
+    throw new Error(
+      `Cannot use successor in status "${successor.status}" — successor must still be active in the chain`,
+    );
+  }
+
+  const allForBuyer = await ctx.db
+    .query("agreements")
+    .withIndex("by_buyerId", (q) => q.eq("buyerId", predecessor.buyerId))
+    .collect();
+
+  const existingPredecessorOfSuccessor = allForBuyer.find(
+    (agreement) => agreement.replacedById === successor._id,
+  );
+  if (existingPredecessorOfSuccessor) {
+    throw new Error(
+      `Successor is already the replacement for ${existingPredecessorOfSuccessor._id} — a successor can have at most one predecessor (linear chain invariant)`,
+    );
+  }
+
+  const byId = new Map(allForBuyer.map((agreement) => [agreement._id, agreement]));
+  let cursor: AgreementLike | undefined = successor;
+  const visited = new Set<Id<"agreements">>();
+  while (cursor) {
+    if (visited.has(cursor._id)) break;
+    visited.add(cursor._id);
+    if (cursor._id === predecessor._id) {
+      throw new Error(
+        "Cycle detected — successor's chain points back at predecessor",
+      );
+    }
+    if (!cursor.replacedById) break;
+    cursor = byId.get(cursor.replacedById);
+  }
+
+  const supersededAt = new Date().toISOString();
+  await ctx.db.patch(predecessor._id, {
+    status: "replaced",
+    replacedById: successor._id,
+    canceledAt: supersededAt,
+    supersededAt,
+    supersessionReason: args.reason,
+  });
+
+  await ctx.db.insert("auditLog", {
+    userId: args.actorUserId,
+    action: "agreement_superseded",
+    entityType: "agreements",
+    entityId: predecessor._id,
+    details: JSON.stringify({
+      predecessorId: predecessor._id,
+      successorId: successor._id,
+      reason: args.reason,
+      supersededAt,
+    }),
+    timestamp: supersededAt,
+  });
+
+  return { supersededAt };
 }
 
 // ═══ Queries ═══
@@ -110,7 +216,7 @@ export const resolveCurrentGoverning = query({
       .withIndex("by_buyerId", (q) => q.eq("buyerId", args.buyerId))
       .collect();
 
-    return resolveCurrentGoverningInternal(agreements);
+    return resolveCurrentGoverningFromRows(agreements);
   },
 });
 
@@ -192,14 +298,7 @@ export const supersede = mutation({
   args: {
     predecessorId: v.id("agreements"),
     successorId: v.id("agreements"),
-    reason: v.union(
-      v.literal("upgrade_to_full_representation"),
-      v.literal("correction"),
-      v.literal("amendment"),
-      v.literal("renewal"),
-      v.literal("replace_expired"),
-      v.literal("broker_decision"),
-    ),
+    reason: supersessionReason,
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -208,93 +307,17 @@ export const supersede = mutation({
       throw new Error("Only brokers/admins can supersede agreements");
     }
 
-    if (args.predecessorId === args.successorId) {
-      throw new Error("An agreement cannot supersede itself");
-    }
-
     const predecessor = await ctx.db.get(args.predecessorId);
     if (!predecessor) throw new Error("Predecessor agreement not found");
 
     const successor = await ctx.db.get(args.successorId);
     if (!successor) throw new Error("Successor agreement not found");
 
-    // Both must belong to the same buyer
-    if (predecessor.buyerId !== successor.buyerId) {
-      throw new Error(
-        "Predecessor and successor must belong to the same buyer",
-      );
-    }
-
-    // Predecessor must be signed to be superseded (cannot supersede a
-    // draft or canceled agreement — use cancel for those instead)
-    if (predecessor.status !== "signed") {
-      throw new Error(
-        `Cannot supersede predecessor in status "${predecessor.status}" — only signed agreements can be superseded`,
-      );
-    }
-
-    // Predecessor must not already be superseded
-    if (predecessor.replacedById !== undefined) {
-      throw new Error(
-        "Predecessor has already been superseded — resolve the existing chain first",
-      );
-    }
-
-    // Load all of this buyer's agreements once — we need them for both
-    // the single-predecessor check below AND the cycle walk further down.
-    const allForBuyer = await ctx.db
-      .query("agreements")
-      .withIndex("by_buyerId", (q) => q.eq("buyerId", predecessor.buyerId))
-      .collect();
-
-    // Enforce LINEAR chains: the successor must not ALREADY be pointed
-    // at by any other agreement's replacedById. Otherwise two calls
-    // like supersede(A, C) and supersede(B, C) would create a fan-in
-    // graph (A→C, B→C), making audit/history queries ambiguous because
-    // walkChain would only discover the first lineage it encounters.
-    const existingPredecessorOfSuccessor = allForBuyer.find(
-      (a) => a.replacedById === args.successorId,
-    );
-    if (existingPredecessorOfSuccessor) {
-      throw new Error(
-        `Successor is already the replacement for ${existingPredecessorOfSuccessor._id} — a successor can have at most one predecessor (linear chain invariant)`,
-      );
-    }
-
-    // Prevent creating a cycle: the successor must not (directly or
-    // transitively) point back at the predecessor.
-    const byId = new Map(allForBuyer.map((a) => [a._id, a]));
-    let cursor: Doc<"agreements"> | undefined = successor;
-    const visited = new Set<Id<"agreements">>();
-    while (cursor) {
-      if (visited.has(cursor._id)) break;
-      visited.add(cursor._id);
-      if (cursor._id === args.predecessorId) {
-        throw new Error(
-          "Cycle detected — successor's chain points back at predecessor",
-        );
-      }
-      if (!cursor.replacedById) break;
-      cursor = byId.get(cursor.replacedById);
-    }
-
-    const now = new Date().toISOString();
-    await ctx.db.patch(args.predecessorId, {
-      status: "replaced",
-      replacedById: args.successorId,
-      canceledAt: now,
-    });
-
-    await ctx.db.insert("auditLog", {
-      userId: user._id,
-      action: "agreement_superseded",
-      entityType: "agreements",
-      entityId: args.predecessorId,
-      details: JSON.stringify({
-        successorId: args.successorId,
-        reason: args.reason,
-      }),
-      timestamp: now,
+    await applySupersessionState(ctx, {
+      predecessor,
+      successor,
+      reason: args.reason,
+      actorUserId: user._id,
     });
 
     return null;

@@ -34,6 +34,15 @@ export const agreementStatus = v.union(
   v.literal("replaced")
 );
 
+export const supersessionReason = v.union(
+  v.literal("upgrade_to_full_representation"),
+  v.literal("correction"),
+  v.literal("amendment"),
+  v.literal("renewal"),
+  v.literal("replace_expired"),
+  v.literal("broker_decision")
+);
+
 // Offer statuses
 export const offerStatus = v.union(
   v.literal("draft"),

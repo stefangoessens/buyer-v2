@@ -280,6 +280,15 @@ export default defineSchema({
     documentStorageId: v.optional(v.id("_storage")),
     signedAt: v.optional(v.string()),
     canceledAt: v.optional(v.string()),
+    supersededAt: v.optional(v.string()),
+    supersessionReason: v.optional(v.union(
+      v.literal("upgrade_to_full_representation"),
+      v.literal("correction"),
+      v.literal("amendment"),
+      v.literal("renewal"),
+      v.literal("replace_expired"),
+      v.literal("broker_decision")
+    )),
     replacedById: v.optional(v.id("agreements")),
   })
     .index("by_dealRoomId", ["dealRoomId"])

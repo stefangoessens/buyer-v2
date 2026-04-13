@@ -32,6 +32,14 @@ export interface AgreementRecord {
   status: "draft" | "sent" | "signed" | "canceled" | "replaced";
   signedAt?: string;
   canceledAt?: string;
+  supersededAt?: string;
+  supersessionReason?:
+    | "upgrade_to_full_representation"
+    | "correction"
+    | "amendment"
+    | "renewal"
+    | "replace_expired"
+    | "broker_decision";
   replacedById?: string;
   _creationTime?: number;
 }

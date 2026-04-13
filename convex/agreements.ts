@@ -1,6 +1,11 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuth } from "./lib/session";
+import { supersessionReason } from "./lib/validators";
+import {
+  applySupersessionState,
+  resolveCurrentGoverningFromRows,
+} from "./agreementSupersession";
 
 // ═══ Queries ═══
 
@@ -22,7 +27,7 @@ export const getByDealRoom = query({
   },
 });
 
-/** Get the current governing agreement for a buyer (signed, not canceled/replaced) */
+/** Get the current governing agreement for a buyer. */
 export const getCurrentGoverning = query({
   args: { buyerId: v.id("users") },
   returns: v.any(),
@@ -38,10 +43,7 @@ export const getCurrentGoverning = query({
       .withIndex("by_buyerId", (q) => q.eq("buyerId", args.buyerId))
       .collect();
 
-    return agreements
-      .filter((a) => a.status === "signed")
-      .sort((a, b) => (b.signedAt ?? "").localeCompare(a.signedAt ?? ""))
-      .at(0) ?? null;
+    return resolveCurrentGoverningFromRows(agreements);
   },
 });
 
@@ -196,6 +198,7 @@ export const replaceAgreement = mutation({
     currentAgreementId: v.id("agreements"),
     newType: v.union(v.literal("tour_pass"), v.literal("full_representation")),
     documentStorageId: v.optional(v.id("_storage")),
+    reason: v.optional(supersessionReason),
   },
   returns: v.id("agreements"),
   handler: async (ctx, args) => {
@@ -208,12 +211,6 @@ export const replaceAgreement = mutation({
     if (!current) throw new Error("Current agreement not found");
     if (current.status !== "signed") throw new Error("Can only replace signed agreements");
 
-    // Cancel the current agreement
-    await ctx.db.patch(args.currentAgreementId, {
-      status: "replaced",
-      canceledAt: new Date().toISOString(),
-    });
-
     // Create the replacement — scoped to original buyer/deal room
     const newId = await ctx.db.insert("agreements", {
       dealRoomId: current.dealRoomId,
@@ -223,15 +220,29 @@ export const replaceAgreement = mutation({
       documentStorageId: args.documentStorageId,
     });
 
-    // Link replacement
-    await ctx.db.patch(args.currentAgreementId, { replacedById: newId });
+    const reason = args.reason ?? "broker_decision";
+    const successor = await ctx.db.get(newId);
+    if (!successor) {
+      throw new Error("Replacement agreement was not created");
+    }
+
+    await applySupersessionState(ctx, {
+      predecessor: current,
+      successor,
+      reason,
+      actorUserId: user._id,
+    });
 
     await ctx.db.insert("auditLog", {
       userId: user._id,
       action: "agreement_replaced",
       entityType: "agreements",
       entityId: args.currentAgreementId,
-      details: JSON.stringify({ replacedById: newId, newType: args.newType }),
+      details: JSON.stringify({
+        replacedById: newId,
+        newType: args.newType,
+        reason,
+      }),
       timestamp: new Date().toISOString(),
     });
 
