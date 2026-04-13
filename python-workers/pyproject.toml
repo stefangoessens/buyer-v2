@@ -15,6 +15,7 @@ dependencies = [
 dev = [
   "pytest>=8.3.0",
   "pytest-asyncio>=0.24.0",
+  "pytest-cov>=6.0.0",
   "respx>=0.22.0",
   "ruff>=0.8.0",
   "mypy>=1.13.0",
@@ -31,3 +32,4 @@ include = ["common*", "fetch*", "parsers*", "fallback*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--cov=common --cov=fetch --cov=parsers --cov=fallback --cov-report=term-missing --cov-fail-under=75"

@@ -56,6 +56,15 @@ pnpm workers:service:test
 pnpm workers:test
 ```
 
+## Testing
+
+- `pnpm test` runs the Vitest suite for web logic, contracts, Convex integration harnesses, and AI eval snapshots.
+- `pnpm test:e2e` runs the Playwright browser smoke checks against a local dev server with test env defaults.
+- `pnpm workers:test` runs the Python worker and extraction-service pytest suites with coverage thresholds.
+- `pnpm ios:test` runs the Swift package tests.
+- `pnpm test:eval` smoke-tests the pricing eval harness against the seeded fixture set.
+- Strategy, thresholds, fixture locations, and CI gates live in [docs/testing-strategy.md](./docs/testing-strategy.md).
+
 ## Dependency Boundaries
 
 - `@buyer-v2/web` may import from `@buyer-v2/shared` and its local `src/`.

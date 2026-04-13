@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://127.0.0.1:3000",
     trace: "on-first-retry",
   },
   projects: [
@@ -19,8 +19,15 @@ export default defineConfig({
   ],
   webServer: {
     command: "pnpm dev",
-    url: "http://localhost:3000",
+    url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
+    env: {
+      NEXT_PUBLIC_CONVEX_URL: "https://example.convex.cloud",
+      NEXT_PUBLIC_POSTHOG_KEY: "test-posthog-key",
+      NEXT_PUBLIC_POSTHOG_HOST: "https://us.i.posthog.com",
+      NEXT_PUBLIC_SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0",
+      NEXT_PUBLIC_APP_URL: "http://127.0.0.1:3000",
+    },
   },
 });

@@ -1,0 +1,16 @@
+{
+  "hasStoredPreferences": true,
+  "channels": {
+    "email": true,
+    "sms": true,
+    "push": false,
+    "inApp": true
+  },
+  "categories": {
+    "transactional": true,
+    "tours": false,
+    "offers": true,
+    "updates": true,
+    "marketing": true
+  }
+}
