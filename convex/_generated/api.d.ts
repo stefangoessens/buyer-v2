@@ -25,6 +25,8 @@ import type * as copilot from "../copilot.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dealRooms from "../dealRooms.js";
 import type * as deviceTokens from "../deviceTokens.js";
+import type * as enrichment from "../enrichment.js";
+import type * as enrichmentJobs from "../enrichmentJobs.js";
 import type * as engines_comps from "../engines/comps.js";
 import type * as engines_cost from "../engines/cost.js";
 import type * as engines_leverage from "../engines/leverage.js";
@@ -87,6 +89,8 @@ declare const fullApi: ApiFromModules<{
   dashboard: typeof dashboard;
   dealRooms: typeof dealRooms;
   deviceTokens: typeof deviceTokens;
+  enrichment: typeof enrichment;
+  enrichmentJobs: typeof enrichmentJobs;
   "engines/comps": typeof engines_comps;
   "engines/cost": typeof engines_cost;
   "engines/leverage": typeof engines_leverage;

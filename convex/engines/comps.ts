@@ -7,7 +7,7 @@ import { internal } from "../_generated/api";
 export const runCompsEngine = internalAction({
   args: {
     propertyId: v.id("properties"),
-    candidates: v.array(v.any()),
+    candidates: v.optional(v.array(v.any())),
   },
   returns: v.union(v.id("aiEngineOutputs"), v.null()),
   handler: async (ctx, args) => {
@@ -15,6 +15,11 @@ export const runCompsEngine = internalAction({
       propertyId: args.propertyId,
     });
     if (!property) return null;
+
+    const enrichment: any = await ctx.runQuery(
+      internal.enrichment.getForPropertyInternal,
+      { propertyId: args.propertyId },
+    );
 
     const { selectComps } = await import("../../src/lib/ai/engines/comps");
 
@@ -36,7 +41,12 @@ export const runCompsEngine = internalAction({
       listPrice: property.listPrice ?? 0,
     };
 
-    const result = selectComps({ subject, candidates: args.candidates });
+    const candidates =
+      args.candidates && args.candidates.length > 0
+        ? args.candidates
+        : enrichment?.engineInputs?.compsCandidates ?? [];
+
+    const result = selectComps({ subject, candidates });
 
     const outputId: any = await ctx.runMutation(
       internal.aiEngineOutputs.createOutput,
