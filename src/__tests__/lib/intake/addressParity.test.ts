@@ -23,7 +23,9 @@ describe("manual address normalization parity", () => {
   it.each([
     "500 Brickell Avenue Miami FL 33131",
     "7411 Avenir Grove Way, Palm Beach Gardens, Florida 33418",
+    "7411 Avenir Grove Way Palm Beach Gardens FL 33418",
     "2450 Oceanfront Blvd Apt 503, Hollywood, FL 33019",
+    "100 Ocean Blvd Apt 12 Miami Beach FL 33139",
     "123 Main St Suite 4B Miami FL 33131-1234",
   ])("normalizes %s the same way in web and Convex", (raw) => {
     expect(normalizeAddressServer({ raw })).toEqual(

@@ -141,6 +141,14 @@ export const STREET_SUFFIX_MAP: Readonly<Record<string, string>> = Object.freeze
   ALY: "Aly",
 });
 
+const UNIT_MARKERS: ReadonlySet<string> = new Set([
+  "UNIT",
+  "APT",
+  "APARTMENT",
+  "SUITE",
+  "STE",
+]);
+
 const ZIP_REGEX = /^\d{5}(-\d{4})?$/;
 
 function cleanWhitespace(value: string): string {
@@ -255,16 +263,57 @@ function parseRawAddress(raw: string): {
     city = parts[parts.length - 1];
     streetJoined = parts.slice(0, -1).join(", ");
   } else {
-    const words = withoutState.split(/\s+/).filter(Boolean);
-    if (words.length < 2) return null;
-    city = words[words.length - 1];
-    streetJoined = words.slice(0, -1).join(" ");
+    const parsed = splitCommaFreeStreetAndCity(withoutState);
+    if (!parsed) return null;
+    city = parsed.city;
+    streetJoined = parsed.streetJoined;
   }
 
   if (!streetJoined) return null;
 
   const { street, unit } = extractUnit(streetJoined);
   return { street, unit, city, state, zip };
+}
+
+function splitCommaFreeStreetAndCity(
+  value: string,
+): { streetJoined: string; city: string } | null {
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return null;
+
+  let boundary = -1;
+
+  for (let i = 0; i < words.length; i += 1) {
+    const token = words[i].replace(/\.$/, "").toUpperCase();
+    if (!(token in STREET_SUFFIX_MAP)) continue;
+
+    let end = i + 1;
+    const next = words[end];
+    if (next) {
+      const nextToken = next.replace(/\.$/, "").toUpperCase();
+      if (UNIT_MARKERS.has(nextToken)) {
+        if (!words[end + 1]) continue;
+        end += 2;
+      } else if (next.startsWith("#")) {
+        end += 1;
+      }
+    }
+
+    if (end >= words.length) continue;
+    boundary = end;
+  }
+
+  if (boundary === -1) {
+    return {
+      streetJoined: words.slice(0, -1).join(" "),
+      city: words[words.length - 1],
+    };
+  }
+
+  return {
+    streetJoined: words.slice(0, boundary).join(" "),
+    city: words.slice(boundary).join(" "),
+  };
 }
 
 function extractUnit(street: string): { street: string; unit?: string } {

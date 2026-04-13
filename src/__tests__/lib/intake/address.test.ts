@@ -385,6 +385,33 @@ describe("normalizeAddress — raw string input", () => {
       expect(result.canonical.state).toBe("FL");
     }
   });
+
+  it("parses comma-free raw address with multi-word city", () => {
+    const result = normalizeAddress({
+      raw: "7411 Avenir Grove Way Palm Beach Gardens FL 33418",
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.canonical.street).toBe("7411 Avenir Grove Way");
+      expect(result.canonical.city).toBe("Palm Beach Gardens");
+      expect(result.canonical.state).toBe("FL");
+      expect(result.canonical.zip).toBe("33418");
+    }
+  });
+
+  it("parses comma-free raw address with unit and multi-word city", () => {
+    const result = normalizeAddress({
+      raw: "100 Ocean Blvd Apt 12 Miami Beach FL 33139",
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.canonical.street).toBe("100 Ocean Blvd");
+      expect(result.canonical.unit).toBe("12");
+      expect(result.canonical.city).toBe("Miami Beach");
+      expect(result.canonical.state).toBe("FL");
+      expect(result.canonical.zip).toBe("33139");
+    }
+  });
 });
 
 describe("matchAddress — confidence scoring", () => {
