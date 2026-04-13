@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { getCurrentUser, requireAuth } from "./lib/session";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
+import { getPromptVersionRef } from "../packages/shared/src/prompt-registry";
 
 /**
  * Offer cockpit backend for KIN-791.
@@ -432,10 +433,19 @@ export const seedOfferScenarios = mutation({
       inputSummary: `List: $${list.toLocaleString()}, Fair value: $${fair.toLocaleString()}, Leverage: ${args.leverageScore ?? "N/A"}`,
       refreshable: true,
     };
+    const offerPromptRef = getPromptVersionRef("offer", "default");
 
     const id = await ctx.db.insert("aiEngineOutputs", {
       propertyId: dealRoom.propertyId,
       engineType: "offer",
+      promptKey: offerPromptRef.promptKey,
+      promptVersion: offerPromptRef.version,
+      inputSnapshot: JSON.stringify({
+        listPrice: list,
+        fairValue: fair,
+        leverageScore: args.leverageScore,
+        competingOffers: args.competingOffers,
+      }),
       confidence: 0.8,
       citations: [],
       reviewState: "pending",

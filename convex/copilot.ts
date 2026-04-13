@@ -3,6 +3,10 @@ import { query, mutation, action, internalQuery } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { requireAuth, getCurrentUser } from "./lib/session";
 import type { Id } from "./_generated/dataModel";
+import {
+  getPromptRegistryEntry,
+  getPromptVersionRef,
+} from "../packages/shared/src/prompt-registry";
 
 /**
  * Buyer copilot orchestrator backend (KIN-858).
@@ -207,6 +211,10 @@ export const ask = action({
     const { orchestrate } = await import("../src/lib/copilot/orchestrator");
     const { routeForIntent } = await import("../src/lib/copilot/router");
 
+    await ctx.runMutation(internal.promptRegistry.syncCatalogPrompts, {
+      activateMissing: true,
+    });
+
     const cockpit: any = await ctx.runQuery(api.dealRooms.get, {
       dealRoomId: args.dealRoomId,
     });
@@ -256,12 +264,58 @@ export const ask = action({
     };
 
     const { gateway } = await import("../src/lib/ai/gateway");
-    const {
-      COPILOT_CLASSIFIER_SYSTEM,
-      COPILOT_RESPONSE_SYSTEM,
-      COPILOT_GUARDED_GENERAL_SYSTEM,
-    } = await import("../src/lib/copilot/prompts");
+    const { renderTemplate } = await import("../src/lib/copilot/prompts");
     const { ALL_INTENTS } = await import("../src/lib/copilot/intents");
+
+    const activePromptRefs: Array<{
+      promptKey: string;
+      version: string;
+    }> = await ctx.runQuery(internal.promptRegistry.getActiveVersionRefs, {
+      engineType: "copilot",
+    });
+
+    const activeVersionsByKey = new Map(
+      activePromptRefs.map((ref) => [ref.promptKey, ref.version]),
+    );
+
+    const resolveCopilotPrompt = async (promptKey: string) => {
+      const fallbackRef = getPromptVersionRef("copilot", promptKey);
+      const version = activeVersionsByKey.get(promptKey) ?? fallbackRef.version;
+      const row: {
+        prompt: string;
+        systemPrompt?: string;
+        version: string;
+      } | null = await ctx.runQuery(internal.promptRegistry.getByVersion, {
+        engineType: "copilot",
+        promptKey,
+        version,
+      });
+
+      if (row) {
+        return {
+          prompt: row.prompt,
+          systemPrompt: row.systemPrompt ?? "",
+          version: row.version,
+        };
+      }
+
+      const fallback = getPromptRegistryEntry({ engineType: "copilot", promptKey });
+      return {
+        prompt: fallback.prompt,
+        systemPrompt: fallback.systemPrompt ?? "",
+        version: fallback.version,
+      };
+    };
+
+    const classifierPrompt = await resolveCopilotPrompt("classifier");
+    const guardedGeneralPrompt = await resolveCopilotPrompt("guarded_general");
+    const responsePrompts = {
+      pricing: await resolveCopilotPrompt("response_pricing"),
+      comps: await resolveCopilotPrompt("response_comps"),
+      costs: await resolveCopilotPrompt("response_costs"),
+      leverage: await resolveCopilotPrompt("response_leverage"),
+      offer: await resolveCopilotPrompt("response_offer"),
+    } as const;
 
     const FALLBACK_GUARDED =
       "I can only help with questions about this property and the buying process. Try asking about pricing, comps, offer terms, or next steps.";
@@ -270,8 +324,11 @@ export const ask = action({
       const result = await gateway({
         engineType: "copilot",
         messages: [
-          { role: "system", content: COPILOT_CLASSIFIER_SYSTEM },
-          { role: "user", content: `Question: ${question}\n\nIntent:` },
+          { role: "system", content: classifierPrompt.systemPrompt },
+          {
+            role: "user",
+            content: renderTemplate(classifierPrompt.prompt, { question }),
+          },
         ],
         maxTokens: 12,
         temperature: 0,
@@ -299,14 +356,25 @@ export const ask = action({
       engineRef: { snippet: string; engine: string },
       question: string,
     ) => {
-      void intent;
+      const promptKeyByIntent: Record<string, keyof typeof responsePrompts> = {
+        pricing: "pricing",
+        comps: "comps",
+        costs: "costs",
+        leverage: "leverage",
+        offer: "offer",
+      };
+      const prompt =
+        responsePrompts[promptKeyByIntent[intent] ?? "pricing"];
       const result = await gateway({
         engineType: "copilot",
         messages: [
-          { role: "system", content: COPILOT_RESPONSE_SYSTEM },
+          { role: "system", content: prompt.systemPrompt },
           {
             role: "user",
-            content: `Buyer question: ${question}\n\nEngine (${engineRef.engine}) output: ${engineRef.snippet}\n\nRender a short grounded answer (<=4 sentences). Cite the engine name.`,
+            content: renderTemplate(prompt.prompt, {
+              question,
+              engineOutput: `Engine (${engineRef.engine}) output: ${engineRef.snippet}`,
+            }),
           },
         ],
         maxTokens: 320,
@@ -325,10 +393,13 @@ export const ask = action({
       const result = await gateway({
         engineType: "copilot",
         messages: [
-          { role: "system", content: COPILOT_GUARDED_GENERAL_SYSTEM },
+          { role: "system", content: guardedGeneralPrompt.systemPrompt },
           {
             role: "user",
-            content: `Deal room context: ${dealContext}\n\nBuyer question: ${question}\n\nAnswer (<=3 sentences):`,
+            content: renderTemplate(guardedGeneralPrompt.prompt, {
+              dealContext,
+              question,
+            }),
           },
         ],
         maxTokens: 200,
@@ -357,6 +428,12 @@ export const ask = action({
     void routeForIntent; // imported for future use in the persisted route
 
     const responseText = result.response.text;
+    const responsePromptVersion =
+      result.classification.intent === "other"
+        ? guardedGeneralPrompt.version
+        : responsePrompts[
+            (result.classification.intent as keyof typeof responsePrompts) ?? "pricing"
+          ]?.version;
 
     const messageId: Id<"copilotMessages"> = await ctx.runMutation(
       api.copilot.appendMessage,
@@ -374,7 +451,7 @@ export const ask = action({
             ? (result.response.citations[0] as Id<"aiEngineOutputs">)
             : undefined,
         citations: result.response.citations,
-        promptVersion: "copilot_orchestrator_v1",
+        promptVersion: responsePromptVersion,
         stubbed: result.response.stubbed,
       },
     );

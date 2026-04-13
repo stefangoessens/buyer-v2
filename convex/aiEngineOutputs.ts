@@ -73,6 +73,9 @@ export const createOutput = internalMutation({
   args: {
     propertyId: v.id("properties"),
     engineType: v.string(),
+    promptKey: v.optional(v.string()),
+    promptVersion: v.string(),
+    inputSnapshot: v.optional(v.string()),
     confidence: v.number(),
     citations: v.array(v.string()),
     output: v.string(),
@@ -87,6 +90,9 @@ export const createOutput = internalMutation({
     return await ctx.db.insert("aiEngineOutputs", {
       propertyId: args.propertyId,
       engineType: args.engineType,
+      promptKey: args.promptKey,
+      promptVersion: args.promptVersion,
+      inputSnapshot: args.inputSnapshot,
       confidence: args.confidence,
       citations: args.citations,
       reviewState,

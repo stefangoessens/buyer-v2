@@ -442,6 +442,9 @@ export default defineSchema({
   aiEngineOutputs: defineTable({
     propertyId: v.id("properties"),
     engineType: v.string(),
+    promptKey: v.optional(v.string()),
+    promptVersion: v.optional(v.string()),
+    inputSnapshot: v.optional(v.string()),
     confidence: v.number(),
     citations: v.array(v.string()),
     reviewState: v.union(
@@ -456,6 +459,7 @@ export default defineSchema({
     reviewedAt: v.optional(v.string()),
   })
     .index("by_propertyId_and_engineType", ["propertyId", "engineType"])
+    .index("by_engineType_and_promptVersion", ["engineType", "promptVersion"])
     .index("by_reviewState", ["reviewState"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -464,6 +468,7 @@ export default defineSchema({
 
   promptRegistry: defineTable({
     engineType: v.string(),
+    promptKey: v.optional(v.string()),
     version: v.string(),
     prompt: v.string(),
     systemPrompt: v.optional(v.string()),
@@ -475,7 +480,11 @@ export default defineSchema({
   })
     .index("by_engineType", ["engineType"])
     .index("by_engineType_and_version", ["engineType", "version"])
-    .index("by_engineType_and_isActive", ["engineType", "isActive"]),
+    .index("by_engineType_and_isActive", ["engineType", "isActive"])
+    .index("by_engineType_and_promptKey", ["engineType", "promptKey"])
+    .index("by_engineType_and_promptKey_and_version", ["engineType", "promptKey", "version"])
+    .index("by_engineType_and_promptKey_and_isActive", ["engineType", "promptKey", "isActive"])
+    .index("by_isActive", ["isActive"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // FEE LEDGER & COMPENSATION (KIN-814)

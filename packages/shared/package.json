@@ -11,6 +11,7 @@
     "./config": "./src/config.ts",
     "./contracts": "./src/contracts.ts",
     "./launch-events": "./src/launch-events.ts",
+    "./prompt-registry": "./src/prompt-registry.ts",
     "./utils": "./src/utils.ts"
   },
   "scripts": {

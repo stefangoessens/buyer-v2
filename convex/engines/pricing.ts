@@ -14,9 +14,14 @@ import { gateway } from "../../src/lib/ai/gateway";
 export const runPricingEngine = internalAction({
   args: {
     propertyId: v.id("properties"),
+    promptVersion: v.string(),
   },
   returns: v.union(v.id("aiEngineOutputs"), v.null()),
   handler: async (ctx, args) => {
+    await ctx.runMutation(internal.promptRegistry.syncCatalogPrompts, {
+      activateMissing: true,
+    });
+
     // 1. Load property data
     const property: any = await ctx.runQuery(
       internal.properties.getInternal,
@@ -24,12 +29,18 @@ export const runPricingEngine = internalAction({
     );
     if (!property) return null;
 
-    // 2. Get active pricing prompt
+    // 2. Load the explicitly requested pricing prompt version
     const prompt: any = await ctx.runQuery(
-      internal.promptRegistry.getActivePrompt,
-      { engineType: "pricing" },
+      internal.promptRegistry.getByVersion,
+      {
+        engineType: "pricing",
+        promptKey: "default",
+        version: args.promptVersion,
+      },
     );
-    if (!prompt) return null;
+    if (!prompt) {
+      throw new Error(`Unknown pricing prompt version: ${args.promptVersion}`);
+    }
 
     const enrichment: any = await ctx.runQuery(
       internal.enrichment.getForPropertyInternal,
@@ -51,6 +62,7 @@ export const runPricingEngine = internalAction({
         redfinEstimate: property.redfinEstimate,
         realtorEstimate: property.realtorEstimate,
       };
+    const inputSnapshot = JSON.stringify(input);
 
     const request = buildPricingRequest(input, prompt.prompt, prompt.systemPrompt);
     const result = await gateway(request);
@@ -74,6 +86,9 @@ export const runPricingEngine = internalAction({
       {
         propertyId: args.propertyId,
         engineType: "pricing",
+        promptKey: "default",
+        promptVersion: args.promptVersion,
+        inputSnapshot,
         confidence: pricingOutput.overallConfidence,
         citations: pricingOutput.estimateSources,
         output: JSON.stringify(pricingOutput),

@@ -3,7 +3,7 @@
  * AI eval harness CLI (KIN-856).
  *
  * Usage:
- *   pnpm eval <engineType> [promptVersion] [--json]
+ *   pnpm eval <engineType> <promptVersion> [--json]
  *   pnpm eval:drift <engineType> <versionA> <versionB> [--json]
  *
  * Examples:
@@ -113,7 +113,7 @@ function printDriftReport(report: ReturnType<typeof detectDrift>): void {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.length === 0) {
-    console.error("Usage: pnpm eval <engineType> [promptVersion] [--json]");
+    console.error("Usage: pnpm eval <engineType> <promptVersion> [--json]");
     console.error(
       "       pnpm eval:drift <engineType> <versionA> <versionB> [--json]",
     );
@@ -162,8 +162,11 @@ async function main(): Promise<void> {
 
   // run mode
   const engineTypeRaw = args[0];
-  const promptVersion =
-    args.slice(1).find((a) => !a.startsWith("--")) ?? "latest";
+  const promptVersion = args.slice(1).find((a) => !a.startsWith("--"));
+  if (!promptVersion) {
+    console.error("Usage: pnpm eval <engineType> <promptVersion> [--json]");
+    process.exit(1);
+  }
   const engineType = engineTypeRaw as EngineType;
   const fixtures = loadFixtures(engineType) as Fixture<unknown, unknown>[];
   const scorer = SCORERS[engineType];

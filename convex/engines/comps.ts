@@ -7,10 +7,15 @@ import { internal } from "../_generated/api";
 export const runCompsEngine = internalAction({
   args: {
     propertyId: v.id("properties"),
+    promptVersion: v.string(),
     candidates: v.optional(v.array(v.any())),
   },
   returns: v.union(v.id("aiEngineOutputs"), v.null()),
   handler: async (ctx, args) => {
+    await ctx.runMutation(internal.promptRegistry.syncCatalogPrompts, {
+      activateMissing: true,
+    });
+
     const property: any = await ctx.runQuery(internal.properties.getInternal, {
       propertyId: args.propertyId,
     });
@@ -20,6 +25,17 @@ export const runCompsEngine = internalAction({
       internal.enrichment.getForPropertyInternal,
       { propertyId: args.propertyId },
     );
+    const prompt: any = await ctx.runQuery(
+      internal.promptRegistry.getByVersion,
+      {
+        engineType: "comps",
+        promptKey: "default",
+        version: args.promptVersion,
+      },
+    );
+    if (!prompt) {
+      throw new Error(`Unknown comps prompt version: ${args.promptVersion}`);
+    }
 
     const { selectComps } = await import("../../src/lib/ai/engines/comps");
 
@@ -45,6 +61,7 @@ export const runCompsEngine = internalAction({
       args.candidates && args.candidates.length > 0
         ? args.candidates
         : enrichment?.engineInputs?.compsCandidates ?? [];
+    const inputSnapshot = JSON.stringify({ subject, candidates });
 
     const result = selectComps({ subject, candidates });
 
@@ -53,6 +70,9 @@ export const runCompsEngine = internalAction({
       {
         propertyId: args.propertyId,
         engineType: "comps",
+        promptKey: "default",
+        promptVersion: args.promptVersion,
+        inputSnapshot,
         confidence:
           result.comps.length >= 3
             ? 0.85
@@ -61,7 +81,7 @@ export const runCompsEngine = internalAction({
               : 0.3,
         citations: result.comps.map((c) => c.sourceCitation),
         output: JSON.stringify(result),
-        modelId: "deterministic-v1",
+        modelId: prompt.model,
       },
     );
 
