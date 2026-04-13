@@ -2367,4 +2367,63 @@ export default defineSchema({
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
     .index("by_documentId", ["documentId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LISTING-SIDE RESPONSES (KIN-840)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Structured responses submitted by external counterparties (listing
+  // agents, brokers) via the limited external access token model from
+  // KIN-828. Each row is linked to the authorizing token and the
+  // targeted deal room (and optionally offer). Internal users review
+  // responses via a shared read model; buyers never see raw listing-
+  // side notes.
+
+  listingResponses: defineTable({
+    tokenId: v.id("externalAccessTokens"),
+    dealRoomId: v.id("dealRooms"),
+    offerId: v.optional(v.id("offers")),
+    propertyId: v.id("properties"),
+    counterpartyRole: v.union(
+      v.literal("listing_agent"),
+      v.literal("listing_broker"),
+      v.literal("cooperating_broker"),
+      v.literal("other"),
+    ),
+    responseType: v.union(
+      v.literal("offer_acknowledged"),
+      v.literal("offer_countered"),
+      v.literal("offer_rejected"),
+      v.literal("compensation_confirmed"),
+      v.literal("compensation_disputed"),
+      v.literal("generic_acknowledged"),
+    ),
+    message: v.optional(v.string()),
+    // Counter-offer fields (present when responseType = offer_countered)
+    counterPrice: v.optional(v.number()),
+    counterEarnestMoney: v.optional(v.number()),
+    counterClosingDate: v.optional(v.string()),
+    requestedConcessions: v.optional(v.string()),
+    sellerCreditsRequested: v.optional(v.number()),
+    // Compensation fields (present when responseType = compensation_*)
+    confirmedPct: v.optional(v.number()),
+    confirmedFlat: v.optional(v.number()),
+    disputeReason: v.optional(v.string()),
+    // Review state — set by internal users after triaging the response
+    reviewStatus: v.union(
+      v.literal("unreviewed"),
+      v.literal("acknowledged"),
+      v.literal("actioned"),
+      v.literal("dismissed"),
+    ),
+    reviewedBy: v.optional(v.id("users")),
+    reviewedAt: v.optional(v.string()),
+    reviewNotes: v.optional(v.string()),
+    submittedAt: v.string(),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_dealRoomId_and_submittedAt", ["dealRoomId", "submittedAt"])
+    .index("by_offerId", ["offerId"])
+    .index("by_tokenId", ["tokenId"])
+    .index("by_reviewStatus", ["reviewStatus"]),
 });
