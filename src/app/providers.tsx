@@ -1,6 +1,6 @@
 "use client";
 
-import { ConvexProvider } from "convex/react";
+import { ConvexAuthNextjsProvider } from "@convex-dev/auth/nextjs";
 import { type ReactNode } from "react";
 import { convex } from "@/lib/convex";
 import { PostHogProvider, PostHogPageView } from "@/lib/posthog";
@@ -18,7 +18,9 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <PostHogProvider>
       <PostHogPageView />
-      <ConvexProvider client={convex}>{children}</ConvexProvider>
+      <ConvexAuthNextjsProvider client={convex}>
+        {children}
+      </ConvexAuthNextjsProvider>
     </PostHogProvider>
   );
 }

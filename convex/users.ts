@@ -1,6 +1,7 @@
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { authProvider } from "./lib/validators";
 import { requireAuth, sessionUserValidator } from "./lib/session";
 
@@ -12,13 +13,39 @@ export const get = query({
   },
 });
 
+/**
+ * Convex Auth viewer. Returns the user id for the current session,
+ * or null if the caller is anonymous.
+ */
+export const viewer = query({
+  args: {},
+  returns: v.union(v.null(), v.id("users")),
+  handler: async (ctx) => {
+    return await getAuthUserId(ctx);
+  },
+});
+
+/**
+ * Returns the full user row for the current Convex Auth session,
+ * or null if the caller is anonymous or the id no longer resolves.
+ */
+export const current = query({
+  args: {},
+  returns: v.union(sessionUserValidator, v.null()),
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+    return await ctx.db.get(userId);
+  },
+});
+
 export const getByEmail = internalQuery({
   args: { email: v.string() },
   returns: v.union(sessionUserValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("users")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .withIndex("email", (q) => q.eq("email", args.email))
       .unique();
   },
 });

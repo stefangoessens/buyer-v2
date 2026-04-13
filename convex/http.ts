@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { auth } from "./auth";
 import {
   normalizeSabalWebhookPayload,
   readContractProviderConfig,
@@ -8,6 +9,8 @@ import {
 } from "./lib/contractProviders";
 
 const http = httpRouter();
+
+auth.addHttpRoutes(http);
 
 http.route({
   path: "/contracts/sabal-sign/webhook",
