@@ -101,6 +101,7 @@ describe("composeOverview — complete payload (happy path)", () => {
         engines: [mkEngine(), mkLeverageEngine(), mkCostEngine(), mkOfferEngine()],
       }),
     );
+    expect(result.variant).toBe("buyer_safe");
     expect(result.pricing.status).toBe("available");
     expect(result.leverage.status).toBe("available");
     expect(result.cost.status).toBe("available");
@@ -256,6 +257,7 @@ describe("composeOverview — role-based filtering", () => {
       mkInputs({ engines: [mkEngine()] }),
       { forRole: "buyer" },
     );
+    expect(result.variant).toBe("buyer_safe");
     expect(result.internal).toBeUndefined();
   });
 
@@ -270,6 +272,7 @@ describe("composeOverview — role-based filtering", () => {
       }),
       { forRole: "broker" },
     );
+    expect(result.variant).toBe("internal");
     expect(result.internal).toBeDefined();
     expect(result.internal?.providedBy).toContain("pricing");
     expect(result.internal?.providedBy).toContain("leverage");
@@ -281,6 +284,7 @@ describe("composeOverview — role-based filtering", () => {
       mkInputs({ engines: [mkEngine()] }),
       { forRole: "admin" },
     );
+    expect(result.variant).toBe("internal");
     expect(result.internal).toBeDefined();
   });
 

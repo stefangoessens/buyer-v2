@@ -64,22 +64,38 @@ export interface StatusBadge {
   nextAction: string | null;
 }
 
-export interface DealRoomOverview {
+export type DealRoomOverviewVariant = "buyer_safe" | "internal";
+
+interface BaseDealRoomOverview {
   dealRoomId: string;
   propertyId: string;
   updatedAt: string;
+  variant: DealRoomOverviewVariant;
   status: StatusBadge;
   pricing: SectionEnvelope<PricingSummary>;
   leverage: SectionEnvelope<LeverageSummary>;
   cost: SectionEnvelope<CostSummary>;
   offer: SectionEnvelope<OfferSummary>;
   isComplete: boolean;
-  internal?: {
+}
+
+export interface BuyerSafeDealRoomOverview extends BaseDealRoomOverview {
+  variant: "buyer_safe";
+  internal?: undefined;
+}
+
+export interface InternalDealRoomOverview extends BaseDealRoomOverview {
+  variant: "internal";
+  internal: {
     providedBy: string[];
     pendingEngines: string[];
     lastFullRefreshAt: string | null;
   };
 }
+
+export type DealRoomOverview =
+  | BuyerSafeDealRoomOverview
+  | InternalDealRoomOverview;
 
 export interface RawEngineOutput {
   engineType: string;
@@ -133,6 +149,7 @@ export function composeOverview(
     dealRoomId: inputs.dealRoomId,
     propertyId: inputs.propertyId,
     updatedAt: inputs.updatedAt,
+    variant: "buyer_safe",
     status: buildStatusBadge(inputs.dealStatus),
     pricing,
     leverage,
@@ -142,7 +159,11 @@ export function composeOverview(
   };
 
   if (options.forRole === "broker" || options.forRole === "admin") {
-    overview.internal = buildInternalSummary(inputs.engines);
+    return {
+      ...overview,
+      variant: "internal",
+      internal: buildInternalSummary(inputs.engines),
+    };
   }
 
   return overview;
