@@ -19,15 +19,16 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireAuth } from "./lib/session";
 import {
-  canRevoke,
-  computeStatus,
   generateShareLinkSlug,
   projectListRow,
-  resolveShareLink,
   sortForManagement,
   type RawShareLink,
-  type ShareLinkScope,
 } from "./lib/shareLink";
+import {
+  planCreateShareLink,
+  planResolveShareLink,
+  planRevokeShareLink,
+} from "./lib/shareLinkState";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Validators
@@ -60,7 +61,14 @@ const shareLinkRowValidator = v.object({
 // Helpers
 // ───────────────────────────────────────────────────────────────────────────
 
-function toRaw(doc: Doc<"dealRoomShareLinks">): RawShareLink {
+function toRaw(
+  doc: Doc<"dealRoomShareLinks">,
+): RawShareLink & {
+  _id: Id<"dealRoomShareLinks">;
+  dealRoomId: Id<"dealRooms">;
+  createdByUserId: Id<"users">;
+  revokedByUserId: Id<"users"> | null;
+} {
   return {
     _id: doc._id,
     dealRoomId: doc.dealRoomId,
@@ -143,58 +151,23 @@ export const resolveBySlug = mutation({
       .unique();
 
     const now = new Date().toISOString();
-    const result = resolveShareLink(row ? toRaw(row) : null, now);
+    const plan = planResolveShareLink(row ? toRaw(row) : null, args.slug, now);
 
-    if (!result.ok) {
-      if (row) {
-        // Known link, but denied — log to the typed events table.
-        await ctx.db.insert("dealRoomShareLinkEvents", {
-          linkId: row._id,
-          dealRoomId: row.dealRoomId,
-          event:
-            result.reason === "expired"
-              ? "denied_expired"
-              : "denied_revoked",
-          timestamp: now,
-        });
-      } else {
-        // Unknown slug — we have no linkId to reference, so log to the
-        // general auditLog table instead. Keeps probes observable for
-        // monitoring without loosening the events table schema. We
-        // never log the raw slug — it is the link secret — only a
-        // short prefix hash for correlation. (Codex P2)
-        await ctx.db.insert("auditLog", {
-          action: "deal_room_share_link_denied_not_found",
-          entityType: "dealRoomShareLinks",
-          entityId: "unknown",
-          details: JSON.stringify({
-            slugPrefix: args.slug.slice(0, 4),
-            slugLength: args.slug.length,
-          }),
-          timestamp: now,
-        });
+    if (!plan.ok) {
+      if (plan.event) {
+        await ctx.db.insert("dealRoomShareLinkEvents", plan.event);
       }
-      return { ok: false as const, reason: result.reason };
+      if (plan.audit) {
+        await ctx.db.insert("auditLog", plan.audit);
+      }
+      return plan.response;
     }
 
     // Success — record the resolved event and bump counters on the row.
-    await ctx.db.patch(row!._id, {
-      accessCount: row!.accessCount + 1,
-      lastAccessedAt: now,
-    });
-    await ctx.db.insert("dealRoomShareLinkEvents", {
-      linkId: row!._id,
-      dealRoomId: row!.dealRoomId,
-      event: "resolved",
-      timestamp: now,
-    });
+    await ctx.db.patch(row!._id, plan.patch);
+    await ctx.db.insert("dealRoomShareLinkEvents", plan.event);
 
-    return {
-      ok: true as const,
-      linkId: row!._id,
-      dealRoomId: row!.dealRoomId,
-      scope: result.resolved.scope,
-    };
+    return plan.response;
   },
 });
 
@@ -229,13 +202,6 @@ export const create = mutation({
       throw new Error("You are not authorized to share this deal room.");
     }
 
-    if (args.expiresAt) {
-      const now = new Date().toISOString();
-      if (args.expiresAt <= now) {
-        throw new Error("expiresAt must be in the future");
-      }
-    }
-
     const slug = generateShareLinkSlug((n) => {
       const out = new Uint8Array(n);
       crypto.getRandomValues(out);
@@ -267,44 +233,31 @@ export const create = mutation({
     }
 
     const now = new Date().toISOString();
-    // Attribute the link to the deal-room buyer, not the acting user.
-    // When staff creates "on behalf of" a buyer, the buyer must still
-    // own the lifecycle so they can revoke. The actual actor is
-    // captured in the event's `actorUserId`. (Codex P1)
-    const createdByUserId = dealRoom.buyerId;
-    const linkId = await ctx.db.insert("dealRoomShareLinks", {
-      dealRoomId: args.dealRoomId,
-      createdByUserId,
-      slug: finalSlug,
+    const plan = planCreateShareLink({
+      actor: {
+        userId: user._id,
+        role: user.role === "broker" || user.role === "admin" ? user.role : "buyer",
+      },
+      dealRoom: {
+        dealRoomId: args.dealRoomId,
+        buyerId: dealRoom.buyerId,
+      },
       scope: args.scope,
-      status: "active",
-      createdAt: now,
-      expiresAt: args.expiresAt,
-      accessCount: 0,
+      expiresAt: args.expiresAt ?? null,
+      now,
+      slug: finalSlug,
     });
 
+    const linkId = await ctx.db.insert("dealRoomShareLinks", plan.link);
+
     await ctx.db.insert("dealRoomShareLinkEvents", {
+      ...plan.event,
       linkId,
-      dealRoomId: args.dealRoomId,
-      event: "created",
-      actorUserId: user._id,
-      timestamp: now,
-      details: JSON.stringify({
-        scope: args.scope,
-        expiresAt: args.expiresAt ?? null,
-      }),
     });
 
     await ctx.db.insert("auditLog", {
-      userId: user._id,
-      action: "deal_room_share_link_created",
-      entityType: "dealRoomShareLinks",
+      ...plan.audit,
       entityId: linkId,
-      details: JSON.stringify({
-        dealRoomId: args.dealRoomId,
-        scope: args.scope,
-      }),
-      timestamp: now,
     });
 
     return { linkId, slug: finalSlug };
@@ -322,40 +275,25 @@ export const revoke = mutation({
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     const row = await ctx.db.get(args.linkId);
-    if (!row) throw new Error("Share link not found");
-
-    const raw = toRaw(row);
-    const role =
-      user.role === "broker" || user.role === "admin" ? user.role : "buyer";
-    const check = canRevoke(raw, user._id, role);
-    if (!check.ok) throw new Error(check.reason);
-
     const now = new Date().toISOString();
-    await ctx.db.patch(args.linkId, {
-      status: "revoked",
-      revokedAt: now,
-      revokedByUserId: user._id,
-    });
+    const plan = planRevokeShareLink(
+      row ? toRaw(row) : null,
+      {
+        userId: user._id,
+        role: user.role === "broker" || user.role === "admin" ? user.role : "buyer",
+      },
+      now,
+    );
 
-    await ctx.db.insert("dealRoomShareLinkEvents", {
-      linkId: args.linkId,
-      dealRoomId: row.dealRoomId,
-      event: "revoked",
-      actorUserId: user._id,
-      timestamp: now,
-    });
+    await ctx.db.patch(args.linkId, plan.patch);
 
-    await ctx.db.insert("auditLog", {
-      userId: user._id,
-      action: "deal_room_share_link_revoked",
-      entityType: "dealRoomShareLinks",
-      entityId: args.linkId,
-      timestamp: now,
-    });
+    await ctx.db.insert("dealRoomShareLinkEvents", plan.event);
+
+    await ctx.db.insert("auditLog", plan.audit);
 
     return null;
   },
 });
 
 // Re-export scope so clients have a single canonical type.
-export type { ShareLinkScope };
+export type { ShareLinkScope } from "./lib/shareLink";

@@ -70,7 +70,13 @@ export function computeStatus(
   now: string,
 ): ShareLinkDerivedStatus {
   if (link.status === "revoked") return "revoked";
-  if (link.expiresAt && link.expiresAt <= now) return "expired";
+  if (link.expiresAt) {
+    const nowMs = parseInstant(now);
+    const expiresMs = parseInstant(link.expiresAt);
+    if (nowMs === null || expiresMs === null || nowMs >= expiresMs) {
+      return "expired";
+    }
+  }
   return "active";
 }
 
@@ -159,6 +165,13 @@ export function sortForManagement(rows: ShareLinkRow[]): ShareLinkRow[] {
     const aStatus = statusOrder[a.derivedStatus];
     const bStatus = statusOrder[b.derivedStatus];
     if (aStatus !== bStatus) return aStatus - bStatus;
-    return b.createdAt.localeCompare(a.createdAt);
+    const aCreatedAt = parseInstant(a.createdAt) ?? 0;
+    const bCreatedAt = parseInstant(b.createdAt) ?? 0;
+    return bCreatedAt - aCreatedAt;
   });
+}
+
+function parseInstant(iso: string): number | null {
+  const parsed = Date.parse(iso);
+  return Number.isNaN(parsed) ? null : parsed;
 }

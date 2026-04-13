@@ -87,6 +87,24 @@ describe("computeStatus", () => {
       ),
     ).toBe("revoked");
   });
+
+  it("treats offset timestamps by real instant, not string order", () => {
+    expect(
+      computeStatus(
+        mk({ expiresAt: "2028-04-12T20:30:00+01:00" }),
+        "2028-04-12T19:45:00.000Z",
+      ),
+    ).toBe("expired");
+  });
+
+  it("fail-closes to expired when now is invalid", () => {
+    expect(
+      computeStatus(
+        mk({ expiresAt: "2028-04-12T20:30:00+01:00" }),
+        "not-a-timestamp",
+      ),
+    ).toBe("expired");
+  });
 });
 
 describe("resolveShareLink", () => {
