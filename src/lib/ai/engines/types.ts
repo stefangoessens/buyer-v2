@@ -241,3 +241,62 @@ export interface CalibrationRecord {
   modelId: string;
   recordedAt: string;
 }
+
+// ═══ Insights Engine Types ═══
+
+export type InsightCategory =
+  | "pricing"
+  | "market_position"
+  | "florida_risk"
+  | "seller_motivation"
+  | "hidden_cost"
+  | "condition"
+  | "negotiation";
+
+export type InsightSeverity = "info" | "positive" | "warning" | "critical";
+
+export interface Insight {
+  category: InsightCategory;
+  headline: string; // 1 line, <= 80 chars, specific and numeric
+  body: string; // 1-3 sentences, cites specific numbers and WHY it matters
+  severity: InsightSeverity;
+  confidence: number; // 0-1
+  // Premium insights stay gated on the anonymous /property teaser.
+  // Public insights show publicly. Set based on how much raw data
+  // went into producing it.
+  premium: boolean;
+  citations: string[]; // data field refs, e.g. ["property.listPrice", "comps.median"]
+}
+
+export interface InsightsInput {
+  propertyId: string;
+  property: {
+    listPrice: number | null;
+    address: { city: string; state: string; zip: string; formatted?: string };
+    propertyType: string | null;
+    beds: number | null;
+    bathsFull: number | null;
+    bathsHalf: number | null;
+    sqftLiving: number | null;
+    lotSize: number | null;
+    yearBuilt: number | null;
+    hoaFee: number | null;
+    daysOnMarket: number | null;
+    description: string | null;
+    sourcePlatform: string;
+  };
+  // Outputs from earlier engines the orchestrator ran. ALL optional
+  // — insights must produce something useful even with no comps.
+  pricingOutput?: unknown;
+  compsOutput?: unknown;
+  leverageOutput?: unknown;
+  offerOutput?: unknown;
+  costOutput?: unknown;
+}
+
+export interface InsightsOutput {
+  insights: Insight[];
+  overallConfidence: number;
+  generatedAt: string;
+  tokensUsed: number;
+}

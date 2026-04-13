@@ -8,6 +8,7 @@ import { CompsSummaryCard } from "./CompsSummaryCard";
 import { LeverageScoreCard } from "./LeverageScoreCard";
 import { OfferRecommendationCard } from "./OfferRecommendationCard";
 import { CostEstimateCard } from "./CostEstimateCard";
+import { PropertyInsightsCard } from "./PropertyInsightsCard";
 
 interface DealRoomOverviewProps {
   dealRoomId: Id<"dealRooms">;
@@ -46,6 +47,13 @@ export function DealRoomOverview({ dealRoomId }: DealRoomOverviewProps) {
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="lg:col-span-2">
+        <PropertyInsightsCard
+          variant="registered"
+          dealRoomId={dealRoomId}
+        />
+      </div>
+
       <PricingPanelCard
         status={overview.pricing.status}
         data={overview.pricing.data}
