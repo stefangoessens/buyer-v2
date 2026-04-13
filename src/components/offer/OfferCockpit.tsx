@@ -1,7 +1,9 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { api } from "../../../convex/_generated/api";
 import { useOfferCockpit } from "@/lib/dealroom/use-offer-cockpit";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { BrokerReviewBadge } from "./BrokerReviewBadge";
@@ -15,6 +17,24 @@ interface OfferCockpitProps {
   dealRoomId: Id<"dealRooms">;
 }
 
+type CompensationPromptView = {
+  status:
+    | "unknown"
+    | "seller_disclosed_off_mls"
+    | "negotiated_in_offer"
+    | "buyer_paid";
+  prompt: {
+    key: string;
+    title: string;
+    body: string;
+  };
+  summary: {
+    projectedClosingCredit: number;
+    buyerPaidAmount: number;
+    sellerPaidAmount: number;
+  };
+} | null;
+
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -23,6 +43,9 @@ const currency = new Intl.NumberFormat("en-US", {
 
 export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
   const cockpit = useOfferCockpit(dealRoomId);
+  const compensation = useQuery(api.ledger.getBuyerView, {
+    dealRoomId,
+  }) as CompensationPromptView | undefined;
 
   if (cockpit.loading) {
     return (
@@ -47,6 +70,10 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
   const { data } = cockpit;
   const scenarios = data.scenarios?.output;
   const disabled = !cockpit.canEdit;
+  const hasCompensationSummary =
+    (compensation?.summary.projectedClosingCredit ?? 0) > 0 ||
+    (compensation?.summary.sellerPaidAmount ?? 0) > 0 ||
+    (compensation?.summary.buyerPaidAmount ?? 0) > 0;
 
   return (
     <EligibilityGate
@@ -79,6 +106,52 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
           onSave={() => void cockpit.save()}
           onDiscard={() => cockpit.reset()}
         />
+
+        {compensation && (
+          <Card className="border-brand-primary/15 bg-brand-primary/[0.03]">
+            <CardContent className="space-y-3 p-5">
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-brand-primary/70">
+                  Compensation
+                </p>
+                <h2 className="text-base font-semibold text-neutral-900">
+                  {compensation.prompt.title}
+                </h2>
+                <p className="text-sm text-neutral-600">
+                  {compensation.prompt.body}
+                </p>
+              </div>
+              {hasCompensationSummary && (
+                <div className="grid gap-3 text-sm text-neutral-600 md:grid-cols-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">
+                      Seller-paid
+                    </p>
+                    <p className="mt-1 font-medium text-neutral-900">
+                      {currency.format(compensation.summary.sellerPaidAmount)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">
+                      Buyer-paid
+                    </p>
+                    <p className="mt-1 font-medium text-neutral-900">
+                      {currency.format(compensation.summary.buyerPaidAmount)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-neutral-500">
+                      Projected closing credit
+                    </p>
+                    <p className="mt-1 font-medium text-neutral-900">
+                      {currency.format(compensation.summary.projectedClosingCredit)}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {scenarios ? (
           <ScenarioComparison
