@@ -223,15 +223,15 @@ final class ShareImportService {
     private(set) var state: ShareImportState = .idle
 
     private let backend: ShareImportBackend
-    private let authState: () -> AuthState
+    private let authService: AuthService
     private var pendingUrl: String?
 
     init(
         backend: ShareImportBackend,
-        authState: @escaping () -> AuthState
+        authService: AuthService
     ) {
         self.backend = backend
-        self.authState = authState
+        self.authService = authService
     }
 
     /// Entry point for an incoming share URL.
@@ -265,7 +265,7 @@ final class ShareImportService {
     // MARK: - Private
 
     private func attemptImport(url: String, portal: ShareImportPortal) async {
-        switch authState() {
+        switch authService.state {
         case .signedOut, .restoring:
             pendingUrl = url
             state = .signInRequired(pendingUrl: url)
@@ -293,6 +293,7 @@ final class ShareImportService {
         } catch let ShareImportError.notAuthenticated {
             // Backend rejected our token — treat as session expired
             pendingUrl = url
+            await authService.handleTokenExpired()
             state = .sessionExpired(pendingUrl: url)
         } catch ShareImportError.invalidResponse {
             // Backend returned a malformed success payload (e.g.

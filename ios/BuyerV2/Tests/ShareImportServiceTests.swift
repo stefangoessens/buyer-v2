@@ -169,15 +169,27 @@ final class MockShareImportBackend: ShareImportBackend, @unchecked Sendable {
     }
 }
 
-// MARK: - Test helper
+private final class ShareImportAuthProvider: AuthProvider, @unchecked Sendable {
+    var authenticateResult: Result<AuthTokens, Error> = .success(
+        AuthTokens(
+            accessToken: "share-import-access",
+            refreshToken: "share-import-refresh",
+            expiresAt: .distantFuture
+        )
+    )
+    var validateResult: Result<AuthUser, Error> = .success(makeSignedInUser())
 
-private struct StubAuthStateHolder: @unchecked Sendable {
-    var state: AuthState
-}
+    func authenticate(email: String, password: String) async throws -> AuthTokens {
+        try authenticateResult.get()
+    }
 
-@MainActor
-private final class MutableAuthState: @unchecked Sendable {
-    var state: AuthState = .signedOut
+    func refreshToken(_ refreshToken: String) async throws -> AuthTokens {
+        try authenticateResult.get()
+    }
+
+    func validateToken(_ token: String) async throws -> AuthUser {
+        try validateResult.get()
+    }
 }
 
 private func makeSignedInUser() -> AuthUser {
@@ -193,6 +205,31 @@ private struct StubImportError: Error {
     let message: String
 }
 
+@MainActor
+private func makeAuthService(state: AuthState) async -> AuthService {
+    let provider = ShareImportAuthProvider()
+    provider.validateResult = .success(makeSignedInUser())
+    let service = AuthService(provider: provider)
+
+    switch state {
+    case .restoring:
+        return service
+    case .signedOut:
+        await service.signOut()
+    case .signedIn:
+        try? await service.signIn(email: "buyer@example.com", password: "pass")
+    case .expired:
+        try? await service.signIn(email: "buyer@example.com", password: "pass")
+        await service.handleTokenExpired()
+    case .authUnavailable:
+        try? await service.signIn(email: "buyer@example.com", password: "pass")
+        provider.validateResult = .failure(AuthError.invalidResponse)
+        await service.initialize()
+    }
+
+    return service
+}
+
 // MARK: - Service tests
 
 @Suite("ShareImportService state transitions", .serialized)
@@ -202,9 +239,10 @@ struct ShareImportServiceTests {
     @Test("initial state is .idle")
     func testInitialState() {
         let backend = MockShareImportBackend()
+        let authService = AuthService(provider: ShareImportAuthProvider())
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
         guard case .idle = service.state else {
             Issue.record("Expected .idle")
@@ -217,6 +255,7 @@ struct ShareImportServiceTests {
     @Test("signed-in + valid URL + existing deal room → .imported(.existingDealRoom)")
     func testSignedInExistingDealRoom() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         backend.submitResult = .success(
             ShareImportBackendResponse(
                 kind: .existing,
@@ -226,7 +265,7 @@ struct ShareImportServiceTests {
         )
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL(
@@ -245,6 +284,7 @@ struct ShareImportServiceTests {
     @Test("signed-in + valid URL + new intake job → .imported(.newIntakeJob)")
     func testSignedInNewIntakeJob() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         backend.submitResult = .success(
             ShareImportBackendResponse(
                 kind: .created,
@@ -254,7 +294,7 @@ struct ShareImportServiceTests {
         )
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL(
@@ -273,9 +313,10 @@ struct ShareImportServiceTests {
     @Test("signed-out → .signInRequired(pendingUrl)")
     func testSignedOutStashesPending() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedOut)
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedOut }
+            authService: authService
         )
 
         let url = "https://www.zillow.com/homedetails/123"
@@ -292,6 +333,7 @@ struct ShareImportServiceTests {
     @Test("resumePendingImport after sign-in completes successfully")
     func testResumePendingImport() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedOut)
         backend.submitResult = .success(
             ShareImportBackendResponse(
                 kind: .created,
@@ -300,12 +342,9 @@ struct ShareImportServiceTests {
             )
         )
 
-        // Start signed out
-        let mutableAuth = MutableAuthState()
-        mutableAuth.state = .signedOut
         let service = ShareImportService(
             backend: backend,
-            authState: { mutableAuth.state }
+            authService: authService
         )
 
         await service.handleSharedURL("https://www.zillow.com/homedetails/xyz")
@@ -315,7 +354,7 @@ struct ShareImportServiceTests {
         }
 
         // Simulate sign-in completing
-        mutableAuth.state = .signedIn(user: makeSignedInUser())
+        try? await authService.signIn(email: "buyer@example.com", password: "pass")
         await service.resumePendingImport()
 
         guard case .imported(let outcome) = service.state else {
@@ -330,9 +369,10 @@ struct ShareImportServiceTests {
     @Test("expired session → .sessionExpired(pendingUrl)")
     func testExpiredSession() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .expired)
         let service = ShareImportService(
             backend: backend,
-            authState: { .expired }
+            authService: authService
         )
 
         await service.handleSharedURL("https://www.zillow.com/homedetails/abc")
@@ -348,16 +388,21 @@ struct ShareImportServiceTests {
     @Test("backend 401 → .sessionExpired (treated like token revocation)")
     func testBackend401() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         backend.submitResult = .failure(ShareImportError.notAuthenticated)
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL("https://www.zillow.com/homedetails/abc")
 
         guard case .sessionExpired = service.state else {
             Issue.record("Expected .sessionExpired")
+            return
+        }
+        guard case .expired = authService.state else {
+            Issue.record("Expected auth service to move to .expired, got \(authService.state)")
             return
         }
     }
@@ -367,9 +412,10 @@ struct ShareImportServiceTests {
     @Test("unsupported portal → .invalid(.unsupportedPortal)")
     func testUnsupportedPortal() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL("https://www.trulia.com/home/123")
@@ -385,9 +431,10 @@ struct ShareImportServiceTests {
     @Test("empty URL → .invalid(.emptyInput)")
     func testEmptyURL() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL("")
@@ -402,9 +449,10 @@ struct ShareImportServiceTests {
     @Test("malformed URL → .invalid(.malformedURL) or similar")
     func testMalformedURL() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL("not a url")
@@ -420,10 +468,11 @@ struct ShareImportServiceTests {
     @Test("network error → .error(message) with pending URL preserved")
     func testNetworkError() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         backend.submitResult = .failure(StubImportError(message: "offline"))
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         let url = "https://www.zillow.com/homedetails/123"
@@ -458,6 +507,7 @@ struct ShareImportServiceTests {
         // error — fabricating an empty string would silently break
         // downstream navigation.
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         backend.submitResult = .success(
             ShareImportBackendResponse(
                 kind: .existing,
@@ -467,7 +517,7 @@ struct ShareImportServiceTests {
         )
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL("https://www.zillow.com/homedetails/x")
@@ -481,6 +531,7 @@ struct ShareImportServiceTests {
     @Test("kind=existing with empty dealRoomId → .error")
     func testEmptyDealRoomIdError() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         backend.submitResult = .success(
             ShareImportBackendResponse(
                 kind: .existing,
@@ -490,7 +541,7 @@ struct ShareImportServiceTests {
         )
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL("https://www.zillow.com/homedetails/x")
@@ -504,6 +555,7 @@ struct ShareImportServiceTests {
     @Test("kind=created with missing intakeJobId → .error")
     func testMissingIntakeJobIdError() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedIn(user: makeSignedInUser()))
         backend.submitResult = .success(
             ShareImportBackendResponse(
                 kind: .created,
@@ -513,7 +565,7 @@ struct ShareImportServiceTests {
         )
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedIn(user: makeSignedInUser()) }
+            authService: authService
         )
 
         await service.handleSharedURL("https://www.redfin.com/FL/Miami/123/home/1")
@@ -529,9 +581,10 @@ struct ShareImportServiceTests {
     @Test("dismiss clears pendingUrl and returns to idle")
     func testDismiss() async {
         let backend = MockShareImportBackend()
+        let authService = await makeAuthService(state: .signedOut)
         let service = ShareImportService(
             backend: backend,
-            authState: { .signedOut }
+            authService: authService
         )
         await service.handleSharedURL("https://www.zillow.com/homedetails/z")
 

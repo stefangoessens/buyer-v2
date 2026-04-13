@@ -58,6 +58,14 @@ struct AuthTokens: Sendable {
     let expiresAt: Date
 }
 
+enum AuthPhase: String, Sendable, Codable, Equatable {
+    case signedOut = "signed_out"
+    case restoring
+    case signedIn = "signed_in"
+    case expired
+    case authUnavailable = "auth_unavailable"
+}
+
 // MARK: - AuthState
 
 enum AuthState: Sendable, Equatable {
@@ -66,4 +74,33 @@ enum AuthState: Sendable, Equatable {
     case signedIn(user: AuthUser)
     case expired
     case authUnavailable
+}
+
+extension AuthState {
+
+    var phase: AuthPhase {
+        switch self {
+        case .signedOut:
+            return .signedOut
+        case .restoring:
+            return .restoring
+        case .signedIn:
+            return .signedIn
+        case .expired:
+            return .expired
+        case .authUnavailable:
+            return .authUnavailable
+        }
+    }
+
+    var user: AuthUser? {
+        guard case .signedIn(let user) = self else {
+            return nil
+        }
+        return user
+    }
+
+    var allowsProtectedContent: Bool {
+        phase == .signedIn
+    }
 }

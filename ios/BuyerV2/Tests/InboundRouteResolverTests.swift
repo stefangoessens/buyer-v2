@@ -417,7 +417,7 @@ struct InboundRouteResolverTests {
         provider.validateResult = .success(makeUser())
         let authService = AuthService(provider: provider)
         try await authService.signIn(email: "buyer@example.com", password: "pw")
-        authService.handleTokenExpired()
+        await authService.handleTokenExpired()
         guard case .expired = authService.state else {
             Issue.record("Pre-condition failed: expected .expired")
             return

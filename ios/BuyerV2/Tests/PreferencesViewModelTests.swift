@@ -51,6 +51,15 @@ struct PreferencesViewModelDisplayTests {
         #expect(vm.display() == .loading)
     }
 
+    @Test("auth unavailable maps to signedOut")
+    func testAuthUnavailableMapsSignedOut() {
+        let vm = PreferencesViewModel(
+            authState: .authUnavailable,
+            serviceState: .loaded(.default, hasStored: true)
+        )
+        #expect(vm.display() == .signedOut)
+    }
+
     // MARK: - Loading
 
     @Test("signed-in + idle service → loading")

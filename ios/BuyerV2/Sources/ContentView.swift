@@ -14,11 +14,18 @@ struct ContentView: View {
     @State private var tasksService = DealTasksService()
     @State private var timelineService = DealTimelineService()
     @State private var cacheCoordinator = DealCacheCoordinator()
-    @State private var preferencesService = MessagePreferencesService(
-        backend: ConvexMessagePreferencesBackend(
-            tokenProvider: { await AuthService.loadAccessToken() }
+    @State private var preferencesService: MessagePreferencesService
+
+    init(user: AuthUser, authService: AuthService) {
+        self.user = user
+        _preferencesService = State(
+            initialValue: MessagePreferencesService(
+                backend: ConvexMessagePreferencesBackend(
+                    tokenProvider: { await authService.accessToken() }
+                )
+            )
         )
-    )
+    }
 
     var body: some View {
         DealTrackerShell(user: user)

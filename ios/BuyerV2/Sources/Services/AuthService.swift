@@ -108,10 +108,10 @@ enum AuthError: Error {
 final class AuthService {
 
     private(set) var state: AuthState = .restoring
+    private var credentials: SessionCredentials?
 
     var isAuthenticated: Bool {
-        if case .signedIn = state { return true }
-        return false
+        state.allowsProtectedContent
     }
 
     private let provider: AuthProvider
@@ -128,52 +128,115 @@ final class AuthService {
 
     func initialize() async {
         do {
-            guard let tokenData = try await keychain.load(key: Self.accessTokenKey),
-                  let token = String(data: tokenData, encoding: .utf8)
-            else {
+            let accessToken = try await loadToken(for: Self.accessTokenKey)
+            let refreshToken = try await loadToken(for: Self.refreshTokenKey)
+
+            guard accessToken != nil || refreshToken != nil else {
+                credentials = nil
                 state = .signedOut
                 return
             }
-            let user = try await provider.validateToken(token)
-            state = .signedIn(user: user)
+
+            credentials = SessionCredentials(
+                accessToken: accessToken,
+                refreshToken: refreshToken
+            )
+
+            if let accessToken {
+                let user = try await provider.validateToken(accessToken)
+                state = .signedIn(user: user)
+                return
+            }
+
+            guard hasRefreshToken else {
+                await clearStoredSession()
+                state = .signedOut
+                return
+            }
+
+            await restoreSession()
         } catch {
             // Access token invalid/expired — attempt refresh before signing out
-            if isUnauthorized(error) {
+            if isUnauthorized(error), hasRefreshToken {
                 await restoreSession()
                 return
             }
+            if isUnauthorized(error) {
+                await clearStoredSession()
+                state = .signedOut
+                return
+            }
+            credentials = nil
             state = .authUnavailable
         }
     }
 
     func signIn(email: String, password: String) async throws {
         let tokens = try await provider.authenticate(email: email, password: password)
-        try await storeTokens(tokens)
         let user = try await provider.validateToken(tokens.accessToken)
+        try await persist(tokens: tokens)
+        credentials = SessionCredentials(tokens: tokens)
         state = .signedIn(user: user)
     }
 
     func signOut() async {
-        try? await keychain.delete(key: Self.accessTokenKey)
-        try? await keychain.delete(key: Self.refreshTokenKey)
+        await clearStoredSession()
         state = .signedOut
     }
 
-    func handleTokenExpired() {
+    func handleTokenExpired() async {
+        credentials?.accessToken = nil
+        try? await keychain.delete(key: Self.accessTokenKey)
         state = .expired
     }
 
-    /// Async snapshot of the current access token from the keychain.
-    ///
-    /// Intended for authenticated backend adapters (like
-    /// `ConvexMessagePreferencesBackend`) that need a bearer token per
-    /// request without holding a reference to the live `AuthService`.
-    /// Deliberately uses a transient `KeychainStore` so callers can
-    /// read tokens from a non-MainActor context; the keychain itself
-    /// is the source of truth, not any in-memory cache.
-    static func loadAccessToken() async -> String? {
-        let keychain = KeychainStore()
-        guard let data = try? await keychain.load(key: Self.accessTokenKey),
+    /// Async snapshot of the current access token from the live auth
+    /// boundary. Protected callers only receive a token when the app is
+    /// in a signed-in state; expired and signed-out sessions fail safe.
+    func accessToken() async -> String? {
+        guard case .signedIn = state else {
+            return nil
+        }
+        guard let token = credentials?.accessToken, !token.isEmpty else {
+            return nil
+        }
+        return token
+    }
+
+    func restoreSession() async {
+        state = .restoring
+
+        do {
+            let refreshToken = try await currentRefreshToken()
+            let tokens = try await provider.refreshToken(refreshToken)
+            let user = try await provider.validateToken(tokens.accessToken)
+            try await persist(tokens: tokens)
+            credentials = SessionCredentials(tokens: tokens)
+            state = .signedIn(user: user)
+        } catch {
+            if isUnauthorized(error) || isMissingRefreshToken(error) {
+                await clearStoredSession()
+                state = .signedOut
+                return
+            }
+            state = .authUnavailable
+        }
+    }
+
+    // MARK: - Private
+
+    private func persist(tokens: AuthTokens) async throws {
+        guard let accessData = tokens.accessToken.data(using: .utf8),
+              let refreshData = tokens.refreshToken.data(using: .utf8)
+        else {
+            throw KeychainStore.KeychainError.encodingFailed
+        }
+        try await keychain.save(key: Self.accessTokenKey, data: accessData)
+        try await keychain.save(key: Self.refreshTokenKey, data: refreshData)
+    }
+
+    private func loadToken(for key: String) async throws -> String? {
+        guard let data = try await keychain.load(key: key),
               let token = String(data: data, encoding: .utf8),
               !token.isEmpty
         else {
@@ -182,32 +245,31 @@ final class AuthService {
         return token
     }
 
-    func restoreSession() async {
-        do {
-            guard let refreshData = try await keychain.load(key: Self.refreshTokenKey),
-                  let refreshToken = String(data: refreshData, encoding: .utf8)
-            else {
-                throw AuthError.noRefreshToken
-            }
-            let tokens = try await provider.refreshToken(refreshToken)
-            try await storeTokens(tokens)
-            let user = try await provider.validateToken(tokens.accessToken)
-            state = .signedIn(user: user)
-        } catch {
-            state = isUnauthorized(error) ? .signedOut : .authUnavailable
+    private func currentRefreshToken() async throws -> String {
+        if let token = credentials?.refreshToken, !token.isEmpty {
+            return token
         }
+        guard let token = try await loadToken(for: Self.refreshTokenKey) else {
+            throw AuthError.noRefreshToken
+        }
+        credentials = SessionCredentials(
+            accessToken: credentials?.accessToken,
+            refreshToken: token
+        )
+        return token
     }
 
-    // MARK: - Private
+    private func clearStoredSession() async {
+        credentials = nil
+        try? await keychain.delete(key: Self.accessTokenKey)
+        try? await keychain.delete(key: Self.refreshTokenKey)
+    }
 
-    private func storeTokens(_ tokens: AuthTokens) async throws {
-        guard let accessData = tokens.accessToken.data(using: .utf8),
-              let refreshData = tokens.refreshToken.data(using: .utf8)
-        else {
-            throw KeychainStore.KeychainError.encodingFailed
+    private var hasRefreshToken: Bool {
+        guard let refreshToken = credentials?.refreshToken else {
+            return false
         }
-        try await keychain.save(key: Self.accessTokenKey, data: accessData)
-        try await keychain.save(key: Self.refreshTokenKey, data: refreshData)
+        return !refreshToken.isEmpty
     }
 
     private func isUnauthorized(_ error: Error) -> Bool {
@@ -218,5 +280,30 @@ final class AuthService {
             return true
         }
         return false
+    }
+
+    private func isMissingRefreshToken(_ error: Error) -> Bool {
+        guard let authError = error as? AuthError else {
+            return false
+        }
+        if case .noRefreshToken = authError {
+            return true
+        }
+        return false
+    }
+}
+
+private struct SessionCredentials: Sendable, Equatable {
+    var accessToken: String?
+    let refreshToken: String
+
+    init(accessToken: String?, refreshToken: String?) {
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken ?? ""
+    }
+
+    init(tokens: AuthTokens) {
+        self.accessToken = tokens.accessToken
+        self.refreshToken = tokens.refreshToken
     }
 }

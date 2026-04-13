@@ -4,39 +4,52 @@ struct RootView: View {
 
     @Environment(AuthService.self) private var authService
 
-    @State private var showExpiredAlert = false
-    @State private var showAuthUnavailableAlert = false
+    @State private var activeAlert: RootAlert?
 
     var body: some View {
+        let presentation = RootPresentation(authState: authService.state)
+
         Group {
-            switch authService.state {
+            switch presentation.surface {
             case .restoring:
                 restoringView
-            case .signedOut:
+            case .signIn:
                 SignInView()
-            case .signedIn(let user):
-                ContentView(user: user)
-            case .expired:
-                // Show sign-in with alert overlay
-                SignInView()
-                    .onAppear { showExpiredAlert = true }
+            case .authenticated(let user):
+                ContentView(user: user, authService: authService)
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: authService.state.phase)
+        .onAppear {
+            activeAlert = presentation.alert
+        }
+        .onChange(of: authService.state) { _, newState in
+            activeAlert = RootPresentation(authState: newState).alert
+        }
+        .alert(item: $activeAlert) { alert in
+            switch alert {
+            case .sessionExpired:
+                return Alert(
+                    title: Text("Session Expired"),
+                    message: Text(
+                        "Your session has expired. Restore it to continue, or sign in again."
+                    ),
+                    primaryButton: .default(Text("Restore Session")) {
+                        Task { await authService.restoreSession() }
+                    },
+                    secondaryButton: .destructive(Text("Sign In Again")) {
+                        Task { await authService.signOut() }
+                    }
+                )
             case .authUnavailable:
-                SignInView()
-                    .onAppear { showAuthUnavailableAlert = true }
+                return Alert(
+                    title: Text("Authentication Unavailable"),
+                    message: Text(
+                        "Authentication is temporarily unavailable. Please try again in a moment."
+                    ),
+                    dismissButton: .cancel(Text("Dismiss"))
+                )
             }
-        }
-        .animation(.easeInOut(duration: 0.3), value: authService.state)
-        .alert("Session Expired", isPresented: $showExpiredAlert) {
-            Button("Sign In Again") {
-                Task { await authService.signOut() }
-            }
-        } message: {
-            Text("Your session has expired. Please sign in again.")
-        }
-        .alert("Authentication Unavailable", isPresented: $showAuthUnavailableAlert) {
-            Button("Dismiss", role: .cancel) {}
-        } message: {
-            Text("Authentication is temporarily unavailable. Please try again in a moment.")
         }
     }
 
@@ -57,4 +70,42 @@ struct RootView: View {
         .background(Color(.systemBackground))
     }
 
+}
+
+struct RootPresentation: Equatable {
+    let surface: Surface
+    let alert: RootAlert?
+
+    init(authState: AuthState) {
+        switch authState {
+        case .restoring:
+            self.surface = .restoring
+            self.alert = nil
+        case .signedOut:
+            self.surface = .signIn
+            self.alert = nil
+        case .signedIn(let user):
+            self.surface = .authenticated(user)
+            self.alert = nil
+        case .expired:
+            self.surface = .signIn
+            self.alert = .sessionExpired
+        case .authUnavailable:
+            self.surface = .signIn
+            self.alert = .authUnavailable
+        }
+    }
+
+    enum Surface: Equatable {
+        case restoring
+        case signIn
+        case authenticated(AuthUser)
+    }
+}
+
+enum RootAlert: String, Identifiable {
+    case sessionExpired
+    case authUnavailable
+
+    var id: String { rawValue }
 }

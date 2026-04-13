@@ -296,12 +296,13 @@ struct AuthServiceTests {
         // Sign in first
         try await service.signIn(email: "buyer@example.com", password: "pass")
 
-        service.handleTokenExpired()
+        await service.handleTokenExpired()
 
         guard case .expired = service.state else {
             Issue.record("Expected .expired, got \(service.state)")
             return
         }
+        #expect(await service.accessToken() == nil)
     }
 
     // MARK: - Restore Session
@@ -317,7 +318,7 @@ struct AuthServiceTests {
         try await service.signIn(email: "buyer@example.com", password: "pass")
 
         // Simulate expired state
-        service.handleTokenExpired()
+        await service.handleTokenExpired()
         guard case .expired = service.state else {
             Issue.record("Pre-condition failed: expected .expired")
             return
@@ -356,7 +357,7 @@ struct AuthServiceTests {
         try await service.signIn(email: "buyer@example.com", password: "pass")
 
         // Simulate expired and make refresh fail
-        service.handleTokenExpired()
+        await service.handleTokenExpired()
         provider.refreshResult = .failure(AuthError.unauthorized)
 
         await service.restoreSession()
@@ -388,11 +389,44 @@ struct AuthServiceTests {
         #expect(service.isAuthenticated)
 
         // .expired -> false
-        service.handleTokenExpired()
+        await service.handleTokenExpired()
         #expect(!service.isAuthenticated)
 
         // back to .signedOut -> false
         await service.signOut()
         #expect(!service.isAuthenticated)
+    }
+
+    @Test("initialize() restores from refresh token when access token was cleared after expiry")
+    func testInitializeRestoresFromRefreshOnly() async throws {
+        let provider = MockAuthProvider()
+        provider.authenticateResult = .success(testTokens)
+        provider.validateResult = .success(testUser)
+        let service = AuthService(provider: provider)
+
+        try await service.signIn(email: "buyer@example.com", password: "pass")
+        await service.handleTokenExpired()
+
+        let refreshedTokens = AuthTokens(
+            accessToken: "restored-access",
+            refreshToken: "restored-refresh",
+            expiresAt: Date(timeIntervalSinceNow: 7200)
+        )
+        provider.refreshResult = .success(refreshedTokens)
+        provider.validateResult = .success(testUser)
+        provider.validateCallCount = 0
+        provider.refreshCallCount = 0
+
+        let freshService = AuthService(provider: provider)
+        await freshService.initialize()
+
+        guard case .signedIn(let user) = freshService.state else {
+            Issue.record("Expected .signedIn after refresh-only init, got \(freshService.state)")
+            return
+        }
+        #expect(user == testUser)
+        #expect(provider.refreshCallCount == 1)
+        #expect(provider.validateCallCount == 1)
+        #expect(await freshService.accessToken() == "restored-access")
     }
 }
