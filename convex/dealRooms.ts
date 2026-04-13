@@ -1,6 +1,7 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { api } from "./_generated/api";
 import { getCurrentUser, requireAuth } from "./lib/session";
 
 /** Get a deal room with access-level-gated property data */
@@ -133,9 +134,14 @@ export const create = mutation({
       .withIndex("by_buyerId", (q) => q.eq("buyerId", user._id))
       .collect();
     const alreadyExists = existing.find((dr) => dr.propertyId === args.propertyId);
-    if (alreadyExists) return alreadyExists._id;
+    if (alreadyExists) {
+      await ctx.runMutation(api.leadAttribution.markConverted, {
+        userId: user._id,
+      });
+      return alreadyExists._id;
+    }
 
-    return await ctx.db.insert("dealRooms", {
+    const dealRoomId = await ctx.db.insert("dealRooms", {
       propertyId: args.propertyId,
       buyerId: user._id,
       status: "intake",
@@ -143,6 +149,12 @@ export const create = mutation({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+
+    await ctx.runMutation(api.leadAttribution.markConverted, {
+      userId: user._id,
+    });
+
+    return dealRoomId;
   },
 });
 

@@ -1,5 +1,6 @@
 import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { api } from "./_generated/api";
 import { authProvider } from "./lib/validators";
 import { requireAuth, sessionUserValidator } from "./lib/session";
 
@@ -36,10 +37,11 @@ export const create = internalMutation({
     authTokenIdentifier: v.optional(v.string()),
     sessionVersion: v.optional(v.number()),
     lastAuthenticatedAt: v.optional(v.string()),
+    attributionSessionId: v.optional(v.string()),
   },
   returns: v.id("users"),
   handler: async (ctx, args) => {
-    return await ctx.db.insert("users", {
+    const userId = await ctx.db.insert("users", {
       email: args.email,
       name: args.name,
       role: args.role,
@@ -51,6 +53,15 @@ export const create = internalMutation({
       sessionVersion: args.sessionVersion ?? (args.authSubject ? 1 : undefined),
       lastAuthenticatedAt: args.lastAuthenticatedAt,
     });
+
+    if (args.attributionSessionId) {
+      await ctx.runMutation(api.leadAttribution.handoffToUser, {
+        sessionId: args.attributionSessionId,
+        userId,
+      });
+    }
+
+    return userId;
   },
 });
 
@@ -63,6 +74,7 @@ export const bindAuthIdentity = internalMutation({
     authTokenIdentifier: v.string(),
     sessionVersion: v.optional(v.number()),
     lastAuthenticatedAt: v.optional(v.string()),
+    attributionSessionId: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -74,6 +86,14 @@ export const bindAuthIdentity = internalMutation({
       sessionVersion: args.sessionVersion ?? 1,
       lastAuthenticatedAt: args.lastAuthenticatedAt ?? new Date().toISOString(),
     });
+
+    if (args.attributionSessionId) {
+      await ctx.runMutation(api.leadAttribution.handoffToUser, {
+        sessionId: args.attributionSessionId,
+        userId: args.userId,
+      });
+    }
+
     return null;
   },
 });

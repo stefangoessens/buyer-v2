@@ -23,7 +23,17 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { leadAttributionStatus } from "./lib/validators";
-import { isDistinctTouch, type Touch } from "./lib/attribution";
+import type { Id } from "./_generated/dataModel";
+import type { Touch } from "./lib/attribution";
+import {
+  appendLeadAttributionTouch,
+  buildLeadAttributionReadModel,
+  createAnonymousLeadAttribution,
+  createSyntheticRegisteredLeadAttribution,
+  handoffLeadAttribution,
+  type LeadAttributionRecord,
+  convertLeadAttribution,
+} from "./lib/leadAttribution";
 import { requireAuth } from "./lib/session";
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -47,6 +57,76 @@ const touchValidator = v.object({
   timestamp: v.string(),
 });
 
+const leadAttributionRowValidator = v.object({
+  _id: v.id("leadAttribution"),
+  _creationTime: v.number(),
+  sessionId: v.string(),
+  userId: v.optional(v.id("users")),
+  firstTouch: touchValidator,
+  lastTouch: touchValidator,
+  touchCount: v.number(),
+  status: leadAttributionStatus,
+  registeredAt: v.optional(v.string()),
+  convertedAt: v.optional(v.string()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+
+const touchContextValidator = v.object({
+  source: v.string(),
+  medium: v.string(),
+  campaign: v.optional(v.string()),
+  content: v.optional(v.string()),
+  term: v.optional(v.string()),
+  landingPage: v.string(),
+  referrer: v.optional(v.string()),
+  occurredAt: v.string(),
+});
+
+const leadAttributionReadModelValidator = v.object({
+  sessionId: v.string(),
+  userId: v.optional(v.string()),
+  status: leadAttributionStatus,
+  touchCount: v.number(),
+  source: v.string(),
+  medium: v.string(),
+  campaign: v.optional(v.string()),
+  landingPage: v.string(),
+  firstTouchOccurredAt: v.string(),
+  firstTouchContext: touchContextValidator,
+  lastTouchContext: touchContextValidator,
+  registeredAt: v.optional(v.string()),
+  convertedAt: v.optional(v.string()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+
+function toLeadAttributionRecord(row: {
+  sessionId: string;
+  userId?: Id<"users">;
+  firstTouch: Touch;
+  lastTouch: Touch;
+  touchCount: number;
+  status: "anonymous" | "registered" | "converted";
+  registeredAt?: string;
+  convertedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}): LeadAttributionRecord {
+  return {
+    sessionId: row.sessionId,
+    userId: row.userId,
+    firstTouch: row.firstTouch,
+    lastTouch: row.lastTouch,
+    touchCount: row.touchCount,
+    status: row.status,
+    registeredAt: row.registeredAt,
+    convertedAt: row.convertedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Queries
 // ───────────────────────────────────────────────────────────────────────────
@@ -57,12 +137,13 @@ const touchValidator = v.object({
  */
 export const getBySessionId = query({
   args: { sessionId: v.string() },
-  returns: v.any(),
+  returns: v.union(leadAttributionReadModelValidator, v.null()),
   handler: async (ctx, args) => {
-    return await ctx.db
+    const row = await ctx.db
       .query("leadAttribution")
       .withIndex("by_sessionId", (q) => q.eq("sessionId", args.sessionId))
       .unique();
+    return row ? buildLeadAttributionReadModel(toLeadAttributionRecord(row)) : null;
   },
 });
 
@@ -71,7 +152,7 @@ export const getBySessionId = query({
  */
 export const getByUserId = query({
   args: { userId: v.id("users") },
-  returns: v.any(),
+  returns: v.union(leadAttributionReadModelValidator, v.null()),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (
@@ -81,10 +162,11 @@ export const getByUserId = query({
     ) {
       return null;
     }
-    return await ctx.db
+    const row = await ctx.db
       .query("leadAttribution")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .unique();
+    return row ? buildLeadAttributionReadModel(toLeadAttributionRecord(row)) : null;
   },
 });
 
@@ -94,16 +176,19 @@ export const getByUserId = query({
  */
 export const getByStatus = query({
   args: { status: leadAttributionStatus },
-  returns: v.array(v.any()),
+  returns: v.array(leadAttributionReadModelValidator),
   handler: async (ctx, args) => {
     const user = await requireAuth(ctx);
     if (user.role !== "broker" && user.role !== "admin") {
       throw new Error("Only brokers and admins can list attribution by status");
     }
-    return await ctx.db
+    const rows = await ctx.db
       .query("leadAttribution")
       .withIndex("by_status", (q) => q.eq("status", args.status))
       .collect();
+    return rows.map((row) =>
+      buildLeadAttributionReadModel(toLeadAttributionRecord(row))
+    );
   },
 });
 
@@ -118,7 +203,7 @@ export const getByStatus = query({
  */
 export const getByUserIdInternal = internalQuery({
   args: { userId: v.id("users") },
-  returns: v.any(),
+  returns: v.union(leadAttributionRowValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("leadAttribution")
@@ -133,7 +218,7 @@ export const getByUserIdInternal = internalQuery({
  */
 export const getBySessionIdInternal = internalQuery({
   args: { sessionId: v.string() },
-  returns: v.any(),
+  returns: v.union(leadAttributionRowValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query("leadAttribution")
@@ -174,15 +259,10 @@ export const captureTouch = mutation({
       .unique();
 
     if (!existing) {
-      const id = await ctx.db.insert("leadAttribution", {
-        sessionId: args.sessionId,
-        firstTouch: args.touch,
-        lastTouch: args.touch,
-        touchCount: 1,
-        status: "anonymous",
-        createdAt: now,
-        updatedAt: now,
-      });
+      const id = await ctx.db.insert(
+        "leadAttribution",
+        createAnonymousLeadAttribution(args.sessionId, args.touch, now)
+      );
 
       await ctx.db.insert("auditLog", {
         action: "lead_attribution_captured",
@@ -208,13 +288,17 @@ export const captureTouch = mutation({
     // seen, but don't bump touchCount).
     const previous = existing.lastTouch as Touch;
     const next = args.touch as Touch;
-    const distinct = isDistinctTouch(previous, next);
+    const updated = appendLeadAttributionTouch(
+      toLeadAttributionRecord(existing),
+      args.touch,
+      now
+    );
 
-    if (distinct) {
+    if (updated.touchCount !== existing.touchCount) {
       await ctx.db.patch(existing._id, {
-        lastTouch: args.touch,
-        touchCount: existing.touchCount + 1,
-        updatedAt: now,
+        lastTouch: updated.lastTouch,
+        touchCount: updated.touchCount,
+        updatedAt: updated.updatedAt,
       });
 
       await ctx.db.insert("auditLog", {
@@ -228,14 +312,12 @@ export const captureTouch = mutation({
           nextSource: next.source,
           previousMedium: previous.medium,
           nextMedium: next.medium,
-          touchCount: existing.touchCount + 1,
+          touchCount: updated.touchCount,
         }),
         timestamp: now,
       });
     } else {
-      await ctx.db.patch(existing._id, {
-        updatedAt: now,
-      });
+      await ctx.db.patch(existing._id, { updatedAt: updated.updatedAt });
     }
 
     return existing._id;
@@ -287,11 +369,13 @@ export const handoffToUser = mutation({
         return existing._id;
       }
 
+      const existingRecord = toLeadAttributionRecord(existing);
+      const updated = handoffLeadAttribution(existingRecord, args.userId, now);
       await ctx.db.patch(existing._id, {
-        userId: args.userId,
-        status: "registered",
-        registeredAt: existing.registeredAt ?? now,
-        updatedAt: now,
+        userId: updated.userId as Id<"users">,
+        status: updated.status,
+        registeredAt: updated.registeredAt,
+        updatedAt: updated.updatedAt,
       });
 
       await ctx.db.insert("auditLog", {
@@ -327,10 +411,16 @@ export const handoffToUser = mutation({
       // NOT overwrite the existing sessionId since the original session
       // is the canonical first-touch anchor.
       if (existingForUser.status === "anonymous") {
+        const updated = handoffLeadAttribution(
+          toLeadAttributionRecord(existingForUser),
+          args.userId,
+          now
+        );
         await ctx.db.patch(existingForUser._id, {
-          status: "registered",
-          registeredAt: existingForUser.registeredAt ?? now,
-          updatedAt: now,
+          userId: updated.userId as Id<"users">,
+          status: updated.status,
+          registeredAt: updated.registeredAt,
+          updatedAt: updated.updatedAt,
         });
       }
 
@@ -352,24 +442,10 @@ export const handoffToUser = mutation({
 
     // Truly first handoff for this user — create a minimal "direct"
     // attribution so the user still has a row in the read model.
-    const syntheticTouch: Touch = {
-      source: "direct",
-      medium: "none",
-      landingPage: "/",
-      timestamp: now,
-    };
-
-    const id = await ctx.db.insert("leadAttribution", {
-      sessionId: args.sessionId,
-      userId: args.userId,
-      firstTouch: syntheticTouch,
-      lastTouch: syntheticTouch,
-      touchCount: 1,
-      status: "registered",
-      registeredAt: now,
-      createdAt: now,
-      updatedAt: now,
-    });
+    const id = await ctx.db.insert(
+      "leadAttribution",
+      createSyntheticRegisteredLeadAttribution(args.sessionId, args.userId, now)
+    );
 
     await ctx.db.insert("auditLog", {
       userId: args.userId,
@@ -410,23 +486,15 @@ export const markConverted = mutation({
 
     if (!row) return null;
 
-    // Already converted — no-op but still bump updatedAt so we can tell
-    // something tried.
-    if (row.status === "converted") {
-      await ctx.db.patch(row._id, { updatedAt: now });
-      return null;
-    }
-
-    // Anonymous row (never handed off) — refuse silently. The caller
-    // should hand off first.
-    if (row.status === "anonymous") {
+    const updated = convertLeadAttribution(toLeadAttributionRecord(row), now);
+    if (!updated) {
       return null;
     }
 
     await ctx.db.patch(row._id, {
-      status: "converted",
-      convertedAt: now,
-      updatedAt: now,
+      status: updated.status,
+      convertedAt: updated.convertedAt,
+      updatedAt: updated.updatedAt,
     });
 
     await ctx.db.insert("auditLog", {
