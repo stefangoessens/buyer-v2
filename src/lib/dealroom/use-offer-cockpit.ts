@@ -24,6 +24,14 @@ type CockpitServerPayload = {
   propertyId: string;
   listPrice: number;
   propertyAddress: string;
+  buyerProfile: {
+    budgetMax?: number;
+    financingType?: "cash" | "conventional" | "fha" | "va" | "other";
+    preApproved: boolean;
+    preApprovalAmount?: number;
+    preApprovalExpiry?: string;
+    lenderName?: string;
+  };
   draft: {
     _id: Id<"offerCockpitDrafts">;
     status: OfferCockpitStatus;
@@ -152,8 +160,9 @@ export function useOfferCockpit(
       validateOfferTerms({
         terms,
         listPrice,
+        buyerMaxBudget: data?.buyerProfile.budgetMax,
       }),
-    [terms, listPrice],
+    [data?.buyerProfile.budgetMax, terms, listPrice],
   );
 
   const status: OfferCockpitStatus = data?.draft?.status ?? "draft";

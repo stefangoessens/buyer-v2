@@ -29,6 +29,7 @@ import {
   smsConsentStatus,
   smsIntakeOutcome,
 } from "./lib/validators";
+import { buyerProfileRecordFields } from "./lib/buyerProfile";
 
 // ─── buyer-v2 Convex Schema ─────────────────────────────────────────────────
 // System of record for the AI-native Florida buyer brokerage platform.
@@ -66,41 +67,7 @@ export default defineSchema({
     .index("by_authIssuer_and_authSubject", ["authIssuer", "authSubject"])
     .index("by_authSubject", ["authSubject"]),
 
-  buyerProfiles: defineTable({
-    userId: v.id("users"),
-    preferredAreas: v.optional(v.array(v.string())),
-    budgetMin: v.optional(v.number()),
-    budgetMax: v.optional(v.number()),
-    preApproved: v.optional(v.boolean()),
-    preApprovalAmount: v.optional(v.number()),
-    propertyTypes: v.optional(v.array(v.string())),
-    mustHaves: v.optional(v.array(v.string())),
-    dealbreakers: v.optional(v.array(v.string())),
-    timeline: v.optional(v.string()),
-    financingType: v.optional(v.union(
-      v.literal("cash"),
-      v.literal("conventional"),
-      v.literal("fha"),
-      v.literal("va"),
-      v.literal("other")
-    )),
-    lenderName: v.optional(v.string()),
-    preApprovalExpiry: v.optional(v.string()),
-    communicationPrefs: v.optional(v.object({
-      email: v.boolean(),
-      sms: v.boolean(),
-      push: v.boolean(),
-    })),
-    householdSize: v.optional(v.number()),
-    moveTimeline: v.optional(v.union(
-      v.literal("asap"),
-      v.literal("1_3_months"),
-      v.literal("3_6_months"),
-      v.literal("6_plus_months"),
-      v.literal("just_looking")
-    )),
-    notes: v.optional(v.string()),
-  }).index("by_userId", ["userId"]),
+  buyerProfiles: defineTable(buyerProfileRecordFields).index("by_userId", ["userId"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // PROPERTIES & SOURCE LISTINGS

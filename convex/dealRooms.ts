@@ -2,6 +2,7 @@ import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { getCurrentUser, requireAuth } from "./lib/session";
+import { buildDealRoomFlowProfile, loadBuyerProfileView } from "./lib/buyerProfile";
 
 /** Get a deal room with access-level-gated property data */
 export const get = query({
@@ -50,6 +51,9 @@ export const get = query({
       internal.enrichment.getForPropertyInternal,
       { propertyId: dealRoom.propertyId },
     );
+    const buyerProfile = buildDealRoomFlowProfile(
+      await loadBuyerProfileView(ctx, dealRoom.buyerId, false),
+    );
 
     const includeAgentContact = accessLevel === "full";
     const enrichmentData = enrichment
@@ -84,6 +88,7 @@ export const get = query({
     return {
       dealRoom,
       property: propertyData,
+      buyerProfile,
       accessLevel,
       enrichment: enrichmentData,
     };

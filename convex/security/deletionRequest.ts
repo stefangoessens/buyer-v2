@@ -37,13 +37,21 @@ export const processDeletion = internalMutation({
       deletedRecords++;
     }
 
-    // 2. Delete buyer profile
+    // 2. Delete buyer profile + communication preferences
     const profile = await ctx.db
       .query("buyerProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", args.userId))
       .unique();
     if (profile) {
       await ctx.db.delete(profile._id);
+      deletedRecords++;
+    }
+    const messagePreferences = await ctx.db
+      .query("messageDeliveryPreferences")
+      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .unique();
+    if (messagePreferences) {
+      await ctx.db.delete(messagePreferences._id);
       deletedRecords++;
     }
 

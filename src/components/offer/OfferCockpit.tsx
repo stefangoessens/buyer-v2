@@ -103,6 +103,7 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
         <OfferTermsEditor
           terms={cockpit.terms}
           listPrice={data.listPrice}
+          buyerMaxBudget={data.buyerProfile.budgetMax}
           disabled={disabled}
           validation={cockpit.validation}
           onChange={cockpit.setTerms}
