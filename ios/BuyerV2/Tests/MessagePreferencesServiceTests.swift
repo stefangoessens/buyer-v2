@@ -49,6 +49,19 @@ private struct StubError: Error, Equatable {
     let message: String
 }
 
+private actor ContinuationStore {
+    private var continuation: CheckedContinuation<MessagePreferences, Never>?
+
+    func store(_ continuation: CheckedContinuation<MessagePreferences, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(returning preferences: MessagePreferences) {
+        continuation?.resume(returning: preferences)
+        continuation = nil
+    }
+}
+
 // MARK: - Pure model tests
 
 @Suite("MessagePreferences pure helpers")
@@ -146,6 +159,10 @@ struct MessagePreferencesServiceTests {
             Issue.record("Expected .idle, got \(service.state)")
             return
         }
+        guard case .idle = service.saveState else {
+            Issue.record("Expected saveState .idle, got \(service.saveState)")
+            return
+        }
         #expect(service.preferences == .default)
         #expect(service.hasStoredPreferences == false)
     }
@@ -201,6 +218,7 @@ struct MessagePreferencesServiceTests {
             return
         }
         #expect(service.preferences == .default)
+        #expect(service.saveState == .idle)
     }
 
     // MARK: - Update (create, partial, opt-out)
@@ -218,6 +236,7 @@ struct MessagePreferencesServiceTests {
 
         #expect(service.preferences.channels.sms == true)
         #expect(service.hasStoredPreferences == true)
+        #expect(service.saveState == .idle)
         #expect(backend.upsertCallCount == 1)
         #expect(backend.lastUpsertPatch?.smsEnabled == true)
     }
@@ -241,6 +260,46 @@ struct MessagePreferencesServiceTests {
         // Marketing should still be true (preserved from load)
         #expect(service.preferences.categories.marketing == true)
         #expect(service.preferences.channels.sms == true)
+        #expect(service.saveState == .idle)
+    }
+
+    @Test("update() exposes an explicit saving state while the optimistic write is in flight")
+    func testUpdateSavingStateIsExplicit() async {
+        final class DeferredBackend: MessagePreferencesBackend, @unchecked Sendable {
+            let continuationStore = ContinuationStore()
+
+            func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
+                (MessagePreferences.default, false)
+            }
+
+            func upsert(_ patch: MessagePreferencesPatch) async throws -> MessagePreferences {
+                await withCheckedContinuation { continuation in
+                    Task { await continuationStore.store(continuation) }
+                }
+            }
+
+            func optOutAll() async throws -> MessagePreferences { .default }
+            func resetToDefaults() async throws -> MessagePreferences { .default }
+        }
+
+        let backend = DeferredBackend()
+        let service = MessagePreferencesService(backend: backend)
+        await service.load()
+
+        let task = Task {
+            await service.update(MessagePreferencesPatch(smsEnabled: true))
+        }
+
+        await Task.yield()
+
+        #expect(service.preferences.channels.sms == true)
+        #expect(service.hasStoredPreferences == true)
+        #expect(service.saveState == .saving)
+
+        await backend.continuationStore.resume(returning: service.preferences)
+        await task.value
+
+        #expect(service.saveState == .idle)
     }
 
     @Test("update() with opt-out toggle flips specific channels")
@@ -255,6 +314,7 @@ struct MessagePreferencesServiceTests {
 
         #expect(service.preferences.channels.email == false)
         #expect(service.preferences.channels.push == true)
+        #expect(service.saveState == .idle)
     }
 
     @Test("update() failure rolls back optimistic changes")
@@ -271,10 +331,13 @@ struct MessagePreferencesServiceTests {
         await service.update(MessagePreferencesPatch(marketingEnabled: true))
 
         #expect(service.preferences == baseline)
-        guard case .error = service.state else {
-            Issue.record("Expected .error after failed update")
+        #expect(service.saveState == .error("network down"))
+        guard case .loaded(let prefs, let hasStored) = service.state else {
+            Issue.record("Expected .loaded after failed update")
             return
         }
+        #expect(prefs == baseline)
+        #expect(hasStored == true)
     }
 
     @Test("update() failure for first-time user restores hasStoredPreferences=false")
@@ -295,10 +358,13 @@ struct MessagePreferencesServiceTests {
 
         #expect(service.hasStoredPreferences == false)
         #expect(service.preferences == .default)
-        guard case .error = service.state else {
-            Issue.record("Expected .error")
+        #expect(service.saveState == .error("boom"))
+        guard case .loaded(let prefs, let hasStored) = service.state else {
+            Issue.record("Expected .loaded")
             return
         }
+        #expect(prefs == .default)
+        #expect(hasStored == false)
     }
 
     @Test("optOutAll() failure for first-time user also rolls back hasStoredPreferences")
@@ -315,6 +381,7 @@ struct MessagePreferencesServiceTests {
 
         #expect(service.hasStoredPreferences == false)
         #expect(service.preferences == .default)
+        #expect(service.saveState == .error("boom"))
     }
 
     @Test("resetToDefaults() failure for first-time user also rolls back hasStoredPreferences")
@@ -329,6 +396,7 @@ struct MessagePreferencesServiceTests {
         await service.resetToDefaults()
 
         #expect(service.hasStoredPreferences == false)
+        #expect(service.saveState == .error("boom"))
     }
 
     // MARK: - Opt-out all
@@ -353,6 +421,7 @@ struct MessagePreferencesServiceTests {
 
         #expect(service.preferences.isGloballyOptedOut == true)
         #expect(service.preferences.categories.marketing == true)
+        #expect(service.saveState == .idle)
         #expect(backend.optOutCallCount == 1)
     }
 
@@ -368,10 +437,13 @@ struct MessagePreferencesServiceTests {
         await service.optOutAll()
 
         #expect(service.preferences == .default)
-        guard case .error = service.state else {
-            Issue.record("Expected .error")
+        #expect(service.saveState == .error("boom"))
+        guard case .loaded(let prefs, let hasStored) = service.state else {
+            Issue.record("Expected .loaded")
             return
         }
+        #expect(prefs == .default)
+        #expect(hasStored == true)
     }
 
     // MARK: - Reset to defaults
@@ -391,6 +463,7 @@ struct MessagePreferencesServiceTests {
         await service.resetToDefaults()
 
         #expect(service.preferences == .default)
+        #expect(service.saveState == .idle)
         #expect(backend.resetCallCount == 1)
     }
 }

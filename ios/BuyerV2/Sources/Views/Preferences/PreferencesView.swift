@@ -11,27 +11,14 @@ struct PreferencesView: View {
     @Environment(AuthService.self) private var authService
     @Environment(\.dismiss) private var dismiss
 
-    // One-shot gate that flips true on the first `.loaded` emission
-    // after `.load()` completes, so a pre-load network failure still
-    // renders the hard error screen. After that, we DON'T cache
-    // preferences locally — we read `service.preferences` and
-    // `service.hasStoredPreferences` directly in `currentDisplay()`
-    // because `MessagePreferencesService.update()` emits an optimistic
-    // `.loaded` before each write and only rolls back on failure.
-    // Caching every `.loaded` emission would capture the optimistic
-    // (soon-to-be-reverted) value and leave the overlay showing a
-    // toggle that the backend never committed (codex round 2 P2 on
-    // PR #83).
-    @State private var hasSuccessfullyLoaded: Bool = false
-
     var body: some View {
         NavigationStack {
             Group {
                 switch currentDisplay() {
                 case .loading:
                     loadingView
-                case .content(let prefs, let hasStored, let saveError):
-                    contentView(preferences: prefs, hasStored: hasStored, saveError: saveError)
+                case .content(let prefs, let hasStored, let saveState):
+                    contentView(preferences: prefs, hasStored: hasStored, saveState: saveState)
                 case .error(let message):
                     errorView(message: message)
                 case .signedOut:
@@ -50,16 +37,6 @@ struct PreferencesView: View {
         .task {
             await service.load()
         }
-        .onChange(of: service.state) { _, newState in
-            // Flip the gate once, on the first `.loaded` after the
-            // cold load resolves. Don't flip it again for subsequent
-            // optimistic emissions — we don't need to, and we must
-            // NOT cache preferences here because update() emits an
-            // optimistic .loaded before the backend round-trip.
-            if case .loaded = newState, !hasSuccessfullyLoaded {
-                hasSuccessfullyLoaded = true
-            }
-        }
     }
 
     // MARK: - View-model glue
@@ -67,17 +44,10 @@ struct PreferencesView: View {
     private func currentDisplay() -> PreferencesDisplayState {
         let vm = PreferencesViewModel(
             authState: authService.state,
-            serviceState: service.state
+            serviceState: service.state,
+            saveState: service.saveState
         )
-        // Read live service state: the service rolls both
-        // `preferences` and `hasStoredPreferences` back on a failed
-        // write, so reading them inside the error branch gives the
-        // committed values — never the failed optimistic ones.
-        return vm.displayWithOverlay(
-            lastKnownPreferences: service.preferences,
-            lastKnownHasStored: service.hasStoredPreferences,
-            hasSuccessfullyLoaded: hasSuccessfullyLoaded
-        )
+        return vm.display()
     }
 
     // MARK: - Loading
@@ -100,12 +70,18 @@ struct PreferencesView: View {
     private func contentView(
         preferences: MessagePreferences,
         hasStored: Bool,
-        saveError: String?
+        saveState: MessagePreferencesSaveState
     ) -> some View {
         Form {
-            if let saveError {
+            if case .saving = saveState {
                 Section {
-                    saveErrorBanner(message: saveError)
+                    savingBanner
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .listRowBackground(Color(hex: 0xF4F6FB))
+                }
+            } else if case .error(let message) = saveState {
+                Section {
+                    saveErrorBanner(message: message)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                         .listRowBackground(Color(hex: 0xFFF4F0))
                 }
@@ -231,6 +207,7 @@ struct PreferencesView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
+        .disabled(isSaving(saveState))
     }
 
     // MARK: - Error
@@ -391,6 +368,24 @@ struct PreferencesView: View {
         }
     }
 
+    private var savingBanner: some View {
+        HStack(alignment: .center, spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(Color(hex: 0x1B2B65))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Saving your changes")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(hex: 0x1B2B65))
+                Text("We’ll re-enable controls when the backend confirms the update.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+        }
+        .accessibilityIdentifier("preferences.saveInFlightBanner")
+    }
+
     private func saveErrorBanner(message: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.circle.fill")
@@ -414,5 +409,12 @@ struct PreferencesView: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Color(hex: 0x1B2B65).opacity(0.75))
             .textCase(.uppercase)
+    }
+
+    private func isSaving(_ saveState: MessagePreferencesSaveState) -> Bool {
+        if case .saving = saveState {
+            return true
+        }
+        return false
     }
 }

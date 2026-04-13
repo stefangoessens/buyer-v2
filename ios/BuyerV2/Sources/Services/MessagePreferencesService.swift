@@ -165,6 +165,12 @@ enum MessagePreferencesLoadState: Sendable, Equatable {
     case error(String)
 }
 
+enum MessagePreferencesSaveState: Sendable, Equatable {
+    case idle
+    case saving
+    case error(String)
+}
+
 // MARK: - Backend protocol
 
 protocol MessagePreferencesBackend: Sendable {
@@ -204,6 +210,7 @@ enum MessagePreferencesError: LocalizedError {
 final class MessagePreferencesService {
 
     private(set) var state: MessagePreferencesLoadState = .idle
+    private(set) var saveState: MessagePreferencesSaveState = .idle
     private(set) var preferences: MessagePreferences = .default
     private(set) var hasStoredPreferences: Bool = false
 
@@ -218,6 +225,7 @@ final class MessagePreferencesService {
     /// Fetch the current user's preferences from the backend.
     func load() async {
         state = .loading
+        saveState = .idle
         do {
             let result = try await backend.fetch()
             preferences = result.preferences
@@ -242,11 +250,13 @@ final class MessagePreferencesService {
         let optimistic = applyPatch(patch, to: prefsSnapshot)
         preferences = optimistic
         hasStoredPreferences = true
+        saveState = .saving
         state = .loaded(optimistic, hasStored: true)
 
         do {
             let persisted = try await backend.upsert(patch)
             preferences = persisted
+            saveState = .idle
             state = .loaded(persisted, hasStored: true)
         } catch {
             // Roll back BOTH preferences and hasStoredPreferences so a
@@ -254,7 +264,8 @@ final class MessagePreferencesService {
             // failed write.
             preferences = prefsSnapshot
             hasStoredPreferences = hasStoredSnapshot
-            state = .error(error.localizedDescription)
+            saveState = .error(error.localizedDescription)
+            state = .loaded(prefsSnapshot, hasStored: hasStoredSnapshot)
         }
     }
 
@@ -269,16 +280,19 @@ final class MessagePreferencesService {
         )
         preferences = optimistic
         hasStoredPreferences = true
+        saveState = .saving
         state = .loaded(optimistic, hasStored: true)
 
         do {
             let persisted = try await backend.optOutAll()
             preferences = persisted
+            saveState = .idle
             state = .loaded(persisted, hasStored: true)
         } catch {
             preferences = prefsSnapshot
             hasStoredPreferences = hasStoredSnapshot
-            state = .error(error.localizedDescription)
+            saveState = .error(error.localizedDescription)
+            state = .loaded(prefsSnapshot, hasStored: hasStoredSnapshot)
         }
     }
 
@@ -287,16 +301,19 @@ final class MessagePreferencesService {
         let hasStoredSnapshot = hasStoredPreferences
         preferences = .default
         hasStoredPreferences = true
+        saveState = .saving
         state = .loaded(.default, hasStored: true)
 
         do {
             let persisted = try await backend.resetToDefaults()
             preferences = persisted
+            saveState = .idle
             state = .loaded(persisted, hasStored: true)
         } catch {
             preferences = prefsSnapshot
             hasStoredPreferences = hasStoredSnapshot
-            state = .error(error.localizedDescription)
+            saveState = .error(error.localizedDescription)
+            state = .loaded(prefsSnapshot, hasStored: hasStoredSnapshot)
         }
     }
 }
