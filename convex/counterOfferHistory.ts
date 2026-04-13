@@ -206,6 +206,21 @@ export const appendCounter = mutation({
     }
     const offer = await ctx.db.get(args.offerId);
     if (!offer) throw new Error("Offer not found");
+    // Only offers that are actively in negotiation can receive counters.
+    // A draft/pending-review offer hasn't been sent yet; a terminal
+    // offer (accepted / rejected / withdrawn / expired) is done and a
+    // new counter would produce inconsistent lifecycle state. (Codex P1)
+    const ALLOWED_OFFER_STATUSES = new Set([
+      "submitted",
+      "countered",
+      "approved",
+    ]);
+    if (!ALLOWED_OFFER_STATUSES.has(offer.status)) {
+      throw new Error(
+        `Cannot append counter: offer is in status "${offer.status}". ` +
+          `Counters are only allowed on offers that are submitted, approved, or already countered.`,
+      );
+    }
     if (args.price <= 0) throw new Error("Counter price must be positive");
 
     const rows = await ctx.db
