@@ -75,7 +75,7 @@ export const createOutput = internalMutation({
     engineType: v.string(),
     promptKey: v.optional(v.string()),
     promptVersion: v.string(),
-    inputSnapshot: v.optional(v.string()),
+    inputSnapshot: v.string(),
     confidence: v.number(),
     citations: v.array(v.string()),
     output: v.string(),

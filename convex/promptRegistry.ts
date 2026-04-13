@@ -236,6 +236,27 @@ export const getByVersion = internalQuery({
   },
 });
 
+export const getVersion = query({
+  args: {
+    engineType: engineTypeValidator,
+    promptKey: v.optional(v.string()),
+    version: v.string(),
+  },
+  returns: v.union(v.null(), promptRegistryDocValidator),
+  handler: async (ctx, args) => {
+    const user = await requireBrokerOrAdmin(ctx);
+    if (!user) return null;
+
+    const row = await findPromptRow(
+      ctx,
+      args.engineType,
+      normalizePromptKey(args.promptKey),
+      args.version,
+    );
+    return row ? toPromptDoc(row) : null;
+  },
+});
+
 export const getActiveVersionRefs = internalQuery({
   args: {
     engineType: v.optional(engineTypeValidator),
