@@ -1,4 +1,9 @@
-import "server-only";
+// NOTE: intentionally NOT importing "server-only" — this module is also
+// reached by Convex bundling (convex/engines/pricing → src/lib/ai/*),
+// and `server-only` throws in Convex's runtime. The functions below are
+// still server-only by convention: NEXT_PUBLIC_ prefixes are the real
+// client/server boundary, and importing this file from a Client
+// Component would fail TypeScript's process.env access anyway.
 import {
   requireEnvKeys,
   readEnv,

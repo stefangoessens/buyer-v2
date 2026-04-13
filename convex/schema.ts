@@ -206,10 +206,14 @@ export default defineSchema({
     extractedAt: v.string(),
     status: v.union(
       v.literal("pending"),
+      v.literal("running"),
+      v.literal("complete"),
       v.literal("extracted"),
       v.literal("failed"),
       v.literal("merged")
     ),
+    errorCode: v.optional(v.string()),
+    errorMessage: v.optional(v.string()),
   })
     .index("by_sourceUrl", ["sourceUrl"])
     .index("by_propertyId", ["propertyId"])
