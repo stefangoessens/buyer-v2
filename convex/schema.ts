@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
 import {
   authProvider,
   assignmentStatus,
@@ -53,12 +54,25 @@ export default defineSchema({
   // ═══════════════════════════════════════════════════════════════════════════
   // USERS & PROFILES
   // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Convex Auth owns the `authSessions`, `authAccounts`, `authRefreshTokens`,
+  // `authVerificationCodes`, `authVerifiers`, and `authRateLimits` tables
+  // (spread from `authTables`). We override `users` with our application
+  // schema so role-based access and legacy auth bindings stay intact.
+
+  ...authTables,
 
   users: defineTable({
+    // Auth-managed fields (kept compatible with @convex-dev/auth authTables.users).
     email: v.string(),
     name: v.string(),
-    role: v.union(v.literal("buyer"), v.literal("broker"), v.literal("admin")),
+    image: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
     phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
+    // Application fields.
+    role: v.union(v.literal("buyer"), v.literal("broker"), v.literal("admin")),
     avatarUrl: v.optional(v.string()),
     authProvider: v.optional(authProvider),
     authIssuer: v.optional(v.string()),
@@ -67,7 +81,11 @@ export default defineSchema({
     sessionVersion: v.optional(v.number()),
     lastAuthenticatedAt: v.optional(v.string()),
   })
-    .index("by_email", ["email"])
+    // Indexes required by @convex-dev/auth. The "email" / "phone" names are
+    // load-bearing — the auth runtime looks them up by literal name.
+    .index("email", ["email"])
+    .index("phone", ["phone"])
+    // Legacy application indexes.
     .index("by_role", ["role"])
     .index("by_authTokenIdentifier", ["authTokenIdentifier"])
     .index("by_authIssuer_and_authSubject", ["authIssuer", "authSubject"])
