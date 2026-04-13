@@ -177,42 +177,90 @@ class RedfinExtractor:
 
     def _from_json_ld_node(self, node: dict[str, Any]) -> dict[str, Any]:
         out: dict[str, Any] = {}
-        address = node.get("address")
+
+        # Current Redfin pages wrap a Product/RealEstateListing node whose
+        # outer level only carries `offers.price` + a single hero image,
+        # while beds/baths/sqft/yearBuilt/geo and the full photo array live
+        # inside `mainEntity` (typed SingleFamilyResidence, Apartment, ...).
+        # Treat `mainEntity` as the authoritative residence sub-node and
+        # overlay outer-node fields on top of it where they exist.
+        residence = node.get("mainEntity") if isinstance(node, dict) else None
+        if not isinstance(residence, dict):
+            residence = node
+
+        address = residence.get("address") or node.get("address")
         if isinstance(address, dict):
             out["address_line1"] = _clean_str(address.get("streetAddress"))
             out["city"] = _clean_str(address.get("addressLocality"))
             out["state"] = _clean_str(address.get("addressRegion"))
             out["postal_code"] = _clean_str(address.get("postalCode"))
-        geo = node.get("geo")
+        geo = residence.get("geo") or node.get("geo")
         if isinstance(geo, dict):
             out["latitude"] = _to_float(geo.get("latitude"))
             out["longitude"] = _to_float(geo.get("longitude"))
-        offers = node.get("offers")
+        offers = node.get("offers") or residence.get("offers")
         if isinstance(offers, dict):
             out["price_usd"] = _to_int(offers.get("price"))
         elif isinstance(offers, list) and offers and isinstance(offers[0], dict):
             out["price_usd"] = _to_int(offers[0].get("price"))
-        out["beds"] = _to_float(node.get("numberOfRooms"))
-        out["baths"] = _to_float(node.get("numberOfBathroomsTotal"))
-        floor_size = node.get("floorSize")
+        # Redfin uses `numberOfBedrooms` on the residence sub-node, but
+        # older pages still emit the schema.org `numberOfRooms` alias on
+        # the outer node — accept both.
+        beds_raw = (
+            residence.get("numberOfBedrooms")
+            or residence.get("numberOfRooms")
+            or node.get("numberOfBedrooms")
+            or node.get("numberOfRooms")
+        )
+        out["beds"] = _to_float(beds_raw)
+        baths_raw = (
+            residence.get("numberOfBathroomsTotal")
+            or residence.get("numberOfBathrooms")
+            or node.get("numberOfBathroomsTotal")
+            or node.get("numberOfBathrooms")
+        )
+        out["baths"] = _to_float(baths_raw)
+        floor_size = residence.get("floorSize") or node.get("floorSize")
         if isinstance(floor_size, dict):
             out["living_area_sqft"] = _to_int(floor_size.get("value"))
-        out["year_built"] = _to_int(node.get("yearBuilt"))
-        out["description"] = _clean_str(node.get("description"))
+        out["year_built"] = _to_int(
+            residence.get("yearBuilt") or node.get("yearBuilt")
+        )
+        out["description"] = _clean_str(
+            node.get("description") or residence.get("description")
+        )
         # `additionalType` is the specific sub-type (e.g. SingleFamilyResidence).
         # Only fall back to `@type` if it actually carries a residential type —
         # otherwise we'd store generic schema.org values like "RealEstateListing"
         # as `property_type`, which then blocks later Redux data from correcting
         # it because the merge uses `setdefault`.
-        additional_type = node.get("additionalType")
+        additional_type = residence.get("additionalType") or node.get(
+            "additionalType"
+        )
         if additional_type is None:
-            at_type = _pick_residential_type(node.get("@type"))
+            at_type = _pick_residential_type(
+                residence.get("@type") if residence is not node else node.get("@type")
+            )
             if isinstance(at_type, str) and _is_residential_type(at_type):
                 additional_type = at_type
+            elif residence is not node:
+                at_type = _pick_residential_type(node.get("@type"))
+                if isinstance(at_type, str) and _is_residential_type(at_type):
+                    additional_type = at_type
         out["property_type"] = _normalize_property_type(
             _pick_residential_type(additional_type)
         )
-        images = node.get("image")
+        # Prefer the residence-level image array when it has more entries
+        # than the outer hero image, since that's where the real photo
+        # gallery lives on modern Redfin pages.
+        images = residence.get("image")
+        outer_images = node.get("image")
+        if not isinstance(images, (list, str)) or (
+            isinstance(images, list)
+            and isinstance(outer_images, list)
+            and len(outer_images) > len(images)
+        ):
+            images = outer_images
         if isinstance(images, list):
             out["photos"] = tuple(
                 PropertyPhoto(url=str(img)) for img in images if isinstance(img, str)

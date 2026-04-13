@@ -323,6 +323,9 @@ class RealtorExtractor:
             if first_stub is None:
                 first_stub = candidate
         # Redux-style nesting: pageProps.initialReduxState.propertyDetails.{listing,property}
+        # AND the current template where propertyDetails IS the listing dict
+        # (the full object lives directly at propertyDetails with fields like
+        # description/photos/address/list_price on it — no child wrapper).
         redux = _safe_dict(page_props, "initialReduxState", "propertyDetails")
         if redux is not None:
             for key in ("listing", "property", "home"):
@@ -333,6 +336,15 @@ class RealtorExtractor:
                     return candidate
                 if first_stub is None:
                     first_stub = candidate
+            # propertyDetails itself carries the listing payload on modern
+            # Realtor pages — treat it as the listing dict when it has real
+            # fields (address/description/list_price). This MUST be gated on
+            # has_listing_fields, otherwise we'd capture a metadata-only stub
+            # on pages where the real data still lives under a child key.
+            if cls._next_blob_has_listing_fields(redux):
+                return redux
+            if first_stub is None:
+                first_stub = redux
         # Nothing matched — return the first stub seen so the caller can
         # decide (it will then reject via `_next_blob_has_listing_fields`
         # and keep scanning later `__NEXT_DATA__` scripts).
