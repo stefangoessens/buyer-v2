@@ -131,6 +131,52 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   /** Fired when the pricing FAQ is opened. */
   pricing_faq_viewed: { source: string };
 
+  // ─── My Journeys (KIN-1082) ─────────────────────────────────────────
+  /** Fired when the /dashboard/journeys index page mounts. */
+  journeys_index_viewed: { view: "active" | "archived"; count: number };
+  /** Fired when a journey card is opened from the journeys list. */
+  journey_card_opened: { dealRoomId: string; propertyId: string };
+  /** Fired when the "Continue" CTA on a journey card is clicked. */
+  journey_continue_clicked: {
+    dealRoomId: string;
+    propertyId: string;
+    nextActionLabel: string;
+  };
+  /** Fired when the buyer triggers the archive action on a journey. */
+  journey_archive_clicked: { dealRoomId: string };
+  /** Fired when the buyer hits "Undo" on the archive toast. */
+  journey_archive_undo_clicked: { dealRoomId: string };
+  /** Fired when archive commits after the undo window elapses. */
+  journey_archive_committed: { dealRoomId: string };
+  /** Fired when a previously archived journey is restored. */
+  journey_restored: { dealRoomId: string };
+  /** Fired when the buyer changes the journey list filter. */
+  journey_filter_changed: { filter: string };
+  /** Fired when the buyer changes the journey list sort. */
+  journey_sort_changed: { sort: string };
+  /** Fired when the buyer changes a journey priority. */
+  journey_priority_changed: {
+    dealRoomId: string;
+    priority: "high" | "normal" | "low";
+  };
+  /** Fired when a buyer saves a custom label on a journey. */
+  journey_label_saved: { dealRoomId: string };
+  /** Fired when the buyer types in the journeys search input. */
+  journey_search_used: { queryLength: number };
+  /** Fired when the journeys page mounts with filter query params set. */
+  journey_deep_link_opened_with_filters: { filters: string };
+  /** Fired when a stale-activity warning appears on a journey card. */
+  journey_stale_warning_shown: { dealRoomId: string };
+  /** Fired when the buyer acts on a stale-activity warning. */
+  journey_stale_warning_action: { dealRoomId: string; action: string };
+  /** Fired when a buyer resumes a journey from the dashboard home teaser. */
+  journey_resume_from_home_teaser: {
+    dealRoomId: string;
+    propertyId: string;
+  };
+  /** Fired when the empty-state CTA on the journey list is clicked. */
+  journey_list_empty_cta_clicked: { cta: string };
+
   // ─── System events ──────────────────────────────────────────────────
   /**
    * Fired when a React error boundary catches an error.
@@ -162,6 +208,7 @@ export type EventCategory =
   | "communication"
   | "agent_ops"
   | "engagement"
+  | "journeys"
   | "system";
 
 export interface EventMetadata {
@@ -436,6 +483,109 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "engagement",
     owner: "growth",
     whenFired: "FAQ item expanded",
+    piiSafe: true,
+  },
+
+  journeys_index_viewed: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "/dashboard/journeys page mount",
+    piiSafe: true,
+  },
+  journey_card_opened: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Buyer opens a journey card from the list",
+    piiSafe: true,
+  },
+  journey_continue_clicked: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Continue CTA on a journey card is clicked",
+    piiSafe: true,
+  },
+  journey_archive_clicked: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Archive action triggered on a journey",
+    piiSafe: true,
+  },
+  journey_archive_undo_clicked: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Undo on the archive toast before commit",
+    piiSafe: true,
+  },
+  journey_archive_committed: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Archive persists after the undo window elapses",
+    piiSafe: true,
+  },
+  journey_restored: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Archived journey restored to active",
+    piiSafe: true,
+  },
+  journey_filter_changed: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Buyer changes the journeys list filter",
+    piiSafe: true,
+  },
+  journey_sort_changed: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Buyer changes the journeys list sort",
+    piiSafe: true,
+  },
+  journey_priority_changed: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Journey priority updated by the buyer",
+    piiSafe: true,
+  },
+  journey_label_saved: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Buyer saves a custom label on a journey",
+    piiSafe: true,
+  },
+  journey_search_used: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Buyer types in the journeys search input",
+    piiSafe: true,
+  },
+  journey_deep_link_opened_with_filters: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Journeys page mount with filter query params",
+    piiSafe: true,
+  },
+  journey_stale_warning_shown: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Stale-activity warning surfaced on a journey card",
+    piiSafe: true,
+  },
+  journey_stale_warning_action: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Buyer acts on a stale-activity warning",
+    piiSafe: true,
+  },
+  journey_resume_from_home_teaser: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Buyer resumes a journey from the home dashboard teaser",
+    piiSafe: true,
+  },
+  journey_list_empty_cta_clicked: {
+    category: "journeys",
+    owner: "dashboard",
+    whenFired: "Empty-state CTA on the journeys list is clicked",
     piiSafe: true,
   },
 

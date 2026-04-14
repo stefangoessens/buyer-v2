@@ -287,10 +287,20 @@ export default defineSchema({
     ),
     createdAt: v.string(),
     updatedAt: v.string(),
+    // KIN-1082 — My Journeys dashboard personalization fields. All optional so
+    // existing rows remain backfill-safe; absence means "active, normal
+    // priority, unlabeled".
+    archivedAt: v.optional(v.string()),
+    journeyPriority: v.optional(
+      v.union(v.literal("high"), v.literal("normal"), v.literal("low")),
+    ),
+    journeyLabel: v.optional(v.string()),
   })
     .index("by_propertyId", ["propertyId"])
     .index("by_buyerId", ["buyerId"])
-    .index("by_buyerId_and_status", ["buyerId", "status"]),
+    .index("by_buyerId_and_status", ["buyerId", "status"])
+    .index("by_buyerId_and_archivedAt", ["buyerId", "archivedAt"])
+    .index("by_buyerId_and_priority", ["buyerId", "journeyPriority"]),
 
   agreements: defineTable({
     dealRoomId: v.id("dealRooms"),

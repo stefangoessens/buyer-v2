@@ -474,6 +474,7 @@ describe("EVENT_METADATA coverage", () => {
       "agent_ops",
       "engagement",
       "system",
+      "journeys",
     ]);
     for (const [name, meta] of Object.entries(EVENT_METADATA)) {
       expect(

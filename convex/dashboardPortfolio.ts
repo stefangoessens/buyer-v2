@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// Buyer Dashboard Portfolio (KIN-1062)
+// Buyer Dashboard Portfolio (KIN-1062, refactored in KIN-1082)
 //
 // Aggregates the buyer's deal rooms with a deterministic next-action and
 // current-step computed server-side so the dashboard can render an
@@ -14,12 +14,19 @@
 //   close    → closing or closed
 // The server emits a `nextAction` object so the UI is link/severity-driven
 // without case statements scattered across components.
+//
+// KIN-1082 consolidated the step/action logic into
+// `convex/lib/journeyProjection.ts` so this teaser and the new
+// `/dashboard/journeys` canonical query emit identical copy / severity.
+// This file is now a thin adapter that runs the shared projection and
+// shapes it into the teaser return contract (dashboard KPI cards depend
+// on the `currentStep` + `nextAction` shape).
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { v } from "convex/values";
 import { query } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
 import { getCurrentUser } from "./lib/session";
+import { projectNextAction } from "./lib/journeyProjection";
 
 const portfolioDealValidator = v.object({
   dealRoomId: v.string(),
@@ -61,98 +68,6 @@ type PortfolioDeal = {
   };
 };
 
-function projectStep(
-  status: Doc<"dealRooms">["status"],
-  propertyId: string,
-): { currentStep: PortfolioDeal["currentStep"]; nextAction: PortfolioDeal["nextAction"] } {
-  switch (status) {
-    case "intake":
-      return {
-        currentStep: "details",
-        nextAction: {
-          label: "Review property details",
-          href: `/property/${propertyId}/details`,
-          severity: "info",
-        },
-      };
-    case "analysis":
-      return {
-        currentStep: "price",
-        nextAction: {
-          label: "Review pricing",
-          href: `/property/${propertyId}/price`,
-          severity: "info",
-        },
-      };
-    case "tour_scheduled":
-      return {
-        currentStep: "disclosures",
-        nextAction: {
-          label: "Prep for tour",
-          href: `/property/${propertyId}/details`,
-          severity: "info",
-        },
-      };
-    case "offer_prep":
-      return {
-        currentStep: "offer",
-        nextAction: {
-          label: "Finalize offer",
-          href: `/property/${propertyId}/offer`,
-          severity: "warning",
-        },
-      };
-    case "offer_sent":
-      return {
-        currentStep: "offer",
-        nextAction: {
-          label: "Awaiting seller response",
-          href: `/property/${propertyId}/offer`,
-          severity: "warning",
-        },
-      };
-    // NOTE: promotion from offer_sent → under_contract is assumed to happen via an
-    // existing broker mutation path or manual update. If you need to test the /closing
-    // route end-to-end in dev, set dealRoom.status = "under_contract" manually.
-    case "under_contract":
-      return {
-        currentStep: "offer",
-        nextAction: {
-          label: "Track your closing",
-          href: `/property/${propertyId}/closing`,
-          severity: "warning",
-        },
-      };
-    case "closing":
-      return {
-        currentStep: "close",
-        nextAction: {
-          label: "Closing workflow",
-          href: `/property/${propertyId}/closing`,
-          severity: "info",
-        },
-      };
-    case "closed":
-      return {
-        currentStep: "close",
-        nextAction: {
-          label: "View summary",
-          href: `/property/${propertyId}/close`,
-          severity: "info",
-        },
-      };
-    case "withdrawn":
-      return {
-        currentStep: "details",
-        nextAction: {
-          label: "Reopen deal",
-          href: `/property/${propertyId}/details`,
-          severity: "info",
-        },
-      };
-  }
-}
-
 export const getPortfolio = query({
   args: {},
   returns: v.array(portfolioDealValidator),
@@ -170,7 +85,10 @@ export const getPortfolio = query({
         const property = await ctx.db.get(dr.propertyId);
         if (!property) return null;
 
-        const { currentStep, nextAction } = projectStep(dr.status, dr.propertyId);
+        const { currentStep, nextAction } = projectNextAction(
+          dr.status,
+          dr.propertyId,
+        );
 
         return {
           dealRoomId: dr._id,
