@@ -29,6 +29,7 @@ export type RouteVisibility = "public" | "gated" | "private";
 export type SeoContentKind =
   | "marketing"      // homepage, pricing, calculator
   | "faq"            // FAQ page (gets FAQPage JSON-LD)
+  | "howTo"          // step-by-step pages (gets HowTo JSON-LD)
   | "legal"          // terms/privacy/disclosures
   | "article"        // blog articles (future KIN-812)
   | "product"        // product areas (dashboard, deal room — gated)

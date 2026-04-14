@@ -240,6 +240,7 @@ export function buildMetadata(input: SeoInput): Metadata {
  * Kind-specific payloads:
  *   - marketing → WebPage
  *   - faq → FAQPage (caller passes `faqEntries` via `extras`)
+ *   - howTo → HowTo (caller passes `howToSteps` via `extras`)
  *   - legal → WebPage with `datePublished`
  *   - article → Article with headline + datePublished
  *   - product / system → WebPage
@@ -248,6 +249,7 @@ export function buildStructuredData(
   input: SeoInput,
   extras: {
     faqEntries?: Array<{ question: string; answer: string }>;
+    howToSteps?: Array<{ name: string; text: string }>;
     articleAuthor?: string;
   } = {}
 ): StructuredData {
@@ -268,6 +270,22 @@ export function buildStructuredData(
           },
         })),
         url: canonical,
+      };
+    }
+    case "howTo": {
+      const steps = extras.howToSteps ?? [];
+      return {
+        "@context": "https://schema.org",
+        "@type": "HowTo",
+        name: input.title,
+        description: input.description,
+        url: canonical,
+        step: steps.map((s, idx) => ({
+          "@type": "HowToStep",
+          position: idx + 1,
+          name: s.name,
+          text: s.text,
+        })),
       };
     }
     case "article": {

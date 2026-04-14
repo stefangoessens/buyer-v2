@@ -35,10 +35,10 @@ export const STATIC_SEO_PAGES = {
     seo: {
       title: "Get the best deal on your Florida home",
       description:
-        "Paste a Zillow, Redfin, or Realtor.com listing link to get instant AI pricing, comps, and expert Florida buyer representation with buyer-v2.",
+        "Buy your Florida home in 4 steps: AI analysis → Florida tour → licensed broker offer → coordinated closing. Up to 2% back at closing.",
       path: "/",
       visibility: "public",
-      kind: "marketing",
+      kind: "howTo",
     },
     sitemap: {
       priority: 1.0,
@@ -176,6 +176,7 @@ export function structuredDataForStaticPage(
   page: StaticSeoPageKey,
   extras?: {
     faqEntries?: Array<{ question: string; answer: string }>;
+    howToSteps?: Array<{ name: string; text: string }>;
     articleAuthor?: string;
   }
 ): StructuredData {

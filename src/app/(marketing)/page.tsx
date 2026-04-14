@@ -6,8 +6,12 @@ import { FeatureCard } from "@/components/marketing/FeatureCard";
 import { TestimonialCard } from "@/components/marketing/TestimonialCard";
 import { HeroInput } from "@/components/marketing/HeroInput";
 import { BentoCard } from "@/components/marketing/BentoCard";
-import { HOW_IT_WORKS } from "@/content/how-it-works";
-import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
+import { HomeHowItWorksSection } from "@/components/marketing/sections/HomeHowItWorksSection";
+import { homeHowItWorksStepsForSchema } from "@/content/home-how-it-works";
+import {
+  metadataForStaticPage,
+  structuredDataForStaticPage,
+} from "@/lib/seo/pageDefinitions";
 
 export const metadata: Metadata = metadataForStaticPage("home");
 
@@ -35,8 +39,16 @@ const testimonials = [
 /* ─── Page (Server Component) ─────────────────────────────────────────── */
 
 export default function Home() {
+  const homeJsonLd = structuredDataForStaticPage("home", {
+    howToSteps: homeHowItWorksStepsForSchema(),
+  });
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(homeJsonLd) }}
+      />
       {/* ── Hero ─────────────────────────────────────────────────────── */}
       <HeroSection><HeroInput /></HeroSection>
 
@@ -132,31 +144,8 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── How It Works (PayFit-style: number + title + desc + phone mockup) */}
-      <section id="how-it-works" className="scroll-mt-[84px] w-full bg-white py-20 lg:py-28">
-        <div className="mx-auto max-w-[1248px] px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">{HOW_IT_WORKS.eyebrow}</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">{HOW_IT_WORKS.title}</h2>
-          </div>
-          <div className="mt-16 grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-6">
-            {HOW_IT_WORKS.steps.map((step) => (
-              <div key={step.id} className="group text-center">
-                {/* Step number */}
-                <p className="text-sm font-bold text-primary-400">{step.number}</p>
-                <h3 className="mt-2 text-xl font-semibold text-neutral-800">{step.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-neutral-500">{step.description}</p>
-                {/* Phone mockup image */}
-                <div className="mt-6 overflow-hidden rounded-[24px] border border-neutral-200 bg-neutral-50 transition-shadow duration-300 group-hover:shadow-lg">
-                  <div className="relative aspect-[3/4]">
-                    <Image src={step.imageSrc} alt={step.imageAlt ?? ""} fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 33vw" />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ── How It Works (KIN-1083: 4-step "Every step has an owner") ─ */}
+      <HomeHowItWorksSection />
 
       {/* ── Testimonials ─────────────────────────────────────────────── */}
       <section className="w-full bg-neutral-50 py-20 lg:py-28">
