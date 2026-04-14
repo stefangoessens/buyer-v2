@@ -51,7 +51,7 @@ npx convex deploy # Convex deploy
 
 - **Web**: Next.js 16 App Router, React 19, TypeScript, Tailwind v4, shadcn/ui, AI SDK v6
 - **Backend**: Convex (schema, queries, mutations, actions, file storage, auth)
-- **Workers**: Python on Railway (Browser Use, parsers, ML)
+- **Workers**: Python on Railway (parsers, ML). Browser automation runs on **Browser Use Cloud** (hosted, residential proxies + IP rotation) via the thin wrapper at `python-workers/lib/browser_use_client.py` — canonical path for all new browser-agent work; self-hosted Railway Browser Use is being decommissioned.
 - **AI**: AI SDK v6 + direct Anthropic + OpenAI providers, prompt registry in Convex
 - **iOS**: SwiftUI, Swift 6, iOS 17+, Convex Swift client, `@Observable`
 - **Analytics**: PostHog (events), Sentry (errors)
