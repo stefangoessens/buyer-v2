@@ -87,7 +87,7 @@ export function ClosingCommandCenter({
             No closing deal yet
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Come back after your offer is accepted — we'll guide you through
+            Come back after your offer is accepted — we&apos;ll guide you through
             every step of closing.
           </p>
         </CardContent>
