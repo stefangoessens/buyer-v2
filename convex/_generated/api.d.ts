@@ -27,6 +27,7 @@ import type * as contracts from "../contracts.js";
 import type * as copilot from "../copilot.js";
 import type * as counterOfferHistory from "../counterOfferHistory.js";
 import type * as dashboard from "../dashboard.js";
+import type * as dashboardAgreements from "../dashboardAgreements.js";
 import type * as dashboardMarketDigest from "../dashboardMarketDigest.js";
 import type * as dashboardPortfolio from "../dashboardPortfolio.js";
 import type * as dealRoomOverview from "../dealRoomOverview.js";
@@ -150,6 +151,7 @@ declare const fullApi: ApiFromModules<{
   copilot: typeof copilot;
   counterOfferHistory: typeof counterOfferHistory;
   dashboard: typeof dashboard;
+  dashboardAgreements: typeof dashboardAgreements;
   dashboardMarketDigest: typeof dashboardMarketDigest;
   dashboardPortfolio: typeof dashboardPortfolio;
   dealRoomOverview: typeof dealRoomOverview;
