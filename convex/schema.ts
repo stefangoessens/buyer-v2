@@ -2779,4 +2779,40 @@ export default defineSchema({
     .index("by_threadId", ["threadId"])
     .index("by_userId_and_propertyId", ["userId", "propertyId"])
     .index("by_propertyId_and_role", ["propertyId", "role"]),
+
+  propertyPermits: defineTable({
+    propertyId: v.id("properties"),
+    permits: v.array(
+      v.object({
+        permitNumber: v.string(),
+        type: v.string(),
+        description: v.string(),
+        issueDate: v.optional(v.string()),
+        status: v.string(),
+        finalDate: v.optional(v.string()),
+        cost: v.optional(v.number()),
+      }),
+    ),
+    openPermitsCount: v.number(),
+    violations: v.array(
+      v.object({
+        violationNumber: v.string(),
+        type: v.string(),
+        issueDate: v.optional(v.string()),
+        status: v.string(),
+        resolvedDate: v.optional(v.string()),
+      }),
+    ),
+    unresolvedViolationsCount: v.number(),
+    inspections: v.array(
+      v.object({
+        permitNumber: v.string(),
+        type: v.string(),
+        date: v.optional(v.string()),
+        result: v.string(),
+        notes: v.string(),
+      }),
+    ),
+    lookupAt: v.string(),
+  }).index("by_propertyId", ["propertyId"]),
 });
