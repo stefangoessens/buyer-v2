@@ -161,6 +161,12 @@ export default defineSchema({
     impactWindows: v.optional(v.boolean()),
     stormShutters: v.optional(v.boolean()),
     floodZone: v.optional(v.string()),
+    // KIN-1074: federal FEMA NFHL flood data (separate from AI narrative floodZone)
+    femaFloodZone: v.optional(v.string()),
+    femaBaseFloodElevation: v.optional(v.number()),
+    femaFloodInsuranceRequired: v.optional(v.boolean()),
+    femaZoneDescription: v.optional(v.string()),
+    femaLookupAt: v.optional(v.string()),
     hurricaneZone: v.optional(v.string()),
     seniorCommunity: v.optional(v.boolean()),
     shortTermRentalAllowed: v.optional(v.boolean()),

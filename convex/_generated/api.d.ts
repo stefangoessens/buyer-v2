@@ -26,6 +26,8 @@ import type * as contractMilestones from "../contractMilestones.js";
 import type * as contracts from "../contracts.js";
 import type * as copilot from "../copilot.js";
 import type * as counterOfferHistory from "../counterOfferHistory.js";
+import type * as crawlers_femaFlood from "../crawlers/femaFlood.js";
+import type * as crawlers_femaFloodPersist from "../crawlers/femaFloodPersist.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardAgreements from "../dashboardAgreements.js";
 import type * as dashboardMarketDigest from "../dashboardMarketDigest.js";
@@ -151,6 +153,8 @@ declare const fullApi: ApiFromModules<{
   contracts: typeof contracts;
   copilot: typeof copilot;
   counterOfferHistory: typeof counterOfferHistory;
+  "crawlers/femaFlood": typeof crawlers_femaFlood;
+  "crawlers/femaFloodPersist": typeof crawlers_femaFloodPersist;
   dashboard: typeof dashboard;
   dashboardAgreements: typeof dashboardAgreements;
   dashboardMarketDigest: typeof dashboardMarketDigest;
