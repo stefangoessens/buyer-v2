@@ -34,12 +34,11 @@ function tile(
 }
 
 describe("DASHBOARD_NAV", () => {
-  it("exposes the 5 primary nav entries in order", () => {
+  it("exposes the 4 primary nav entries in order", () => {
     expect(DASHBOARD_NAV.map((n) => n.key)).toEqual([
       "home",
-      "reports",
-      "compare",
       "favourites",
+      "agreements",
       "profile",
     ]);
   });

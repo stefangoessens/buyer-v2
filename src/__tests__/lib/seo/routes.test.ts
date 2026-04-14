@@ -27,10 +27,9 @@ describe("SEO_ROUTES registry", () => {
   it("contains gated/private routes so robots.txt can disallow them", () => {
     expect(findRouteByPath("/intake")).toBeDefined();
     expect(findRouteByPath("/dashboard")).toBeDefined();
-    expect(findRouteByPath("/compare")).toBeDefined();
-    expect(findRouteByPath("/favourites")).toBeDefined();
-    expect(findRouteByPath("/profile")).toBeDefined();
-    expect(findRouteByPath("/reports")).toBeDefined();
+    expect(findRouteByPath("/dashboard/favourites")).toBeDefined();
+    expect(findRouteByPath("/dashboard/profile")).toBeDefined();
+    expect(findRouteByPath("/dashboard/agreements")).toBeDefined();
     expect(findRouteByPath("/property")).toBeDefined();
     expect(findRouteByPath("/dealroom")).toBeDefined();
     expect(findRouteByPath("/console")).toBeDefined();
@@ -80,10 +79,9 @@ describe("publicSitemapRoutes", () => {
     const paths = publicSitemapRoutes().map((r) => r.path);
     expect(paths).not.toContain("/intake");
     expect(paths).not.toContain("/dashboard");
-    expect(paths).not.toContain("/compare");
-    expect(paths).not.toContain("/favourites");
-    expect(paths).not.toContain("/profile");
-    expect(paths).not.toContain("/reports");
+    expect(paths).not.toContain("/dashboard/favourites");
+    expect(paths).not.toContain("/dashboard/profile");
+    expect(paths).not.toContain("/dashboard/agreements");
     expect(paths).not.toContain("/property");
     expect(paths).not.toContain("/dealroom");
     expect(paths).not.toContain("/console");
@@ -106,10 +104,9 @@ describe("gatedRouteDisallowPaths", () => {
     const disallow = gatedRouteDisallowPaths();
     expect(disallow).toContain("/intake");
     expect(disallow).toContain("/dashboard");
-    expect(disallow).toContain("/compare");
-    expect(disallow).toContain("/favourites");
-    expect(disallow).toContain("/profile");
-    expect(disallow).toContain("/reports");
+    expect(disallow).toContain("/dashboard/favourites");
+    expect(disallow).toContain("/dashboard/profile");
+    expect(disallow).toContain("/dashboard/agreements");
     expect(disallow).toContain("/property");
     expect(disallow).toContain("/dealroom");
     expect(disallow).toContain("/console");

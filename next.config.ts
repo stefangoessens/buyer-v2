@@ -25,6 +25,15 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.rdcpix.com" },
     ],
   },
+  async redirects() {
+    return [
+      { source: "/profile", destination: "/dashboard/profile", permanent: true },
+      { source: "/favourites", destination: "/dashboard/favourites", permanent: true },
+      { source: "/agreements", destination: "/dashboard/agreements", permanent: true },
+      { source: "/compare", destination: "/dashboard", permanent: true },
+      { source: "/reports", destination: "/dashboard", permanent: true },
+    ];
+  },
 };
 
 const serverEnv = readEnv(webServerEnvSpec, process.env);

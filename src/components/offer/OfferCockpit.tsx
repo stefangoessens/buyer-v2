@@ -51,7 +51,7 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
   return (
     <EligibilityGate
       eligibility={data.eligibility}
-      agreementHref={`/agreements?dealRoom=${data.dealRoom._id}`}
+      agreementHref={`/dashboard/agreements?dealRoom=${data.dealRoom._id}`}
     >
       <div className="flex flex-col gap-6">
         <header className="flex flex-wrap items-start justify-between gap-4">
