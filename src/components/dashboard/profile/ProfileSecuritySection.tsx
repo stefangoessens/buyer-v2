@@ -41,7 +41,7 @@ export function ProfileSecuritySection() {
       <CardHeader>
         <CardTitle>Security</CardTitle>
         <CardDescription>
-          Account safety controls. We're rolling these out — check back soon.
+          Account safety controls. We&apos;re rolling these out — check back soon.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col divide-y divide-border/60">

@@ -45,8 +45,7 @@ export function ProfileIdentitySection() {
   const upsertProfile = useMutation(api.buyerProfiles.createOrUpdate);
 
   const form = useForm<IdentityFormValues>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(identitySchema as any) as unknown as Resolver<IdentityFormValues>,
+    resolver: zodResolver(identitySchema as never) as unknown as Resolver<IdentityFormValues>,
     defaultValues: { name: "", phone: "" },
   });
 

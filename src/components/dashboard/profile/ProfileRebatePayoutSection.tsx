@@ -116,7 +116,7 @@ export function ProfileRebatePayoutSection() {
       <CardHeader>
         <CardTitle>Rebate payout</CardTitle>
         <CardDescription>
-          Pick how you'd like to receive your buyer rebate at closing.
+          Pick how you&apos;d like to receive your buyer rebate at closing.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
@@ -188,7 +188,7 @@ export function ProfileRebatePayoutSection() {
                   autoComplete="street-address"
                 />
                 <p className="text-xs text-muted-foreground">
-                  We'll mail your check here within 10 business days of close.
+                  We&apos;ll mail your check here within 10 business days of close.
                 </p>
               </div>
             ) : null}
@@ -209,7 +209,7 @@ export function ProfileRebatePayoutSection() {
 
             {method === "none" ? (
               <p className="text-sm text-muted-foreground">
-                You can pick a method later — we'll prompt you when an offer
+                You can pick a method later — we&apos;ll prompt you when an offer
                 goes out.
               </p>
             ) : null}

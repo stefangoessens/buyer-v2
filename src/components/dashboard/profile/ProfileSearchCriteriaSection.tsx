@@ -99,8 +99,7 @@ export function ProfileSearchCriteriaSection() {
   const upsertProfile = useMutation(api.buyerProfiles.createOrUpdate);
 
   const form = useForm<SearchFormValues>({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    resolver: zodResolver(searchSchema as any) as unknown as Resolver<SearchFormValues>,
+    resolver: zodResolver(searchSchema as never) as unknown as Resolver<SearchFormValues>,
     defaultValues: {
       preferredAreasInput: "",
       propertyTypes: [],

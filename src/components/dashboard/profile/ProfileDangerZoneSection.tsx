@@ -77,7 +77,7 @@ export function ProfileDangerZoneSection() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete your account?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This can't be undone. Type <strong>{CONFIRM_PHRASE}</strong>{" "}
+                  This can&apos;t be undone. Type <strong>{CONFIRM_PHRASE}</strong>{" "}
                   below to confirm.
                 </AlertDialogDescription>
               </AlertDialogHeader>

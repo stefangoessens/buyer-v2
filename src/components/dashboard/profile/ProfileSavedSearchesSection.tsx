@@ -167,7 +167,7 @@ export function ProfileSavedSearchesSection() {
       <CardHeader>
         <CardTitle>Saved searches</CardTitle>
         <CardDescription>
-          Quick filters you've pinned for your home hunt.
+          Quick filters you&apos;ve pinned for your home hunt.
         </CardDescription>
         <div className="col-start-2 row-span-2 row-start-1 self-start justify-self-end">
           <Dialog

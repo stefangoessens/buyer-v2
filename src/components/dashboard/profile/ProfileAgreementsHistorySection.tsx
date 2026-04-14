@@ -85,7 +85,7 @@ export function ProfileAgreementsHistorySection() {
       <CardHeader>
         <CardTitle>Agreements history</CardTitle>
         <CardDescription>
-          Buyer broker agreements you've signed with us.
+          Buyer broker agreements you&apos;ve signed with us.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -95,7 +95,7 @@ export function ProfileAgreementsHistorySection() {
           </div>
         ) : agreements.length === 0 ? (
           <div className="rounded-3xl bg-muted/40 px-4 py-10 text-center text-sm text-muted-foreground">
-            No signed agreements yet. They'll appear here once you sign one in
+            No signed agreements yet. They&apos;ll appear here once you sign one in
             a deal room.
           </div>
         ) : (
