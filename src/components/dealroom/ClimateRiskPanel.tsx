@@ -15,6 +15,45 @@ interface ClimateRiskPanelProps {
   heat?: string[];
   storms?: string[];
   other?: string[];
+  // KIN-1074: real federal flood data from FEMA NFHL
+  femaZone?: string;
+  femaZoneDescription?: string;
+  femaBaseFloodElevation?: number;
+  femaFloodInsuranceRequired?: boolean;
+}
+
+type FemaSeverity = "low" | "moderate" | "high" | "unknown";
+
+function femaSeverity(zone: string | undefined): FemaSeverity {
+  if (!zone) return "unknown";
+  const upper = zone.toUpperCase();
+  if (upper === "VE") return "high";
+  if (upper === "AE" || upper === "AH" || upper === "AO" || upper === "A")
+    return "moderate";
+  if (upper === "X") return "low";
+  // FEMA zone "D" is "possible but undetermined" — never green. Same for any
+  // zone code we don't recognize or "Unknown" lookup results.
+  return "unknown";
+}
+
+function femaBadgeLabel(zone: string, severity: FemaSeverity): string {
+  if (severity === "high") return "Coastal high hazard — flood + storm-surge";
+  if (severity === "moderate") return "1% annual flood — insurance required";
+  if (severity === "low") return `Zone ${zone} — minimal risk`;
+  return `Zone ${zone} — undetermined hazard`;
+}
+
+function femaBadgeClasses(severity: FemaSeverity): string {
+  if (severity === "high") {
+    return "bg-error-50 text-error-700 ring-error-500/30";
+  }
+  if (severity === "moderate") {
+    return "bg-warning-50 text-warning-700 ring-warning-500/30";
+  }
+  if (severity === "low") {
+    return "bg-success-50 text-success-700 ring-success-500/30";
+  }
+  return "bg-warning-50 text-warning-700 ring-warning-500/30";
 }
 
 type Section = {
@@ -60,9 +99,15 @@ export function ClimateRiskPanel({
   heat,
   storms,
   other,
+  femaZone,
+  femaZoneDescription,
+  femaBaseFloodElevation,
+  femaFloodInsuranceRequired,
 }: ClimateRiskPanelProps) {
   const safeLevel = clampLevel(level);
   const tone = toneClasses(safeLevel);
+  const hasFema = typeof femaZone === "string" && femaZone.length > 0;
+  const femaSev = femaSeverity(femaZone);
 
   const sections: Section[] = [
     { key: "flood", label: "Flood", bullets: flood },
@@ -121,13 +166,50 @@ export function ClimateRiskPanel({
         </div>
       </CardHeader>
       <CardContent>
-        {isEmpty ? (
-          <div className="rounded-2xl border border-dashed border-border bg-muted/60 p-6 text-center">
-            <p className="text-sm text-muted-foreground">
-              Coming soon — flood/heat/storms data lands with the climate
-              crawler.
-            </p>
+        {hasFema && (
+          <div className="mb-5 rounded-2xl border border-border/70 bg-muted/40 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-widest ring-1",
+                  femaBadgeClasses(femaSev),
+                )}
+              >
+                FEMA zone {femaZone}
+              </span>
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                {femaBadgeLabel(femaZone!, femaSev)}
+              </span>
+            </div>
+            {femaZoneDescription && (
+              <p className="mt-2 text-sm text-neutral-700">
+                {femaZoneDescription}
+              </p>
+            )}
+            {typeof femaBaseFloodElevation === "number" && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Base flood elevation:{" "}
+                <span className="font-semibold text-neutral-700 tabular-nums">
+                  {femaBaseFloodElevation} ft
+                </span>
+              </p>
+            )}
+            {femaFloodInsuranceRequired && (
+              <p className="mt-2 text-sm font-semibold text-warning-700">
+                Flood insurance required by lender.
+              </p>
+            )}
           </div>
+        )}
+        {isEmpty ? (
+          hasFema ? null : (
+            <div className="rounded-2xl border border-dashed border-border bg-muted/60 p-6 text-center">
+              <p className="text-sm text-muted-foreground">
+                Coming soon — flood/heat/storms data lands with the climate
+                crawler.
+              </p>
+            </div>
+          )
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {visibleSections.map((section) => (

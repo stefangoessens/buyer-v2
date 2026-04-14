@@ -219,6 +219,20 @@ export const recordSuccess = internalMutation({
       { propertyId },
     );
 
+    // FEMA flood zone enrichment runs in parallel with engines — only
+    // fires when the extraction provided coordinates, otherwise the
+    // action would no-op. Skip silently when coords are absent.
+    if (
+      extracted.latitude !== null &&
+      extracted.longitude !== null
+    ) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.crawlers.femaFlood.lookupAndPersist,
+        { propertyId },
+      );
+    }
+
     return propertyId;
   },
 });

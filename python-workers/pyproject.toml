@@ -26,7 +26,7 @@ requires = ["setuptools>=75.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["common*", "fetch*", "parsers*", "fallback*"]
+include = ["common*", "fetch*", "parsers*", "fallback*", "sources*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
