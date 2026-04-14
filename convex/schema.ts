@@ -2698,4 +2698,21 @@ export default defineSchema({
   })
     .index("by_linkId", ["linkId"])
     .index("by_dealRoomId_and_timestamp", ["dealRoomId", "timestamp"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUYER FAVOURITES (KIN-1064)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Per-buyer saved properties with optional notes/tags. The
+  // by_userId_propertyId index enforces idempotent add/remove and powers
+  // the isFavourite check on the property detail header.
+
+  buyerFavourites: defineTable({
+    userId: v.id("users"),
+    propertyId: v.id("properties"),
+    createdAt: v.string(),
+    note: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_userId_propertyId", ["userId", "propertyId"]),
 });
