@@ -130,6 +130,16 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   };
   /** Fired when the pricing FAQ is opened. */
   pricing_faq_viewed: { source: string };
+  /** Fired when the homepage "How it works" section becomes visible. */
+  home_how_it_works_section_viewed: Record<string, never>;
+  /** Fired when a buyer hovers or focuses a homepage HIW step card. */
+  home_how_it_works_step_interacted: {
+    stepNumber: number;
+    stepId: "analyze" | "tour" | "offer" | "close";
+    kind: "hover" | "focus";
+  };
+  /** Fired when the homepage HIW CTA below the four steps is clicked. */
+  home_how_it_works_cta_clicked: Record<string, never>;
 
   // ─── My Journeys (KIN-1082) ─────────────────────────────────────────
   /** Fired when the /dashboard/journeys index page mounts. */
@@ -483,6 +493,24 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "engagement",
     owner: "growth",
     whenFired: "FAQ item expanded",
+    piiSafe: true,
+  },
+  home_how_it_works_section_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "IntersectionObserver on #how-it-works crosses 40% visible",
+    piiSafe: true,
+  },
+  home_how_it_works_step_interacted: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Hover or keyboard focus on a step card",
+    piiSafe: true,
+  },
+  home_how_it_works_cta_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "CTA button below the 4 steps clicked",
     piiSafe: true,
   },
 

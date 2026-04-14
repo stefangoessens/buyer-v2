@@ -452,7 +452,10 @@ describe("listEventsByCategory()", () => {
     const events = listEventsByCategory("engagement");
     expect(events).toContain("calculator_used");
     expect(events).toContain("pricing_faq_viewed");
-    expect(events).toHaveLength(2);
+    expect(events).toContain("home_how_it_works_section_viewed");
+    expect(events).toContain("home_how_it_works_step_interacted");
+    expect(events).toContain("home_how_it_works_cta_clicked");
+    expect(events).toHaveLength(5);
   });
 });
 
