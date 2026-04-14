@@ -5,9 +5,15 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
+import { PriceSpectrumBar } from "./PriceSpectrumBar";
 import { PricingPanelCard } from "./PricingPanelCard";
-import { LeverageScoreCard } from "./LeverageScoreCard";
+import {
+  LeverageScoreCard,
+  type LeverageSignal,
+} from "./LeverageScoreCard";
 import { CostEstimateCard } from "./CostEstimateCard";
+import { PreApprovalCtaCard } from "./PreApprovalCtaCard";
+import { NextStepFooter } from "./NextStepFooter";
 
 interface PropertyPriceClientProps {
   propertyId: string;
@@ -44,10 +50,16 @@ export function PropertyPriceClient({ propertyId }: PropertyPriceClientProps) {
     );
   }
 
-  return <PriceOverview dealRoomId={dealRoomId} />;
+  return <PriceOverview dealRoomId={dealRoomId} propertyId={propertyId} />;
 }
 
-function PriceOverview({ dealRoomId }: { dealRoomId: Id<"dealRooms"> }) {
+function PriceOverview({
+  dealRoomId,
+  propertyId,
+}: {
+  dealRoomId: Id<"dealRooms">;
+  propertyId: string;
+}) {
   const overview = useQuery(api.dealRoomOverview.getOverview, { dealRoomId });
 
   if (overview === undefined) {
@@ -70,23 +82,81 @@ function PriceOverview({ dealRoomId }: { dealRoomId: Id<"dealRooms"> }) {
     );
   }
 
+  const pricingData = overview.pricing.data;
+  const leverageData = overview.leverage.data;
+
+  // Map pricing engine output to the spectrum bar's anchor props.
+  // The pricing engine doesn't currently expose an explicit listingPrice — we
+  // use consensusEstimate as a proxy (it blends portal estimates with comps,
+  // which is the closest thing to "what the seller is asking"). KIN-1071 will
+  // wire through a real Zestimate; lowestPossible is still TBD.
+  const showSpectrum =
+    pricingData !== null &&
+    Number.isFinite(pricingData.fairValue) &&
+    Number.isFinite(pricingData.consensusEstimate);
+
+  // Build placeholder LeverageSignal[] from the engine's topSignals so the
+  // expanded card has source/confidence metadata to render. Until we plumb
+  // real source attribution through the engine, everything is "ai" with the
+  // engine's overall confidence.
+  const leverageSignals: LeverageSignal[] | undefined = leverageData
+    ? leverageData.topSignals.map((signal) => ({
+        label: signal.name,
+        delta: signal.delta,
+        source: "ai" as const,
+        confidence: leverageData.overallConfidence,
+      }))
+    : undefined;
+
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div className="flex flex-col gap-6">
+      {showSpectrum && pricingData ? (
+        <section className="rounded-[24px] border border-neutral-200 bg-white p-6 sm:p-8">
+          <header className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
+              Price spectrum
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-neutral-800">
+              Where every anchor sits on the price line
+            </h2>
+          </header>
+          <PriceSpectrumBar
+            fairPrice={pricingData.fairValue}
+            listingPrice={pricingData.consensusEstimate}
+            walkAway={pricingData.walkAway}
+            strongOpener={pricingData.strongOpener}
+            confidence={pricingData.overallConfidence}
+          />
+        </section>
+      ) : null}
+
+      <LeverageScoreCard
+        status={overview.leverage.status}
+        data={overview.leverage.data}
+        reason={overview.leverage.reason}
+        signals={leverageSignals}
+      />
+
       <PricingPanelCard
         status={overview.pricing.status}
         data={overview.pricing.data}
         reason={overview.pricing.reason}
         confidence={overview.pricing.confidence}
       />
-      <LeverageScoreCard
-        status={overview.leverage.status}
-        data={overview.leverage.data}
-        reason={overview.leverage.reason}
-      />
+
       <CostEstimateCard
         status={overview.cost.status}
         data={overview.cost.data}
         reason={overview.cost.reason}
+        enableCustomize={true}
+      />
+
+      <PreApprovalCtaCard />
+
+      <NextStepFooter
+        href={`/property/${propertyId}/disclosures`}
+        label="Review disclosures"
+        description="See seller disclosures, inspection report, and Florida-specific risk signals."
       />
     </div>
   );
@@ -94,8 +164,9 @@ function PriceOverview({ dealRoomId }: { dealRoomId: Id<"dealRooms"> }) {
 
 function PriceSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-      <SkeletonCard className="lg:col-span-2" />
+    <div className="flex flex-col gap-6">
+      <SkeletonCard />
+      <SkeletonCard />
       <SkeletonCard />
       <SkeletonCard />
     </div>

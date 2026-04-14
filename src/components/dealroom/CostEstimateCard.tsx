@@ -1,5 +1,10 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
 type CostData = {
   monthlyMid: number;
   monthlyRange: { low: number; high: number };
@@ -11,6 +16,7 @@ interface CostEstimateCardProps {
   status: "available" | "pending" | "unavailable";
   data: CostData;
   reason?: string;
+  enableCustomize?: boolean;
 }
 
 const currency = new Intl.NumberFormat("en-US", {
@@ -19,10 +25,15 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+const BASE_RATE_PCT = 7.0;
+const BASE_INSURANCE_ANNUAL = 2400;
+const TAX_RATIO_OF_ANNUAL = 0.012;
+
 export function CostEstimateCard({
   status,
   data,
   reason,
+  enableCustomize = false,
 }: CostEstimateCardProps) {
   return (
     <section className="flex flex-col rounded-[24px] border border-neutral-200 bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
@@ -77,11 +88,164 @@ export function CostEstimateCard({
             exposure, roof age, and flood zone can shift insurance estimates
             meaningfully. We&apos;ll sharpen these once underwriting data lands.
           </p>
+
+          {enableCustomize ? <CustomizeSection data={data} /> : null}
         </>
       ) : (
         <CostEmptyState status={status} reason={reason} />
       )}
     </section>
+  );
+}
+
+function CustomizeSection({
+  data,
+}: {
+  data: NonNullable<CostData>;
+}) {
+  const baseTaxes = useMemo(
+    () => Math.round(data.annualTotal * TAX_RATIO_OF_ANNUAL),
+    [data.annualTotal],
+  );
+  const baseInsurance = BASE_INSURANCE_ANNUAL;
+
+  const [open, setOpen] = useState(false);
+  const [interestRatePct, setInterestRatePct] = useState(BASE_RATE_PCT);
+  const [propertyTaxAnnual, setPropertyTaxAnnual] = useState(baseTaxes);
+  const [homeInsuranceAnnual, setHomeInsuranceAnnual] =
+    useState(BASE_INSURANCE_ANNUAL);
+
+  const customizedMonthly = useMemo(() => {
+    const rateDelta = (interestRatePct - BASE_RATE_PCT) * 50;
+    const taxDelta = (propertyTaxAnnual - baseTaxes) / 12;
+    const insuranceDelta = (homeInsuranceAnnual - baseInsurance) / 12;
+    return Math.max(
+      0,
+      Math.round(data.monthlyMid + rateDelta + taxDelta + insuranceDelta),
+    );
+  }, [
+    interestRatePct,
+    propertyTaxAnnual,
+    homeInsuranceAnnual,
+    baseTaxes,
+    baseInsurance,
+    data.monthlyMid,
+  ]);
+
+  const handleReset = () => {
+    setInterestRatePct(BASE_RATE_PCT);
+    setPropertyTaxAnnual(baseTaxes);
+    setHomeInsuranceAnnual(BASE_INSURANCE_ANNUAL);
+  };
+
+  if (!open) {
+    return (
+      <div className="mt-5 border-t border-neutral-100 pt-5">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setOpen(true)}
+        >
+          Customize
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5 border-t border-neutral-100 pt-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-neutral-800">
+          Customize assumptions
+        </h3>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setOpen(false)}
+        >
+          Hide
+        </Button>
+      </div>
+
+      <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-neutral-500">
+            Interest rate (%)
+          </dt>
+          <dd className="mt-1">
+            <Input
+              type="number"
+              min={0}
+              max={15}
+              step={0.1}
+              value={interestRatePct}
+              onChange={(e) =>
+                setInterestRatePct(Number(e.target.value) || 0)
+              }
+            />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-neutral-500">
+            Property taxes (yr)
+          </dt>
+          <dd className="mt-1">
+            <Input
+              type="number"
+              min={0}
+              max={30000}
+              step={100}
+              value={propertyTaxAnnual}
+              onChange={(e) =>
+                setPropertyTaxAnnual(Number(e.target.value) || 0)
+              }
+            />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-neutral-500">
+            Home insurance (yr)
+          </dt>
+          <dd className="mt-1">
+            <Input
+              type="number"
+              min={0}
+              max={12000}
+              step={100}
+              value={homeInsuranceAnnual}
+              onChange={(e) =>
+                setHomeInsuranceAnnual(Number(e.target.value) || 0)
+              }
+            />
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-5 flex flex-col gap-1 rounded-2xl bg-neutral-50 p-4">
+        <span className="text-xs uppercase tracking-wide text-neutral-500">
+          Customized monthly
+        </span>
+        <span className="text-2xl font-bold text-neutral-900">
+          {currency.format(customizedMonthly)}
+          <span className="ml-1 text-sm font-medium text-neutral-500">
+            /mo
+          </span>
+        </span>
+      </div>
+
+      <div className="mt-4">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handleReset}
+        >
+          Reset to estimates
+        </Button>
+      </div>
+    </div>
   );
 }
 
