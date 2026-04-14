@@ -1,0 +1,16 @@
+{
+  "folio": "5042-19-01-0560",
+  "currentOwner": "MIRABELLA HOLDINGS LLC",
+  "assessedValue": 412000,
+  "justValue": 425000,
+  "taxableValue": 412000,
+  "exemptions": [],
+  "lastSalePrice": 380000,
+  "lastSaleDate": "2024-08-15",
+  "ownershipHistory": [
+    {"owner": "MIRABELLA HOLDINGS LLC", "saleDate": "2024-08-15", "salePrice": 380000},
+    {"owner": "SMITH JOHN R", "saleDate": "2018-03-22", "salePrice": 295000}
+  ],
+  "taxBillTotal": 7842,
+  "sourceUrl": "https://web.bcpa.net/bcpaclient/"
+}

@@ -10,6 +10,7 @@ import { NeighborhoodOverviewCard } from "@/components/dealroom/NeighborhoodOver
 import { PropertyConditionCard } from "@/components/dealroom/PropertyConditionCard";
 import { KeyDetailsTable } from "@/components/dealroom/KeyDetailsTable";
 import { NextStepFooter } from "@/components/dealroom/NextStepFooter";
+import { AssessedVsListedInsight } from "@/components/dealroom/AssessedVsListedInsight";
 
 export const metadata: Metadata = {
   title: "Analyze property | buyer-v2",
@@ -64,6 +65,18 @@ export default async function PropertyDetailsPage({
           yearBuilt={property?.yearBuilt}
           daysOnMarket={property?.daysOnMarket}
           lotSize={property?.lotSize}
+        />
+      </div>
+
+      <div className="mx-auto w-full max-w-[1248px] px-6">
+        <AssessedVsListedInsight
+          listPrice={property?.listPrice ?? null}
+          papaAssessedValue={property?.papaAssessedValue}
+          papaJustValue={property?.papaJustValue}
+          papaCurrentOwner={property?.papaCurrentOwner}
+          papaIsCorporate={property?.papaIsCorporate}
+          papaFolio={property?.papaFolio}
+          papaExemptions={property?.papaExemptions}
         />
       </div>
 

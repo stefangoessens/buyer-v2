@@ -90,6 +90,13 @@ export const getPublic = query({
         v.literal("withdrawn")
       ),
       updatedAt: v.string(),
+      // KIN-1072: Broward PAPA enrichment (surfaced for AssessedVsListedInsight)
+      papaFolio: v.optional(v.string()),
+      papaCurrentOwner: v.optional(v.string()),
+      papaIsCorporate: v.optional(v.boolean()),
+      papaAssessedValue: v.optional(v.number()),
+      papaJustValue: v.optional(v.number()),
+      papaExemptions: v.optional(v.array(v.string())),
     })
   ),
   handler: async (ctx, args) => {
@@ -120,6 +127,12 @@ export const getPublic = query({
       sourcePlatform: property.sourcePlatform,
       status: property.status,
       updatedAt: property.updatedAt,
+      papaFolio: property.papaFolio,
+      papaCurrentOwner: property.papaCurrentOwner,
+      papaIsCorporate: property.papaIsCorporate,
+      papaAssessedValue: property.papaAssessedValue,
+      papaJustValue: property.papaJustValue,
+      papaExemptions: property.papaExemptions,
     };
   },
 });
