@@ -22,21 +22,25 @@ interface ClimateRiskPanelProps {
   femaFloodInsuranceRequired?: boolean;
 }
 
-type FemaSeverity = "low" | "moderate" | "high";
+type FemaSeverity = "low" | "moderate" | "high" | "unknown";
 
 function femaSeverity(zone: string | undefined): FemaSeverity {
-  if (!zone) return "low";
+  if (!zone) return "unknown";
   const upper = zone.toUpperCase();
   if (upper === "VE") return "high";
   if (upper === "AE" || upper === "AH" || upper === "AO" || upper === "A")
     return "moderate";
-  return "low";
+  if (upper === "X") return "low";
+  // FEMA zone "D" is "possible but undetermined" — never green. Same for any
+  // zone code we don't recognize or "Unknown" lookup results.
+  return "unknown";
 }
 
 function femaBadgeLabel(zone: string, severity: FemaSeverity): string {
   if (severity === "high") return "Coastal high hazard — flood + storm-surge";
   if (severity === "moderate") return "1% annual flood — insurance required";
-  return `Zone ${zone} — minimal risk`;
+  if (severity === "low") return `Zone ${zone} — minimal risk`;
+  return `Zone ${zone} — undetermined hazard`;
 }
 
 function femaBadgeClasses(severity: FemaSeverity): string {
@@ -46,7 +50,10 @@ function femaBadgeClasses(severity: FemaSeverity): string {
   if (severity === "moderate") {
     return "bg-warning-50 text-warning-700 ring-warning-500/30";
   }
-  return "bg-success-50 text-success-700 ring-success-500/30";
+  if (severity === "low") {
+    return "bg-success-50 text-success-700 ring-success-500/30";
+  }
+  return "bg-warning-50 text-warning-700 ring-warning-500/30";
 }
 
 type Section = {
