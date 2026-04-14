@@ -73,7 +73,6 @@ describe("sitemap — KIN-812 regression", () => {
     expect(urls).toContain("https://buyerv2.com/");
     expect(urls).toContain("https://buyerv2.com/pricing");
     expect(urls).toContain("https://buyerv2.com/faq");
-    expect(urls).toContain("https://buyerv2.com/savings");
     expect(urls).toContain("https://buyerv2.com/legal/terms");
     expect(urls).toContain("https://buyerv2.com/legal/privacy");
     expect(urls).toContain("https://buyerv2.com/legal/brokerage-disclosures");

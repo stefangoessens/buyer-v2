@@ -73,20 +73,6 @@ export const STATIC_SEO_PAGES = {
       changeFrequency: "monthly",
     },
   },
-  savings: {
-    seo: {
-      title: "Savings Calculator",
-      description:
-        "Estimate your buyer credit on a Florida home purchase. See how buyer-v2's commission rebate model works and what you could save at closing.",
-      path: "/savings",
-      visibility: "public",
-      kind: "marketing",
-    },
-    sitemap: {
-      priority: 0.85,
-      changeFrequency: "monthly",
-    },
-  },
   faq: {
     seo: {
       title: "FAQ",
