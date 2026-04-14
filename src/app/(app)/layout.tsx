@@ -1,5 +1,6 @@
 import { AppSidebar, AppTopNav } from "@/components/dealroom/AppSidebar";
 import type { Metadata } from "next";
+import { Toaster } from "sonner";
 import { appSurfaceDefinitions } from "@/lib/app-shell";
 
 export const runtime = "nodejs";
@@ -20,6 +21,7 @@ export default function AppLayout({
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
       </div>
+      <Toaster position="bottom-right" richColors closeButton />
     </div>
   );
 }

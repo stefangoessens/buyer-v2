@@ -10,10 +10,15 @@ import {
   buyerMoveTimeline,
   buyerProfileDealRoomFlowValidator,
   buyerProfileOfferFlowValidator,
+  buyerProfileRebatePayoutMethodValidator,
+  buyerProfileSavedSearchCriteriaValidator,
+  buyerProfileSavedSearchValidator,
   buyerProfileTourFlowValidator,
   buyerProfileViewValidator,
   mergeBuyerProfileSections,
   normalizeBuyerProfileSections,
+  type BuyerProfileRebatePayoutMethod,
+  type BuyerProfileSavedSearch,
 } from "./lib/buyerProfile";
 import { financingType } from "./lib/validators";
 
@@ -84,6 +89,8 @@ const upsertArgs = {
       notes: v.optional(v.string()),
     }),
   ),
+  savedSearches: v.optional(v.array(buyerProfileSavedSearchValidator)),
+  rebatePayoutMethod: v.optional(buyerProfileRebatePayoutMethodValidator),
 };
 
 async function loadProfileDependencies(ctx: SessionCtx, userId: Id<"users">) {
@@ -249,6 +256,8 @@ async function upsertProfileRecord(
       internal?: {
         notes?: string;
       };
+      savedSearches?: BuyerProfileSavedSearch[];
+      rebatePayoutMethod?: BuyerProfileRebatePayoutMethod;
     };
   },
 ): Promise<Id<"buyerProfiles">> {
@@ -302,16 +311,38 @@ async function upsertProfileRecord(
     JSON.stringify(baseSections.internal ?? null) !==
       JSON.stringify(nextSections.internal ?? null);
 
+  const savedSearchesProvided = params.args.savedSearches !== undefined;
+  const nextSavedSearches = savedSearchesProvided
+    ? params.args.savedSearches
+    : params.existingProfile?.savedSearches;
+  const savedSearchesChanged =
+    savedSearchesProvided &&
+    JSON.stringify(params.existingProfile?.savedSearches ?? null) !==
+      JSON.stringify(params.args.savedSearches ?? null);
+
+  const rebatePayoutProvided = params.args.rebatePayoutMethod !== undefined;
+  const nextRebatePayoutMethod = rebatePayoutProvided
+    ? params.args.rebatePayoutMethod
+    : params.existingProfile?.rebatePayoutMethod;
+  const rebatePayoutChanged =
+    rebatePayoutProvided &&
+    JSON.stringify(params.existingProfile?.rebatePayoutMethod ?? null) !==
+      JSON.stringify(params.args.rebatePayoutMethod ?? null);
+
   let profileId: Id<"buyerProfiles">;
   if (params.existingProfile) {
     profileId = params.existingProfile._id;
-    if (sectionsChanged) {
+    if (sectionsChanged || savedSearchesChanged || rebatePayoutChanged) {
       await ctx.db.patch(profileId, {
         financing: nextSections.financing,
         searchPreferences: nextSections.searchPreferences,
         household: nextSections.household,
         updatedAt: now,
         ...(nextSections.internal ? { internal: nextSections.internal } : {}),
+        ...(savedSearchesProvided ? { savedSearches: params.args.savedSearches } : {}),
+        ...(rebatePayoutProvided
+          ? { rebatePayoutMethod: params.args.rebatePayoutMethod }
+          : {}),
       });
     }
   } else {
@@ -323,6 +354,10 @@ async function upsertProfileRecord(
       createdAt: now,
       updatedAt: now,
       ...(nextSections.internal ? { internal: nextSections.internal } : {}),
+      ...(nextSavedSearches !== undefined ? { savedSearches: nextSavedSearches } : {}),
+      ...(nextRebatePayoutMethod !== undefined
+        ? { rebatePayoutMethod: nextRebatePayoutMethod }
+        : {}),
     });
   }
 
@@ -337,11 +372,15 @@ async function upsertProfileRecord(
   if (
     identityChanged ||
     sectionsChanged ||
+    savedSearchesChanged ||
+    rebatePayoutChanged ||
     messagePreferenceResult.changed ||
     params.existingProfile === null
   ) {
     const changedSections: string[] = [];
     if (identityChanged) changedSections.push("identity");
+    if (savedSearchesChanged) changedSections.push("savedSearches");
+    if (rebatePayoutChanged) changedSections.push("rebatePayoutMethod");
     if (sectionsChanged) {
       if (
         JSON.stringify(baseSections.financing) !==
@@ -560,6 +599,99 @@ export const upsertByUserId = mutation({
       existingProfile: profile,
       existingMessagePreferences: messagePreferences,
       args,
+    });
+  },
+});
+
+/** Add a saved search to the current buyer's profile */
+export const addSavedSearch = mutation({
+  args: {
+    name: v.string(),
+    criteria: buyerProfileSavedSearchCriteriaValidator,
+  },
+  returns: v.id("buyerProfiles"),
+  handler: async (ctx, args) => {
+    const actor = await requireAuth(ctx);
+    const { user, profile, messagePreferences } = await loadProfileDependencies(
+      ctx,
+      actor._id,
+    );
+    const now = new Date().toISOString();
+    const existing = profile?.savedSearches ?? [];
+    const nextSavedSearches: BuyerProfileSavedSearch[] = [
+      ...existing,
+      {
+        id: crypto.randomUUID(),
+        name: args.name,
+        criteria: args.criteria,
+        createdAt: now,
+      },
+    ];
+    return await upsertProfileRecord(ctx, {
+      actor,
+      targetUser: user,
+      existingProfile: profile,
+      existingMessagePreferences: messagePreferences,
+      args: { savedSearches: nextSavedSearches },
+    });
+  },
+});
+
+/** Remove a saved search by id from the current buyer's profile */
+export const removeSavedSearch = mutation({
+  args: { id: v.string() },
+  returns: v.id("buyerProfiles"),
+  handler: async (ctx, args) => {
+    const actor = await requireAuth(ctx);
+    const { user, profile, messagePreferences } = await loadProfileDependencies(
+      ctx,
+      actor._id,
+    );
+    const existing = profile?.savedSearches ?? [];
+    const nextSavedSearches = existing.filter((entry) => entry.id !== args.id);
+    return await upsertProfileRecord(ctx, {
+      actor,
+      targetUser: user,
+      existingProfile: profile,
+      existingMessagePreferences: messagePreferences,
+      args: { savedSearches: nextSavedSearches },
+    });
+  },
+});
+
+/** Update the rebate payout method for the current buyer */
+export const updateRebatePayoutMethod = mutation({
+  args: {
+    method: v.union(
+      v.literal("bank"),
+      v.literal("check"),
+      v.literal("cashapp"),
+      v.literal("none"),
+    ),
+    accountLast4: v.optional(v.string()),
+    payoutAddress: v.optional(v.string()),
+  },
+  returns: v.id("buyerProfiles"),
+  handler: async (ctx, args) => {
+    const actor = await requireAuth(ctx);
+    const { user, profile, messagePreferences } = await loadProfileDependencies(
+      ctx,
+      actor._id,
+    );
+    const now = new Date().toISOString();
+    return await upsertProfileRecord(ctx, {
+      actor,
+      targetUser: user,
+      existingProfile: profile,
+      existingMessagePreferences: messagePreferences,
+      args: {
+        rebatePayoutMethod: {
+          method: args.method,
+          accountLast4: args.accountLast4,
+          payoutAddress: args.payoutAddress,
+          updatedAt: now,
+        },
+      },
     });
   },
 });
