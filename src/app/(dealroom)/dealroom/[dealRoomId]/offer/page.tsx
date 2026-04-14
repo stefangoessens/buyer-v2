@@ -1,23 +1,21 @@
-import type { Metadata } from "next";
-import { OfferCockpit } from "@/components/offer/OfferCockpit";
+import { redirect, notFound } from "next/navigation";
+import { fetchQuery } from "convex/nextjs";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
-export const metadata: Metadata = {
-  title: "Offer cockpit | buyer-v2",
-  description:
-    "Compare scenarios, fine-tune terms, and send a polished offer to your broker for review.",
-};
-
-export default async function OfferCockpitPage({
+export default async function OfferCockpitRedirectPage({
   params,
 }: {
   params: Promise<{ dealRoomId: string }>;
 }) {
   const { dealRoomId } = await params;
-
-  return (
-    <div className="mx-auto w-full max-w-6xl">
-      <OfferCockpit dealRoomId={dealRoomId as Id<"dealRooms">} />
-    </div>
+  const token = await convexAuthNextjsToken();
+  const result = await fetchQuery(
+    api.dealRooms.get,
+    { dealRoomId: dealRoomId as Id<"dealRooms"> },
+    { token },
   );
+  if (!result || !result.dealRoom) notFound();
+  redirect(`/property/${result.dealRoom.propertyId}/offer`);
 }

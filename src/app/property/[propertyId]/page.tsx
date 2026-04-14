@@ -1,11 +1,10 @@
-import { PropertyDetailClient } from "@/components/dealroom/PropertyDetailClient";
+import { redirect } from "next/navigation";
 
-export default async function PropertyDetailPage({
+export default async function PropertyIndexPage({
   params,
 }: {
   params: Promise<{ propertyId: string }>;
 }) {
   const { propertyId } = await params;
-
-  return <PropertyDetailClient propertyId={propertyId} />;
+  redirect(`/property/${propertyId}/details`);
 }

@@ -31,7 +31,7 @@ export function CostEstimateCard({
           Cost of ownership
         </p>
         <h2 className="mt-1 text-lg font-semibold text-neutral-800">
-          What you'd actually pay monthly
+          What you&apos;d actually pay monthly
         </h2>
       </header>
 
@@ -75,7 +75,7 @@ export function CostEstimateCard({
           <p className="mt-5 rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-800">
             <span className="font-semibold">Florida note:</span> hurricane
             exposure, roof age, and flood zone can shift insurance estimates
-            meaningfully. We'll sharpen these once underwriting data lands.
+            meaningfully. We&apos;ll sharpen these once underwriting data lands.
           </p>
         </>
       ) : (

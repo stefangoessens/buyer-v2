@@ -16,6 +16,7 @@ interface OfferRecommendationCardProps {
   data: OfferData;
   reason?: string;
   dealRoomId: Id<"dealRooms">;
+  propertyId?: string;
 }
 
 const currency = new Intl.NumberFormat("en-US", {
@@ -35,6 +36,7 @@ export function OfferRecommendationCard({
   data,
   reason,
   dealRoomId,
+  propertyId,
 }: OfferRecommendationCardProps) {
   return (
     <section className="flex flex-col rounded-[24px] border border-neutral-200 bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
@@ -43,7 +45,7 @@ export function OfferRecommendationCard({
           Offer recommendation
         </p>
         <h2 className="mt-1 text-lg font-semibold text-neutral-800">
-          Where we'd open negotiations
+          Where we&apos;d open negotiations
         </h2>
       </header>
 
@@ -79,7 +81,7 @@ export function OfferRecommendationCard({
           </div>
 
           <Link
-            href={`/dealroom/${dealRoomId}/offer`}
+            href={propertyId ? `/property/${propertyId}/offer` : `/dealroom/${dealRoomId}/offer`}
             className="mt-auto inline-flex w-fit items-center justify-center gap-2 rounded-full bg-accent-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-600"
           >
             Open offer cockpit

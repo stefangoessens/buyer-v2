@@ -1,22 +1,21 @@
-import type { Metadata } from "next";
-import { CloseDashboard } from "@/components/close/CloseDashboard";
+import { redirect, notFound } from "next/navigation";
+import { fetchQuery } from "convex/nextjs";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
-export const metadata: Metadata = {
-  title: "Close dashboard | buyer-v2",
-  description:
-    "Your close is on track — see what needs your attention, what's waiting on partners, and the plan for this week.",
-};
-
-export default async function CloseDashboardPage({
+export default async function CloseDashboardRedirectPage({
   params,
 }: {
   params: Promise<{ dealRoomId: string }>;
 }) {
   const { dealRoomId } = await params;
-  return (
-    <div className="mx-auto w-full max-w-6xl">
-      <CloseDashboard dealRoomId={dealRoomId as Id<"dealRooms">} />
-    </div>
+  const token = await convexAuthNextjsToken();
+  const result = await fetchQuery(
+    api.dealRooms.get,
+    { dealRoomId: dealRoomId as Id<"dealRooms"> },
+    { token },
   );
+  if (!result || !result.dealRoom) notFound();
+  redirect(`/property/${result.dealRoom.propertyId}/close`);
 }

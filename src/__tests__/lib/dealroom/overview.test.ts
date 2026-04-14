@@ -178,14 +178,14 @@ describe("composeOverview — partial / empty", () => {
 });
 
 describe("composeOverview — pending / rejected review states", () => {
-  it("marks a pending-review engine as pending", () => {
+  it("renders a pending-review engine as available (broker queue tracks pending separately)", () => {
     const result = composeOverview(
       mkInputs({
         engines: [mkEngine({ reviewState: "pending" })],
       }),
     );
-    expect(result.pricing.status).toBe("pending");
-    expect(result.pricing.data).toBe(null);
+    expect(result.pricing.status).toBe("available");
+    expect(result.pricing.data).not.toBe(null);
     expect(result.pricing.confidence).toBe(0.85);
   });
 

@@ -1,18 +1,21 @@
-import type { Metadata } from "next";
-import { DealRoomShell } from "@/components/dealroom/DealRoomShell";
+import { redirect, notFound } from "next/navigation";
+import { fetchQuery } from "convex/nextjs";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
+import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
-export const metadata: Metadata = {
-  title: "Deal room | buyer-v2",
-  description:
-    "Your private deal room for this property — pricing, comps, risks, offers, documents, and timeline.",
-};
-
-export default async function DealRoomPage({
+export default async function DealRoomRedirectPage({
   params,
 }: {
   params: Promise<{ dealRoomId: string }>;
 }) {
   const { dealRoomId } = await params;
-  return <DealRoomShell dealRoomId={dealRoomId as Id<"dealRooms">} />;
+  const token = await convexAuthNextjsToken();
+  const result = await fetchQuery(
+    api.dealRooms.get,
+    { dealRoomId: dealRoomId as Id<"dealRooms"> },
+    { token },
+  );
+  if (!result || !result.dealRoom) notFound();
+  redirect(`/property/${result.dealRoom.propertyId}/details`);
 }

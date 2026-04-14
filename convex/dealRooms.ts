@@ -123,6 +123,43 @@ export const listForBuyer = query({
   },
 });
 
+/**
+ * Resolve a deal room for the wizard pages from a propertyId.
+ *
+ * - Buyers: return the buyer's own deal room for this property (uses
+ *   `by_buyerId` index, narrow filter on propertyId).
+ * - Brokers/admins: return the first deal room on the property regardless
+ *   of buyer (uses `by_propertyId` index). Staff routinely open property
+ *   wizard pages on behalf of buyers and need access to whichever deal
+ *   room exists for the listing — gating by `buyerId === currentUser`
+ *   would lock them out.
+ *
+ * Returns the dealRoomId or null if no matching room exists.
+ */
+export const getUserDealRoomForProperty = query({
+  args: { propertyId: v.id("properties") },
+  returns: v.union(v.id("dealRooms"), v.null()),
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+
+    if (user.role === "broker" || user.role === "admin") {
+      const room = await ctx.db
+        .query("dealRooms")
+        .withIndex("by_propertyId", (q) => q.eq("propertyId", args.propertyId))
+        .first();
+      return room?._id ?? null;
+    }
+
+    const rooms = await ctx.db
+      .query("dealRooms")
+      .withIndex("by_buyerId", (q) => q.eq("buyerId", user._id))
+      .collect();
+    const match = rooms.find((dr) => dr.propertyId === args.propertyId);
+    return match?._id ?? null;
+  },
+});
+
 /** Create a deal room for a property + buyer */
 export const create = mutation({
   args: {
