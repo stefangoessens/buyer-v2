@@ -1,9 +1,11 @@
 import Image from "next/image";
 import { fetchQuery } from "convex/nextjs";
+import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
+import { FavouriteButton } from "@/components/property/FavouriteButton";
 
 const PRICE_FORMATTER = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -60,6 +62,9 @@ export async function PropertyWizardHeader({
   } catch {
     property = null;
   }
+
+  const token = await convexAuthNextjsToken();
+  const isAuthenticated = !!token;
 
   if (!property) {
     return (
@@ -143,6 +148,10 @@ export async function PropertyWizardHeader({
       </div>
 
       <div className="flex flex-row gap-2 lg:flex-col lg:items-end">
+        <FavouriteButton
+          propertyId={property._id}
+          isAuthenticated={isAuthenticated}
+        />
         <Button variant="outline" size="sm">
           Share
         </Button>

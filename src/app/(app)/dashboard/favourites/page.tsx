@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Card, CardContent } from "@/components/ui/card";
+import { FavouritesGrid } from "@/components/dashboard/favourites/FavouritesGrid";
 import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
 export const metadata: Metadata = metadataForStaticPage("dashboardFavourites");
@@ -18,11 +18,7 @@ export default function FavouritesPage() {
           Your starred deal rooms and saved searches.
         </p>
       </header>
-      <Card>
-        <CardContent className="py-16 text-center text-sm text-neutral-500">
-          Star properties from any deal room to save them here.
-        </CardContent>
-      </Card>
+      <FavouritesGrid />
     </div>
   );
 }
