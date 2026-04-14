@@ -113,6 +113,34 @@ export interface PricingSection extends HasVisibility {
   };
 }
 
+// MARK: - How it works
+
+/**
+ * One step on the /how-it-works page and the homepage `#how-it-works`
+ * anchor section. Shared between the two surfaces so the copy and
+ * imagery live in a single content module.
+ */
+export interface HowItWorksStep {
+  id: string;
+  number: number;
+  title: string;
+  description: string;
+  imageSrc: string;
+  imageAlt?: string;
+}
+
+/**
+ * Full "how it works" content module consumed by both
+ * `src/app/(marketing)/page.tsx` (homepage anchor section) and
+ * `src/app/(marketing)/how-it-works/page.tsx` (standalone route).
+ */
+export interface HowItWorksContent {
+  eyebrow: string;
+  title: string;
+  description?: string;
+  steps: HowItWorksStep[];
+}
+
 // MARK: - Content page meta
 
 /**

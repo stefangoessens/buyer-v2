@@ -2,7 +2,7 @@ import Link from "next/link";
 
 const footerSections = {
   product: [
-    { label: "How It Works", href: "/#how-it-works" },
+    { label: "How It Works", href: "/how-it-works" },
     { label: "Savings Calculator", href: "/calculator" },
     { label: "Pricing", href: "/pricing" },
     { label: "FAQ", href: "/faq" },
