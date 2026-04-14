@@ -375,6 +375,7 @@ export function PropertyInsightsCard(props: PropertyInsightsCardProps) {
   }
 
   const insights = result.insights.map(normalizeInsight);
+  const visibleInsights = insights.filter((i) => i.category !== "florida_risk");
   const { generatedAt, totalCount } = result;
   const lockedTeasers = result.lockedTeasers ?? [];
   const remaining = Math.max(0, totalCount - insights.length);
@@ -389,7 +390,7 @@ export function PropertyInsightsCard(props: PropertyInsightsCardProps) {
           showUnlock && "pb-6",
         )}
       >
-        {insights.map((insight, idx) => (
+        {visibleInsights.map((insight, idx) => (
           <PropertyInsightItem
             key={`${insight.category}-${idx}`}
             insight={insight}
