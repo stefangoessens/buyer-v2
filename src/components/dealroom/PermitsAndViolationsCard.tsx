@@ -62,11 +62,15 @@ export function PermitsAndViolationsCard({
     );
   }
 
-  const yearsSinceLastPermit = data.lastPermitDate
-    ? Math.floor(
-        (Date.now() - new Date(data.lastPermitDate).getTime()) /
-          (1000 * 60 * 60 * 24 * 365),
-      )
+  // Guard against unparseable lastPermitDate strings — codex flagged
+  // that the raw string can be any format (Broward returns "3/15/2024"
+  // sometimes), so Date.parse can return NaN and surface "NaNy ago"
+  // plus break the 20+ year insurance-risk badge.
+  const lastPermitMs = data.lastPermitDate
+    ? Date.parse(data.lastPermitDate)
+    : NaN;
+  const yearsSinceLastPermit = Number.isFinite(lastPermitMs)
+    ? Math.floor((Date.now() - lastPermitMs) / (1000 * 60 * 60 * 24 * 365))
     : null;
 
   return (
