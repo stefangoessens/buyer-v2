@@ -2715,4 +2715,50 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_userId_propertyId", ["userId", "propertyId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PROPERTY CHAT (KIN-1069) — AI chat drawer on property detail
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Per-user, per-property chat thread. `threadId` is a deterministic
+  // `${userId}:${propertyId}` key so we avoid a separate threads table.
+  // `wizardStep` tags the buyer journey stage the message belongs to
+  // (details → price → disclosures → offer → close). Messages in the
+  // license-critical zones (offer, close) are inserted with
+  // brokerReviewState="pending" for human review.
+
+  propertyChatMessages: defineTable({
+    threadId: v.string(),
+    userId: v.id("users"),
+    propertyId: v.id("properties"),
+    role: v.union(
+      v.literal("user"),
+      v.literal("assistant"),
+      v.literal("system"),
+    ),
+    content: v.string(),
+    wizardStep: v.optional(
+      v.union(
+        v.literal("details"),
+        v.literal("price"),
+        v.literal("disclosures"),
+        v.literal("offer"),
+        v.literal("close"),
+      ),
+    ),
+    brokerReviewState: v.optional(
+      v.union(
+        v.literal("none"),
+        v.literal("pending"),
+        v.literal("approved"),
+        v.literal("flagged"),
+      ),
+    ),
+    brokerReviewedById: v.optional(v.id("users")),
+    brokerReviewedAt: v.optional(v.string()),
+    modelId: v.optional(v.string()),
+    createdAt: v.string(),
+  })
+    .index("by_threadId", ["threadId"])
+    .index("by_userId_and_propertyId", ["userId", "propertyId"])
+    .index("by_propertyId_and_role", ["propertyId", "role"]),
 });
