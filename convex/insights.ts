@@ -1,5 +1,7 @@
 import { query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { getCurrentUser } from "./lib/session";
 
 /**
@@ -30,6 +32,7 @@ type ApiInsightsResponse = {
   hasGatedPremium: boolean;
   totalCount: number;
   lockedTeasers?: LockedTeaser[];
+  synthesizedInsights?: ApiInsight[];
 } | null;
 
 function parseInsightsRecord(record: {
@@ -63,6 +66,37 @@ function parseInsightsRecord(record: {
   } catch {
     return null;
   }
+}
+
+/**
+ * Fetch + parse the latest crawl_synthesizer output for a property.
+ * The synthesizer reuses the insights JSON shape, so we route its
+ * output through parseInsightsRecord. Returns an empty array when
+ * no synthesizer row exists or parsing fails — it's additive and
+ * non-critical to the primary insights render.
+ */
+async function fetchSynthesizedInsights(
+  ctx: QueryCtx,
+  propertyId: Id<"properties">,
+  includePremium: boolean,
+): Promise<ApiInsight[]> {
+  const latestSynth = await ctx.db
+    .query("aiEngineOutputs")
+    .withIndex("by_propertyId_and_engineType", (q) =>
+      q.eq("propertyId", propertyId).eq("engineType", "crawl_synthesizer"),
+    )
+    .order("desc")
+    .first();
+  if (!latestSynth) return [];
+  if (latestSynth.reviewState === "rejected") return [];
+  const parsed = parseInsightsRecord({
+    output: latestSynth.output,
+    generatedAt: latestSynth.generatedAt,
+  });
+  if (!parsed) return [];
+  return includePremium
+    ? parsed.insights
+    : parsed.insights.filter((i) => i.premium === false);
 }
 
 /**
@@ -103,6 +137,12 @@ export const getPublic = query({
       confidence: i.confidence,
     }));
 
+    const synthesizedInsights = await fetchSynthesizedInsights(
+      ctx,
+      args.propertyId,
+      false,
+    );
+
     return {
       insights: publicOnly,
       overallConfidence: parsed.overallConfidence,
@@ -111,6 +151,7 @@ export const getPublic = query({
       hasGatedPremium: premiumOnly.length > 0,
       totalCount: parsed.insights.length,
       lockedTeasers,
+      synthesizedInsights,
     };
   },
 });
@@ -151,6 +192,12 @@ export const getAllForDealRoom = query({
     });
     if (!parsed) return null;
 
+    const synthesizedInsights = await fetchSynthesizedInsights(
+      ctx,
+      dealRoom.propertyId,
+      true,
+    );
+
     return {
       insights: parsed.insights,
       overallConfidence: parsed.overallConfidence,
@@ -158,6 +205,7 @@ export const getAllForDealRoom = query({
       generatedAtEngine: "insights",
       hasGatedPremium: false,
       totalCount: parsed.insights.length,
+      synthesizedInsights,
     };
   },
 });
@@ -197,6 +245,12 @@ export const getForProperty = query({
     const hasGatedPremium =
       !isStaff && parsed.insights.some((i) => i.premium === true);
 
+    const synthesizedInsights = await fetchSynthesizedInsights(
+      ctx,
+      args.propertyId,
+      isStaff,
+    );
+
     return {
       insights,
       overallConfidence: parsed.overallConfidence,
@@ -204,6 +258,7 @@ export const getForProperty = query({
       generatedAtEngine: "insights",
       hasGatedPremium,
       totalCount: parsed.insights.length,
+      synthesizedInsights,
     };
   },
 });

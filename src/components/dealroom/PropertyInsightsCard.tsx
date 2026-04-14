@@ -271,19 +271,22 @@ type LockedTeaser = {
   confidence?: number;
 };
 
+type RawInsight = {
+  category: string;
+  headline: string;
+  body: string;
+  severity: string;
+  confidence: number;
+  premium: boolean;
+  citations: string[];
+};
+
 type InsightsResponse = {
-  insights: Array<{
-    category: string;
-    headline: string;
-    body: string;
-    severity: string;
-    confidence: number;
-    premium: boolean;
-    citations: string[];
-  }>;
+  insights: Array<RawInsight>;
   generatedAt: string;
   totalCount: number;
   lockedTeasers?: LockedTeaser[];
+  synthesizedInsights?: Array<RawInsight>;
 } | null;
 
 const CATEGORY_LABELS: Record<InsightCategory, string> = {
@@ -376,6 +379,9 @@ export function PropertyInsightsCard(props: PropertyInsightsCardProps) {
 
   const insights = result.insights.map(normalizeInsight);
   const visibleInsights = insights.filter((i) => i.category !== "florida_risk");
+  const synthesized = (result.synthesizedInsights ?? [])
+    .map(normalizeInsight)
+    .filter((i) => i.category !== "florida_risk");
   const { generatedAt, totalCount } = result;
   const lockedTeasers = result.lockedTeasers ?? [];
   const remaining = Math.max(0, totalCount - insights.length);
@@ -401,6 +407,27 @@ export function PropertyInsightsCard(props: PropertyInsightsCardProps) {
             <LockedInsightRow key={`locked-${idx}`} teaser={teaser} />
           ))}
       </div>
+      {synthesized.length > 0 ? (
+        <div className="mt-6 border-t border-neutral-100 pt-6">
+          <div className="mb-4 flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-primary-700 ring-1 ring-primary-100">
+              <span className="size-1.5 rounded-full bg-primary" />
+              Synthesized
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Cross-referenced with Zestimate, FEMA, and public records
+            </span>
+          </div>
+          <div className="divide-y divide-neutral-100">
+            {synthesized.map((insight, idx) => (
+              <PropertyInsightItem
+                key={`synth-${insight.category}-${idx}`}
+                insight={insight}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
       {showUnlock && props.variant === "public" ? (
         <UnlockRow
           remainingCount={remaining}

@@ -43,6 +43,7 @@ import type * as engines_compSeederMutations from "../engines/compSeederMutation
 import type * as engines_comps from "../engines/comps.js";
 import type * as engines_compsQueries from "../engines/compsQueries.js";
 import type * as engines_cost from "../engines/cost.js";
+import type * as engines_crawlSynthesizer from "../engines/crawlSynthesizer.js";
 import type * as engines_insights from "../engines/insights.js";
 import type * as engines_insightsMutations from "../engines/insightsMutations.js";
 import type * as engines_leverage from "../engines/leverage.js";
@@ -170,6 +171,7 @@ declare const fullApi: ApiFromModules<{
   "engines/comps": typeof engines_comps;
   "engines/compsQueries": typeof engines_compsQueries;
   "engines/cost": typeof engines_cost;
+  "engines/crawlSynthesizer": typeof engines_crawlSynthesizer;
   "engines/insights": typeof engines_insights;
   "engines/insightsMutations": typeof engines_insightsMutations;
   "engines/leverage": typeof engines_leverage;
