@@ -60,8 +60,13 @@ class CanonicalProperty:
     days_on_market: int | None
     hoa_monthly_usd: int | None
 
+    # Portal AVMs (automated valuation models)
+    zestimate_usd: int | None = None
+    rent_zestimate_usd: int | None = None
+    redfin_estimate_usd: int | None = None
+
     # Content
-    description: str | None
+    description: str | None = None
     photos: tuple[PropertyPhoto, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:

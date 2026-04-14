@@ -356,6 +356,11 @@ class RedfinExtractor:
                 _first_present(prop, "daysOnMarket", "daysOnRedfin")
             ),
             "hoa_monthly_usd": _to_int(_first_present(prop, "hoaDues", "hoaFee")),
+            "redfin_estimate_usd": _to_int(
+                _first_present(
+                    prop, "avmPrice", "redfinEstimate", "estimateValue", "avmValue"
+                )
+            ),
             "description": _clean_str(prop.get("description")),
         }
         address = prop.get("address")
@@ -525,6 +530,7 @@ class RedfinExtractor:
             year_built=raw.get("year_built"),
             days_on_market=raw.get("days_on_market"),
             hoa_monthly_usd=raw.get("hoa_monthly_usd"),
+            redfin_estimate_usd=raw.get("redfin_estimate_usd"),
             description=raw.get("description"),
             photos=photos,
         )

@@ -14,7 +14,7 @@ const baseProps = {
   walkAway: 465000,
 };
 
-const ANCHOR_NAME_RE = /Lowest|Fair|Zestimate|Listing|Walk away/i;
+const ANCHOR_NAME_RE = /Lowest|Fair|Zestimate|Redfin|Listing|Walk away/i;
 
 function getAnchorButtons() {
   return screen.getAllByRole("button", { name: ANCHOR_NAME_RE });
@@ -106,5 +106,50 @@ describe("PriceSpectrumBar", () => {
     );
     const img = screen.getByRole("img");
     expect(img.getAttribute("aria-label")).toMatch(/\$/);
+  });
+
+  it("renders Zestimate anchor when zestimate prop is provided", () => {
+    render(<PriceSpectrumBar {...baseProps} zestimate={440000} />);
+    expect(
+      screen.getByRole("button", { name: /Zestimate.*\$440,000/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders Redfin Estimate anchor when redfinEstimate prop is provided", () => {
+    render(<PriceSpectrumBar {...baseProps} redfinEstimate={442000} />);
+    expect(
+      screen.getByRole("button", { name: /Redfin.*\$442,000/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("omits Zestimate anchor when zestimate is undefined", () => {
+    render(<PriceSpectrumBar {...baseProps} redfinEstimate={442000} />);
+    expect(
+      screen.queryByRole("button", { name: /Zestimate/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("omits Redfin anchor when redfinEstimate is undefined", () => {
+    render(<PriceSpectrumBar {...baseProps} zestimate={440000} />);
+    expect(
+      screen.queryByRole("button", { name: /Redfin/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders both AVM anchors together", () => {
+    render(
+      <PriceSpectrumBar
+        {...baseProps}
+        zestimate={440000}
+        redfinEstimate={442000}
+      />,
+    );
+    expect(getAnchorButtons()).toHaveLength(5);
+    expect(
+      screen.getByRole("button", { name: /Zestimate/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Redfin/i }),
+    ).toBeInTheDocument();
   });
 });

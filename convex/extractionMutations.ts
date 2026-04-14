@@ -38,6 +38,9 @@ interface CanonicalPropertyResponse {
   year_built: number | null;
   days_on_market: number | null;
   hoa_monthly_usd: number | null;
+  zestimate_usd: number | null;
+  rent_zestimate_usd: number | null;
+  redfin_estimate_usd: number | null;
   description: string | null;
   photos: PhotoResponse[];
 }
@@ -168,6 +171,8 @@ export const recordSuccess = internalMutation({
         extracted.hoa_monthly_usd && extracted.hoa_monthly_usd > 0
           ? "monthly"
           : undefined,
+      zestimate: extracted.zestimate_usd ?? undefined,
+      redfinEstimate: extracted.redfin_estimate_usd ?? undefined,
       description: extracted.description ?? undefined,
       photoUrls: extracted.photos.map((p) => p.url),
       photoCount: extracted.photos.length,

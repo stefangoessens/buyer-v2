@@ -327,6 +327,9 @@ class DefaultExtractionRuntime:
             year_built=property_data.year_built,
             days_on_market=property_data.days_on_market,
             hoa_monthly_usd=property_data.hoa_monthly_usd,
+            zestimate_usd=property_data.zestimate_usd,
+            rent_zestimate_usd=property_data.rent_zestimate_usd,
+            redfin_estimate_usd=property_data.redfin_estimate_usd,
             description=property_data.description,
             photos=[
                 PropertyPhotoResponse(url=photo.url, caption=photo.caption)
