@@ -32,6 +32,8 @@ const nextConfig: NextConfig = {
       { source: "/agreements", destination: "/dashboard/agreements", permanent: true },
       { source: "/compare", destination: "/dashboard", permanent: true },
       { source: "/reports", destination: "/dashboard", permanent: true },
+      { source: "/savings", destination: "/pricing#savings-calculator", permanent: true },
+      { source: "/calculator", destination: "/pricing#savings-calculator", permanent: true },
     ];
   },
 };

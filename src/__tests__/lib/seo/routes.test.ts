@@ -13,7 +13,6 @@ describe("SEO_ROUTES registry", () => {
 
   it("contains the core marketing routes", () => {
     expect(findRouteByPath("/pricing")).toBeDefined();
-    expect(findRouteByPath("/savings")).toBeDefined();
     expect(findRouteByPath("/faq")).toBeDefined();
     expect(findRouteByPath("/blog")).toBeDefined();
   });
@@ -91,7 +90,6 @@ describe("publicSitemapRoutes", () => {
     const paths = publicSitemapRoutes().map((r) => r.path);
     expect(paths).toContain("/");
     expect(paths).toContain("/pricing");
-    expect(paths).toContain("/savings");
     expect(paths).toContain("/faq");
     expect(paths).toContain("/legal/terms");
     expect(paths).toContain("/legal/privacy");
