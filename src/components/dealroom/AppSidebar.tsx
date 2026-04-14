@@ -27,7 +27,10 @@ export function AppSidebar({ buyerName, buyerEmail }: AppSidebarProps) {
       <nav className="flex flex-1 flex-col gap-0.5 p-3">
         {DASHBOARD_NAV.map((item) => {
           const isActive =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+            item.href === "/dashboard"
+              ? pathname === "/dashboard"
+              : pathname === item.href ||
+                pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.key}
