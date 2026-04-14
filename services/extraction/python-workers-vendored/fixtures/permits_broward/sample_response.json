@@ -1,0 +1,50 @@
+{
+  "permits": [
+    {
+      "permitNumber": "BLD2024-12345",
+      "type": "Roof",
+      "description": "Roof replacement, asphalt shingles, 2400 sqft",
+      "issueDate": "2024-03-15",
+      "status": "Finalled",
+      "finalDate": "2024-04-22",
+      "cost": 18500
+    },
+    {
+      "permitNumber": "ELE2023-08821",
+      "type": "Electrical",
+      "description": "Service panel upgrade, 200A",
+      "issueDate": "2023-09-10",
+      "status": "Finalled",
+      "finalDate": "2023-10-05",
+      "cost": 3200
+    },
+    {
+      "permitNumber": "MEC2025-00450",
+      "type": "Mechanical",
+      "description": "HVAC replacement, 4-ton heat pump",
+      "issueDate": "2025-02-01",
+      "status": "Issued",
+      "finalDate": null,
+      "cost": 8900
+    }
+  ],
+  "violations": [
+    {
+      "violationNumber": "CE2024-00231",
+      "type": "Code enforcement",
+      "issueDate": "2024-06-15",
+      "status": "Open",
+      "resolvedDate": null
+    }
+  ],
+  "inspections": [
+    {
+      "permitNumber": "BLD2024-12345",
+      "type": "Final inspection",
+      "date": "2024-04-22",
+      "result": "Passed",
+      "notes": "All requirements met"
+    }
+  ],
+  "sourceUrl": "https://www.broward.org/buildingpermits/"
+}

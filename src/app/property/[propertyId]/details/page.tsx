@@ -11,6 +11,7 @@ import { PropertyConditionCard } from "@/components/dealroom/PropertyConditionCa
 import { KeyDetailsTable } from "@/components/dealroom/KeyDetailsTable";
 import { NextStepFooter } from "@/components/dealroom/NextStepFooter";
 import { AssessedVsListedInsight } from "@/components/dealroom/AssessedVsListedInsight";
+import { PermitsAndViolationsCard } from "@/components/dealroom/PermitsAndViolationsCard";
 
 export const metadata: Metadata = {
   title: "Analyze property | buyer-v2",
@@ -78,6 +79,10 @@ export default async function PropertyDetailsPage({
           papaFolio={property?.papaFolio}
           papaExemptions={property?.papaExemptions}
         />
+      </div>
+
+      <div className="mx-auto w-full max-w-[1248px] px-6">
+        <PermitsAndViolationsCard propertyId={propertyId} />
       </div>
 
       <div className="mx-auto w-full max-w-[1248px] px-6">
