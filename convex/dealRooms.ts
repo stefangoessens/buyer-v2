@@ -123,6 +123,22 @@ export const listForBuyer = query({
   },
 });
 
+/** Find the current user's deal room for a given property (returns the dealRoomId or null) */
+export const getUserDealRoomForProperty = query({
+  args: { propertyId: v.id("properties") },
+  returns: v.union(v.id("dealRooms"), v.null()),
+  handler: async (ctx, args) => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+    const rooms = await ctx.db
+      .query("dealRooms")
+      .withIndex("by_buyerId", (q) => q.eq("buyerId", user._id))
+      .collect();
+    const match = rooms.find((dr) => dr.propertyId === args.propertyId);
+    return match?._id ?? null;
+  },
+});
+
 /** Create a deal room for a property + buyer */
 export const create = mutation({
   args: {
