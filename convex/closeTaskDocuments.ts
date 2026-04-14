@@ -28,9 +28,17 @@ const documentRecordValidator = v.object({
   visibility: visibilityValidator,
   createdAt: v.number(),
   deletedAt: v.optional(v.number()),
+  // Short-lived signed download URL for the stored blob, resolved at
+  // read time. Null when Convex storage can't produce a URL (blob
+  // missing / expired).
+  downloadUrl: v.union(v.string(), v.null()),
 });
 
-/** List attachments for a task. Buyers see only buyer_visible rows. */
+/**
+ * List attachments for a task. Buyers see only buyer_visible rows and
+ * every row carries a freshly-signed `downloadUrl` so the UI can render
+ * a working download link without a second round-trip.
+ */
 export const listByTaskId = query({
   args: { taskId: v.id("closeTasks") },
   returns: v.array(documentRecordValidator),
@@ -50,10 +58,44 @@ export const listByTaskId = query({
       .collect();
 
     const live = rows.filter((r) => r.deletedAt === undefined);
-    if (user.role === "buyer") {
-      return live.filter((r) => r.visibility === "buyer_visible");
+    const scoped =
+      user.role === "buyer"
+        ? live.filter((r) => r.visibility === "buyer_visible")
+        : live;
+
+    const withUrls = [];
+    for (const row of scoped) {
+      const downloadUrl = await ctx.storage.getUrl(row.storageId);
+      withUrls.push({ ...row, downloadUrl: downloadUrl ?? null });
     }
-    return live;
+    return withUrls;
+  },
+});
+
+/**
+ * Generate a short-lived upload URL for a closing-task attachment.
+ * Buyers can upload to their own deal room's buyer_visible tasks;
+ * brokers and admins can upload anywhere. The caller uses the URL to
+ * POST the blob, then calls `create` with the returned storage id.
+ */
+export const generateUploadUrl = mutation({
+  args: { taskId: v.id("closeTasks") },
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    const dealRoom = await ctx.db.get(task.dealRoomId);
+    if (!dealRoom) throw new Error("Deal room not found");
+
+    const allowed =
+      user.role === "admin" ||
+      user.role === "broker" ||
+      (dealRoom.buyerId === user._id && task.visibility === "buyer_visible");
+    if (!allowed) {
+      throw new Error("Not authorized to upload to this task");
+    }
+    return await ctx.storage.generateUploadUrl();
   },
 });
 

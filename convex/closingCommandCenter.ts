@@ -494,6 +494,12 @@ const brokerBoardDealValidator = v.object({
   stuckSignals: v.array(v.string()),
   isStuck: v.boolean(),
   percentComplete: v.number(),
+  // KIN-1080 broker board: dates are epoch ms so the UI can sort and
+  // format consistently. `waitingOnRole` surfaces the currently-blocking
+  // party for the deal card's "waiting on" pill.
+  closingDate: v.union(v.number(), v.null()),
+  nextDueDate: v.union(v.number(), v.null()),
+  waitingOnRole: v.union(v.string(), v.null()),
 });
 
 export const getBrokerBoardData = query({
@@ -543,6 +549,64 @@ export const getBrokerBoardData = query({
       ).length;
       if (staleWaiting > 0) stuckSignals.push(`${staleWaiting}_stale_waiting`);
 
+      // Resolve closingDate: prefer a contract milestone tagged as
+      // workstream="closing" OR milestoneKey="closing_date". Among
+      // candidates, pick the earliest non-completed date; if all are
+      // completed, fall back to the earliest one regardless.
+      const milestones = await ctx.db
+        .query("contractMilestones")
+        .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", deal._id))
+        .collect();
+      const closingCandidates = milestones.filter(
+        (m) => m.workstream === "closing" || m.milestoneKey === "closing_date",
+      );
+      let closingDate: number | null = null;
+      const parseDate = (iso: string): number | null => {
+        const parsed = Date.parse(iso);
+        return Number.isNaN(parsed) ? null : parsed;
+      };
+      const uncompletedClosing = closingCandidates
+        .filter((m) => m.status !== "completed")
+        .map((m) => parseDate(m.dueDate))
+        .filter((n): n is number => n !== null)
+        .sort((a, b) => a - b);
+      if (uncompletedClosing.length > 0) {
+        closingDate = uncompletedClosing[0];
+      } else {
+        const anyClosing = closingCandidates
+          .map((m) => parseDate(m.dueDate))
+          .filter((n): n is number => n !== null)
+          .sort((a, b) => a - b);
+        if (anyClosing.length > 0) closingDate = anyClosing[0];
+      }
+
+      // nextDueDate: the smallest future-or-present due date across
+      // uncompleted tasks that have a dueDate set.
+      const activeDueMs = tasks
+        .filter((t) => t.status !== "completed" && t.status !== "canceled")
+        .map((t) =>
+          t.dueDate ? parseDate(t.dueDate) : null,
+        )
+        .filter((n): n is number => n !== null)
+        .sort((a, b) => a - b);
+      const nextDueDate = activeDueMs.length > 0 ? activeDueMs[0] : null;
+
+      // waitingOnRole: prefer a blocked task's waitingOnRole; otherwise
+      // any uncompleted task that has a waitingOnRole set.
+      const blockedWithRole = tasks.find(
+        (t) => t.status === "blocked" && t.waitingOnRole !== undefined,
+      );
+      const anyActiveWithRole = tasks.find(
+        (t) =>
+          t.status !== "completed" &&
+          t.status !== "canceled" &&
+          t.waitingOnRole !== undefined,
+      );
+      const waitingOnRole: string | null =
+        blockedWithRole?.waitingOnRole ??
+        anyActiveWithRole?.waitingOnRole ??
+        null;
+
       rows.push({
         dealRoomId: deal._id,
         propertyId: deal.propertyId,
@@ -552,6 +616,9 @@ export const getBrokerBoardData = query({
         stuckSignals,
         isStuck: stuckSignals.length > 0,
         percentComplete: total === 0 ? 0 : Math.round((completed / total) * 100),
+        closingDate,
+        nextDueDate,
+        waitingOnRole,
       });
     }
     return rows;
