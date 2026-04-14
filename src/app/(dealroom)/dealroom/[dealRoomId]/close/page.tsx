@@ -17,5 +17,5 @@ export default async function CloseDashboardRedirectPage({
     { token },
   );
   if (!result || !result.dealRoom) notFound();
-  redirect(`/property/${result.dealRoom.propertyId}/close`);
+  redirect(`/property/${result.dealRoom.propertyId}/closing`);
 }

@@ -17,6 +17,7 @@
 
 import { query, mutation, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { requireAuth } from "./lib/session";
 import type { Id } from "./_generated/dataModel";
 import type { QueryCtx } from "./_generated/server";
@@ -58,6 +59,8 @@ const extractedMilestoneValidator = v.object({
   flaggedForReview: v.boolean(),
   reviewReason: v.optional(reviewReasonValidator),
   linkedClauseText: v.optional(v.string()),
+  // KIN-1080: stable key for closing command center template anchoring.
+  milestoneKey: v.optional(v.string()),
 });
 
 // ═══ Internal helpers ═══
@@ -117,6 +120,7 @@ async function persistExtractionBatch(
       flaggedForReview: boolean;
       reviewReason?: "low_confidence" | "ambiguous_date" | "missing_required" | "date_in_past" | "manual_flag";
       linkedClauseText?: string;
+      milestoneKey?: string;
     }>;
     actorUserId: Id<"users">;
   },
@@ -147,6 +151,7 @@ async function persistExtractionBatch(
       contractId: args.contractId,
       dealRoomId: contract.dealRoomId,
       name: input.name,
+      milestoneKey: input.milestoneKey,
       workstream: input.workstream,
       dueDate: input.dueDate,
       status,
@@ -172,6 +177,14 @@ async function persistExtractionBatch(
     }),
     timestamp: now,
   });
+
+  // KIN-1080: refresh any template-driven closing tasks that anchor to
+  // one of these milestones. Manual-override tasks are preserved by the
+  // sync helper.
+  await ctx.runMutation(
+    internal.closingCommandCenter.syncClosingTaskDeadlinesFromMilestones,
+    { dealRoomId: contract.dealRoomId as Id<"dealRooms"> },
+  );
 
   return insertedIds;
 }
@@ -299,6 +312,7 @@ export const createManual = mutation({
     name: v.string(),
     workstream: workstreamValidator,
     dueDate: v.string(),
+    milestoneKey: v.optional(v.string()),
   },
   returns: v.id("contractMilestones"),
   handler: async (ctx, args) => {
@@ -315,6 +329,7 @@ export const createManual = mutation({
       contractId: args.contractId,
       dealRoomId: contract.dealRoomId,
       name: args.name,
+      milestoneKey: args.milestoneKey,
       workstream: args.workstream,
       dueDate: args.dueDate,
       status: "pending",
@@ -334,11 +349,70 @@ export const createManual = mutation({
         contractId: args.contractId,
         name: args.name,
         workstream: args.workstream,
+        milestoneKey: args.milestoneKey,
       }),
       timestamp: now,
     });
 
+    // KIN-1080: resync template-driven closing tasks after a new
+    // milestone lands. Noop unless a template references this key.
+    await ctx.runMutation(
+      internal.closingCommandCenter.syncClosingTaskDeadlinesFromMilestones,
+      { dealRoomId: contract.dealRoomId },
+    );
+
     return id;
+  },
+});
+
+/**
+ * KIN-1080: Update a milestone's due date (e.g. after an amendment
+ * modifies the inspection period or closing date). Triggers a closing
+ * task resync so template-driven tasks catch the new date.
+ */
+export const updateMilestoneDueDate = mutation({
+  args: {
+    milestoneId: v.id("contractMilestones"),
+    dueDate: v.string(),
+    reason: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    if (user.role !== "broker" && user.role !== "admin") {
+      throw new Error("Only brokers/admins can update milestone due dates");
+    }
+
+    const milestone = await ctx.db.get(args.milestoneId);
+    if (!milestone) throw new Error("Milestone not found");
+
+    const now = new Date().toISOString();
+    const previousDueDate = milestone.dueDate;
+    await ctx.db.patch(args.milestoneId, {
+      dueDate: args.dueDate,
+      source: "amended",
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "contract_milestone_due_date_updated",
+      entityType: "contractMilestones",
+      entityId: args.milestoneId,
+      details: JSON.stringify({
+        previousDueDate,
+        newDueDate: args.dueDate,
+        reason: args.reason,
+      }),
+      timestamp: now,
+    });
+
+    await ctx.runMutation(
+      internal.closingCommandCenter.syncClosingTaskDeadlinesFromMilestones,
+      { dealRoomId: milestone.dealRoomId },
+    );
+
+    return null;
   },
 });
 
@@ -436,6 +510,7 @@ export const resolveReview = mutation({
     milestoneId: v.id("contractMilestones"),
     correctedDueDate: v.optional(v.string()),
     correctedName: v.optional(v.string()),
+    correctedMilestoneKey: v.optional(v.string()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -463,6 +538,9 @@ export const resolveReview = mutation({
     };
     if (args.correctedDueDate) patch.dueDate = args.correctedDueDate;
     if (args.correctedName) patch.name = args.correctedName;
+    if (args.correctedMilestoneKey !== undefined) {
+      patch.milestoneKey = args.correctedMilestoneKey;
+    }
 
     await ctx.db.patch(args.milestoneId, patch);
 
@@ -474,9 +552,21 @@ export const resolveReview = mutation({
       details: JSON.stringify({
         correctedDueDate: args.correctedDueDate,
         correctedName: args.correctedName,
+        correctedMilestoneKey: args.correctedMilestoneKey,
       }),
       timestamp: now,
     });
+
+    // KIN-1080: resync closing tasks if the due date or key changed.
+    if (
+      args.correctedDueDate !== undefined ||
+      args.correctedMilestoneKey !== undefined
+    ) {
+      await ctx.runMutation(
+        internal.closingCommandCenter.syncClosingTaskDeadlinesFromMilestones,
+        { dealRoomId: milestone.dealRoomId },
+      );
+    }
 
     return null;
   },

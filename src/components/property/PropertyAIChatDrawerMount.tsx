@@ -19,6 +19,7 @@ function deriveWizardStep(pathname: string | null, propertyId: string): WizardSt
   if (idx === -1) return "details";
   const remainder = pathname.slice(idx + prefix.length);
   const first = remainder.split("/")[0] ?? "";
+  if (first === "closing" || first === "close") return "close";
   const match = WIZARD_STEPS.find((step) => step === first);
   return match ?? "details";
 }

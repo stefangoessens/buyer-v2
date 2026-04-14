@@ -10,6 +10,7 @@ const isProtectedRoute = createRouteMatcher([
   "/dealroom(.*)",
   "/property/(.*)/offer(.*)",
   "/property/(.*)/close(.*)",
+  "/property/(.*)/closing(.*)",
   "/property/(.*)/disclosures(.*)",
 ]);
 

@@ -62,6 +62,15 @@ export const STATIC_NAV_ITEMS: readonly NavItem[] = [
     description: "Intake, offer, contract, and escalation review queues",
   },
   {
+    slug: "closing",
+    label: "Closing deals",
+    href: "/console/closing",
+    section: "queues",
+    allowedRoles: ["broker", "admin"],
+    description:
+      "Active under-contract and closing deals with stuck-deal signals",
+  },
+  {
     slug: "metrics",
     label: "KPI dashboard",
     href: "/metrics",
