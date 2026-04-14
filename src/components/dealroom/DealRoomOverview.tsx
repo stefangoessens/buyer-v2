@@ -31,7 +31,7 @@ export function DealRoomOverview({ dealRoomId }: DealRoomOverviewProps) {
           Overview not available
         </h2>
         <p className="mt-2 text-sm text-neutral-500">
-          We couldn't load the overview for this deal room. It may have been
+          We couldn&apos;t load the overview for this deal room. It may have been
           withdrawn or you may not have access.
         </p>
         <button

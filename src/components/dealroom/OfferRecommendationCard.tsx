@@ -45,7 +45,7 @@ export function OfferRecommendationCard({
           Offer recommendation
         </p>
         <h2 className="mt-1 text-lg font-semibold text-neutral-800">
-          Where we'd open negotiations
+          Where we&apos;d open negotiations
         </h2>
       </header>
 
