@@ -83,6 +83,16 @@ export const runAllEnginesForProperty = internalAction({
       insightsResult = { name: "insights", ok: false, error: message };
     }
 
+    // Phase 4: crawl synthesizer cross-references upstream crawl outputs
+    // (Zestimate, FEMA, permits) against the insights we just produced.
+    // Scheduled rather than awaited so a synthesizer failure never blocks
+    // the orchestrate run from landing in the log table.
+    await ctx.scheduler.runAfter(
+      0,
+      internal.engines.crawlSynthesizer.runCrawlSynthesizerEngine,
+      { propertyId: args.propertyId },
+    );
+
     const results = [
       compSeedResult,
       ...independentResults,

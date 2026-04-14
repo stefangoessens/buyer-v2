@@ -46,6 +46,7 @@ export const ENGINE_TYPES = [
   "copilot",
   "case_synthesis",
   "insights",
+  "crawl_synthesizer",
 ] as const;
 
 export type EngineType = (typeof ENGINE_TYPES)[number];
