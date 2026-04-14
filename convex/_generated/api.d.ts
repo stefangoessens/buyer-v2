@@ -28,6 +28,8 @@ import type * as copilot from "../copilot.js";
 import type * as counterOfferHistory from "../counterOfferHistory.js";
 import type * as crawlers_femaFlood from "../crawlers/femaFlood.js";
 import type * as crawlers_femaFloodPersist from "../crawlers/femaFloodPersist.js";
+import type * as crawlers_papaBroward from "../crawlers/papaBroward.js";
+import type * as crawlers_papaBrowardPersist from "../crawlers/papaBrowardPersist.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardAgreements from "../dashboardAgreements.js";
 import type * as dashboardMarketDigest from "../dashboardMarketDigest.js";
@@ -156,6 +158,8 @@ declare const fullApi: ApiFromModules<{
   counterOfferHistory: typeof counterOfferHistory;
   "crawlers/femaFlood": typeof crawlers_femaFlood;
   "crawlers/femaFloodPersist": typeof crawlers_femaFloodPersist;
+  "crawlers/papaBroward": typeof crawlers_papaBroward;
+  "crawlers/papaBrowardPersist": typeof crawlers_papaBrowardPersist;
   dashboard: typeof dashboard;
   dashboardAgreements: typeof dashboardAgreements;
   dashboardMarketDigest: typeof dashboardMarketDigest;
