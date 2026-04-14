@@ -10,8 +10,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { trackJourneyEvent } from "@/lib/analytics/journey-events";
 
 type JourneysEmptyStateProps =
-  | { variant: "never"; onShowActive?: never }
-  | { variant: "allArchived"; onShowActive: () => void };
+  | { variant: "never"; onShowArchived?: never }
+  | { variant: "allArchived"; onShowArchived: () => void };
 
 export function JourneysEmptyState(props: JourneysEmptyStateProps) {
   const handleNeverClick = useCallback(() => {
@@ -21,7 +21,7 @@ export function JourneysEmptyState(props: JourneysEmptyStateProps) {
   const handleAllArchivedClick = useCallback(() => {
     if (props.variant !== "allArchived") return;
     trackJourneyEvent("LIST_EMPTY_CTA_CLICKED", { cta: "show-archived" });
-    props.onShowActive();
+    props.onShowArchived();
   }, [props]);
 
   if (props.variant === "never") {

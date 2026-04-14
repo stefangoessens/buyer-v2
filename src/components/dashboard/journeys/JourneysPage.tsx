@@ -9,9 +9,11 @@ import {
   useState,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
+import { toast } from "sonner";
 
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Accordion,
@@ -30,6 +32,7 @@ export type JourneyViewKind = "active" | "archived";
 
 const ACTIVE_CARDS_FIRST_PAGE = 8;
 const SEARCH_VISIBILITY_THRESHOLD = 10;
+const UNDO_WINDOW_MS = 8000;
 
 export type JourneyRow = {
   dealRoomId: string;
@@ -181,6 +184,16 @@ function JourneysPageInner() {
   const search = searchParams.get("q") ?? "";
 
   const rows = useQuery(api.dashboard.getJourneys, { view });
+  // Second query to distinguish "never started" from "all archived". Only
+  // fired when the active view is empty, so it doesn't cost anything on
+  // the happy path. `skip` keeps convex from subscribing until we need it.
+  const archivedRowsCount = useQuery(
+    api.dashboard.getJourneys,
+    view === "active" && rows !== undefined && rows.length === 0
+      ? { view: "archived" }
+      : "skip",
+  );
+  const archiveJourneyMutation = useMutation(api.dealRooms.archiveJourney);
 
   const mountedRef = useRef(false);
   useEffect(() => {
@@ -309,6 +322,71 @@ function JourneysPageInner() {
     card?.focus();
   }, []);
 
+  const [archivedIds, setArchivedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const requestArchive = useCallback((row: JourneyRow) => {
+    setArchivedIds((prev) => {
+      const next = new Set(prev);
+      next.add(row.dealRoomId);
+      return next;
+    });
+  }, []);
+  const restoreLocal = useCallback((dealRoomId: string) => {
+    setArchivedIds((prev) => {
+      if (!prev.has(dealRoomId)) return prev;
+      const next = new Set(prev);
+      next.delete(dealRoomId);
+      return next;
+    });
+  }, []);
+
+  // Keyboard A shortcut: run the full archive flow inline (optimistic hide
+  // + sonner undo toast + commit after 8s). JourneyCard's archive button
+  // owns its own identical flow — we duplicate the 20 lines here instead
+  // of threading an imperative handle, which keeps JourneyCard self-contained.
+  const handleKeyboardArchive = useCallback(
+    (row: JourneyRow) => {
+      trackJourneyEvent("ARCHIVE_CLICKED", { dealRoomId: row.dealRoomId });
+      requestArchive(row);
+      const dealRoomIdTyped = row.dealRoomId as unknown as Id<"dealRooms">;
+
+      let committed = false;
+      const commit = async () => {
+        if (committed) return;
+        committed = true;
+        try {
+          await archiveJourneyMutation({ dealRoomId: dealRoomIdTyped });
+          trackJourneyEvent("ARCHIVE_COMMITTED", {
+            dealRoomId: row.dealRoomId,
+          });
+        } catch {
+          restoreLocal(row.dealRoomId);
+          toast.error("Could not archive journey");
+        }
+      };
+
+      const timeoutId = window.setTimeout(commit, UNDO_WINDOW_MS);
+
+      toast("Journey archived", {
+        description: row.address,
+        duration: UNDO_WINDOW_MS,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            window.clearTimeout(timeoutId);
+            committed = true;
+            trackJourneyEvent("ARCHIVE_UNDO_CLICKED", {
+              dealRoomId: row.dealRoomId,
+            });
+            restoreLocal(row.dealRoomId);
+          },
+        },
+      });
+    },
+    [archiveJourneyMutation, requestArchive, restoreLocal],
+  );
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (visibleRows.length === 0) return;
@@ -343,8 +421,9 @@ function JourneysPageInner() {
       } else if (event.key === "a" || event.key === "A") {
         const row = visibleRows[focusedIndex];
         if (!row) return;
+        if (view !== "active") return;
         event.preventDefault();
-        requestArchive(row);
+        handleKeyboardArchive(row);
       } else if (event.key === ";") {
         const row = visibleRows[focusedIndex];
         if (!row) return;
@@ -358,31 +437,20 @@ function JourneysPageInner() {
         priorityBtn?.click();
       }
     },
-    [visibleRows, focusedIndex, focusCard],
+    [visibleRows, focusedIndex, focusCard, view, handleKeyboardArchive],
   );
-
-  const [archivedIds, setArchivedIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const requestArchive = useCallback((row: JourneyRow) => {
-    setArchivedIds((prev) => {
-      const next = new Set(prev);
-      next.add(row.dealRoomId);
-      return next;
-    });
-  }, []);
-  const restoreLocal = useCallback((dealRoomId: string) => {
-    setArchivedIds((prev) => {
-      if (!prev.has(dealRoomId)) return prev;
-      const next = new Set(prev);
-      next.delete(dealRoomId);
-      return next;
-    });
-  }, []);
 
   const displayRows = useMemo(
-    () => visibleRows.filter((r) => !archivedIds.has(r.dealRoomId)),
-    [visibleRows, archivedIds],
+    () => {
+      // Only filter out optimistically archived rows when showing the
+      // active view. In the archived view, newly-archived items
+      // legitimately belong and should appear alongside server-archived
+      // rows — otherwise an optimistic archive hides the row from BOTH
+      // views until a page reload.
+      if (view !== "active") return visibleRows;
+      return visibleRows.filter((r) => !archivedIds.has(r.dealRoomId));
+    },
+    [visibleRows, archivedIds, view],
   );
 
   if (rows === undefined) {
@@ -392,17 +460,28 @@ function JourneysPageInner() {
   const hasAnyRows = rows.length > 0;
   const hasSearchableCount = rows.length >= SEARCH_VISIBILITY_THRESHOLD;
 
+  // Distinguish "never started" from "all archived":
+  //   * active view with zero rows AND archived view has rows → allArchived
+  //   * active view with zero rows AND archived view also empty → never
+  //   * archived view with zero rows → never (buyer has simply not touched anything yet)
+  // The archived query only subscribes when we actually need it (see useQuery above).
   if (!hasAnyRows && view === "active") {
+    if (archivedRowsCount === undefined) {
+      return <JourneysLoading />;
+    }
+    if (archivedRowsCount.length > 0) {
+      return (
+        <JourneysEmptyState
+          variant="allArchived"
+          onShowArchived={() => setView("archived")}
+        />
+      );
+    }
     return <JourneysEmptyState variant="never" />;
   }
 
   if (!hasAnyRows && view === "archived") {
-    return (
-      <JourneysEmptyState
-        variant="allArchived"
-        onShowActive={() => setView("active")}
-      />
-    );
+    return <JourneysEmptyState variant="never" />;
   }
 
   const isPaged = displayRows.length > ACTIVE_CARDS_FIRST_PAGE;
