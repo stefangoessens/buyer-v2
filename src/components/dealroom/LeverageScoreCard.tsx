@@ -12,10 +12,33 @@ type LeverageData = {
   overallConfidence: number;
 } | null;
 
+export interface LeverageSignal {
+  label: string;
+  delta: number;
+  source: "mls" | "crawl" | "ai" | "market";
+  sourceRef?: string;
+  confidence: number;
+}
+
 interface LeverageScoreCardProps {
   status: "available" | "pending" | "unavailable";
   data: LeverageData;
   reason?: string;
+  signals?: LeverageSignal[];
+}
+
+function positionLabel(score: number): "strong" | "moderate" | "limited" {
+  if (score >= 70) return "strong";
+  if (score >= 40) return "moderate";
+  return "limited";
+}
+
+function deltaDirection(
+  delta: number,
+): "bullish" | "bearish" | "neutral" {
+  if (delta > 0) return "bullish";
+  if (delta < 0) return "bearish";
+  return "neutral";
 }
 
 function scoreTone(score: number) {
@@ -59,7 +82,14 @@ export function LeverageScoreCard({
   status,
   data,
   reason,
+  signals,
 }: LeverageScoreCardProps) {
+  const hasExtendedSignals = signals !== undefined && signals.length > 0;
+  const narrative =
+    hasExtendedSignals && data
+      ? buildNarrative(data.score, signals)
+      : null;
+
   return (
     <section className="rounded-[24px] border border-neutral-200 bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
       <header className="mb-5">
@@ -91,6 +121,12 @@ export function LeverageScoreCard({
             </div>
           </div>
 
+          {narrative ? (
+            <p className="mt-5 text-sm leading-relaxed text-neutral-600">
+              {narrative}
+            </p>
+          ) : null}
+
           <ul className="mt-6 space-y-3 border-t border-neutral-100 pt-5">
             {data.topSignals.length === 0 ? (
               <li className="text-sm text-neutral-500">
@@ -120,6 +156,62 @@ export function LeverageScoreCard({
             )}
           </ul>
 
+          {hasExtendedSignals ? (
+            <ul className="mt-5 space-y-4 border-t border-neutral-100 pt-5">
+              {signals.map((signal, index) => {
+                const direction = deltaDirection(signal.delta);
+                const isAi =
+                  signal.source === "ai" ||
+                  (signal.sourceRef !== undefined &&
+                    signal.sourceRef.toLowerCase().endsWith("ai"));
+                return (
+                  <li
+                    key={`${signal.label}-${index}`}
+                    className="flex flex-col gap-1"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-1 flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-neutral-700">
+                          {signal.label}
+                        </span>
+                        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">
+                          {signal.source}
+                        </span>
+                        {isAi ? (
+                          <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
+                            AI-reasoned
+                          </span>
+                        ) : null}
+                      </div>
+                      <span
+                        className={cn(
+                          "text-sm font-semibold",
+                          directionTone(direction),
+                        )}
+                      >
+                        {directionIcon(direction)}{" "}
+                        {signal.delta > 0 ? "+" : ""}
+                        {(signal.delta * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      {signal.sourceRef ? (
+                        <span className="text-xs text-neutral-500">
+                          {signal.sourceRef}
+                        </span>
+                      ) : (
+                        <span />
+                      )}
+                      <span className="text-xs text-neutral-400">
+                        {Math.round(signal.confidence * 100)}% conf
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+
           <button
             type="button"
             className="mt-5 text-xs font-semibold text-primary-600 hover:text-primary-700"
@@ -132,6 +224,19 @@ export function LeverageScoreCard({
       )}
     </section>
   );
+}
+
+function buildNarrative(
+  score: number,
+  signals: LeverageSignal[],
+): string {
+  const position = positionLabel(score);
+  const top = [...signals]
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, 3)
+    .map((s) => s.label.toLowerCase())
+    .join(", ");
+  return `You're in a ${position} bargaining position because ${top}.`;
 }
 
 function ScoreDial({ score }: { score: number }) {
