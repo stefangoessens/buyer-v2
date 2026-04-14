@@ -82,9 +82,16 @@ export const create = mutation({
     if (!isBuyer && !isStaff) {
       throw new Error("Not authorized to post notes on this task");
     }
-    // Buyers can only post buyer_visible notes.
-    if (isBuyer && !isStaff && args.visibility !== "buyer_visible") {
-      throw new Error("Buyers cannot post internal-only notes");
+    // Buyers may only post notes on buyer-visible tasks AND only as buyer-
+    // visible notes. The task-visibility gate keeps internal-only workflow
+    // threads private even if a buyer were to call the mutation directly.
+    if (isBuyer && !isStaff) {
+      if (task.visibility !== "buyer_visible") {
+        throw new Error("Buyers cannot post notes on internal-only tasks");
+      }
+      if (args.visibility !== "buyer_visible") {
+        throw new Error("Buyers cannot post internal-only notes");
+      }
     }
     if (args.body.trim().length === 0) {
       throw new Error("Note body cannot be empty");

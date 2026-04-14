@@ -122,9 +122,16 @@ export const create = mutation({
     if (!isBuyer && !isStaff) {
       throw new Error("Not authorized to attach documents to this task");
     }
-    // Buyers can only create buyer_visible attachments.
-    if (isBuyer && !isStaff && args.visibility !== "buyer_visible") {
-      throw new Error("Buyers cannot create internal-only attachments");
+    // Buyers may only attach to buyer-visible tasks AND only as buyer-visible
+    // attachments. The task-visibility gate keeps internal-only workflow
+    // threads private even if a buyer were to call the mutation directly.
+    if (isBuyer && !isStaff) {
+      if (task.visibility !== "buyer_visible") {
+        throw new Error("Buyers cannot attach documents to internal-only tasks");
+      }
+      if (args.visibility !== "buyer_visible") {
+        throw new Error("Buyers cannot create internal-only attachments");
+      }
     }
 
     const createdAt = Date.now();

@@ -48,6 +48,9 @@ export interface BrokerBoardSeed {
   stuckSignals: readonly string[];
   isStuck: boolean;
   percentComplete: number;
+  closingDate: number | null;
+  nextDueDate: number | null;
+  waitingOnRole: string | null;
 }
 
 interface ClosingDealsBoardProps {
@@ -130,13 +133,13 @@ export function ClosingDealsBoard({ seeds }: ClosingDealsBoardProps) {
         propertyAddress: formatPropertyAddress(property),
         buyerName: formatBuyerName(buyer),
         status: seed.status,
-        closingDate: null,
+        closingDate: seed.closingDate,
         totalTasks: seed.counts.total,
         completedTasks: seed.counts.completed,
         blockedCount: seed.counts.blocked,
         overdueCount: seed.counts.overdue,
-        nextDueDate: null,
-        currentWaitingOn: null,
+        nextDueDate: seed.nextDueDate,
+        currentWaitingOn: seed.waitingOnRole,
         percentComplete: seed.percentComplete,
         isStuck: seed.isStuck,
         stuckSignals: seed.stuckSignals,
