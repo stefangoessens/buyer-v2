@@ -59,6 +59,20 @@ export const STATIC_SEO_PAGES = {
       changeFrequency: "monthly",
     },
   },
+  howItWorks: {
+    seo: {
+      title: "How buyer-v2 works",
+      description:
+        "Three steps from a pasted listing link to a closed Florida home — instant AI analysis, expert broker representation, and savings at closing.",
+      path: "/how-it-works",
+      visibility: "public",
+      kind: "marketing",
+    },
+    sitemap: {
+      priority: 0.85,
+      changeFrequency: "monthly",
+    },
+  },
   savings: {
     seo: {
       title: "Savings Calculator",

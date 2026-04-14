@@ -6,6 +6,7 @@ import { FeatureCard } from "@/components/marketing/FeatureCard";
 import { TestimonialCard } from "@/components/marketing/TestimonialCard";
 import { HeroInput } from "@/components/marketing/HeroInput";
 import { BentoCard } from "@/components/marketing/BentoCard";
+import { HOW_IT_WORKS } from "@/content/how-it-works";
 import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
 export const metadata: Metadata = metadataForStaticPage("home");
@@ -23,12 +24,6 @@ const features = [
   { imageSrc: "/images/marketing/features/feature-1.png", imageAlt: "Paste a listing link and instantly get property data", title: "Paste any listing link", description: "Drop a Zillow, Redfin, or Realtor.com URL. We instantly pull the property data and start our AI analysis engine." },
   { imageSrc: "/images/marketing/features/feature-2.png", imageAlt: "AI-powered property analysis dashboard", title: "Get AI-powered analysis", description: "Fair pricing, comparable sales, leverage signals, risk assessment, and a competitiveness score — all in seconds." },
   { imageSrc: "/images/marketing/features/feature-3.png", imageAlt: "Expert buyer representation saves you money", title: "Save with expert representation", description: "Our licensed Florida brokers negotiate on your behalf using AI insights. Average buyer savings: $12,400." },
-];
-
-const steps = [
-  { number: 1, title: "Paste a link", description: "Copy any listing URL from Zillow, Redfin, or Realtor.com and paste it into our analysis bar.", imageSrc: "/images/marketing/steps/step-1.png" },
-  { number: 2, title: "Review your analysis", description: "Get an instant AI-powered report with fair pricing, comps, leverage signals, and a property score.", imageSrc: "/images/marketing/steps/step-2.png" },
-  { number: 3, title: "Close with confidence", description: "Connect with a licensed Florida broker who uses your analysis to negotiate the best possible deal.", imageSrc: "/images/marketing/steps/step-3.png" },
 ];
 
 const testimonials = [
@@ -141,12 +136,12 @@ export default function Home() {
       <section id="how-it-works" className="scroll-mt-[84px] w-full bg-white py-20 lg:py-28">
         <div className="mx-auto max-w-[1248px] px-6">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Simple process</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">Three steps to your best deal</h2>
+            <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">{HOW_IT_WORKS.eyebrow}</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">{HOW_IT_WORKS.title}</h2>
           </div>
           <div className="mt-16 grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-6">
-            {steps.map((step) => (
-              <div key={step.number} className="group text-center">
+            {HOW_IT_WORKS.steps.map((step) => (
+              <div key={step.id} className="group text-center">
                 {/* Step number */}
                 <p className="text-sm font-bold text-primary-400">{step.number}</p>
                 <h3 className="mt-2 text-xl font-semibold text-neutral-800">{step.title}</h3>
@@ -154,7 +149,7 @@ export default function Home() {
                 {/* Phone mockup image */}
                 <div className="mt-6 overflow-hidden rounded-[24px] border border-neutral-200 bg-neutral-50 transition-shadow duration-300 group-hover:shadow-lg">
                   <div className="relative aspect-[3/4]">
-                    <Image src={step.imageSrc} alt="" fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 33vw" />
+                    <Image src={step.imageSrc} alt={step.imageAlt ?? ""} fill className="object-cover object-top" sizes="(max-width: 768px) 100vw, 33vw" />
                   </div>
                 </div>
               </div>
