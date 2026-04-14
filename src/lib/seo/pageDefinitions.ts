@@ -87,6 +87,20 @@ export const STATIC_SEO_PAGES = {
       changeFrequency: "monthly",
     },
   },
+  about: {
+    seo: {
+      title: "About buyer-v2",
+      description:
+        "buyer-v2 is a Florida-licensed buyer brokerage that pairs instant AI analysis with broker oversight on every deal. Meet the team and the operating model.",
+      path: "/about",
+      visibility: "public",
+      kind: "marketing",
+    },
+    sitemap: {
+      priority: 0.7,
+      changeFrequency: "monthly",
+    },
+  },
   blog: {
     seo: {
       title: "Articles for Florida homebuyers",

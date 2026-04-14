@@ -20,6 +20,7 @@ import type {
 const publicFAQ: FAQEntry = {
   id: "f1",
   category: "getting_started",
+  stage: "pre_offer",
   question: "What is it?",
   answer: "A thing.",
   visibility: "public",
@@ -28,6 +29,7 @@ const publicFAQ: FAQEntry = {
 const internalFAQ: FAQEntry = {
   id: "f2",
   category: "technical",
+  stage: "pre_offer",
   question: "Internal only",
   answer: "Secret",
   visibility: "internal",
