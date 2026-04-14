@@ -52,10 +52,25 @@ function parseInsightsRecord(record: {
         severity: String(i.severity ?? "info"),
         confidence: typeof i.confidence === "number" ? i.confidence : 0.5,
         premium: Boolean(i.premium),
+        // Citations may arrive as plain strings (legacy insights engine)
+        // OR as `{source, ref}` objects (crawl synthesizer). Normalize
+        // both shapes to display strings so traceability is preserved
+        // for synthesized rows — codex flagged this dropping silently.
         citations: Array.isArray(i.citations)
-          ? (i.citations as unknown[]).filter(
-              (c): c is string => typeof c === "string",
-            )
+          ? (i.citations as unknown[])
+              .map((c): string | null => {
+                if (typeof c === "string") return c;
+                if (c && typeof c === "object") {
+                  const obj = c as Record<string, unknown>;
+                  const src = typeof obj.source === "string" ? obj.source : null;
+                  const ref = typeof obj.ref === "string" ? obj.ref : null;
+                  if (src && ref) return `${src}: ${ref}`;
+                  if (ref) return ref;
+                  if (src) return src;
+                }
+                return null;
+              })
+              .filter((c): c is string => c !== null)
           : [],
       }));
     const overallConfidence =

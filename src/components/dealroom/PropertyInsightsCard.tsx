@@ -41,11 +41,28 @@ const SEVERITY_VALUES: readonly InsightSeverity[] = [
   "critical",
 ] as const;
 
+// Crawl synthesizer engine emits its own category vocabulary
+// (valuation/climate/negotiation/ownership/compliance) — map each into
+// the legacy InsightCategory used by the renderer so semantic icons +
+// labels stay accurate. Without this map, codex flagged that all
+// synthesizer categories collapsed to "market_position".
+const SYNTHESIZER_CATEGORY_MAP: Record<string, InsightCategory> = {
+  valuation: "pricing",
+  climate: "florida_risk",
+  negotiation: "negotiation",
+  ownership: "seller_motivation",
+  compliance: "florida_risk",
+};
+
 function narrowCategory(raw: unknown): InsightCategory {
-  return typeof raw === "string" &&
-    (CATEGORY_VALUES as readonly string[]).includes(raw)
-    ? (raw as InsightCategory)
-    : "market_position";
+  if (typeof raw !== "string") return "market_position";
+  if ((CATEGORY_VALUES as readonly string[]).includes(raw)) {
+    return raw as InsightCategory;
+  }
+  if (raw in SYNTHESIZER_CATEGORY_MAP) {
+    return SYNTHESIZER_CATEGORY_MAP[raw];
+  }
+  return "market_position";
 }
 
 function narrowSeverity(raw: unknown): InsightSeverity {
