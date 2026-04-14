@@ -42,10 +42,10 @@ export function UnsavedChangesBanner({
   const subLine = formattedTime ? `Last saved ${formattedTime}` : "Not yet saved";
 
   return (
-    <div className="sticky top-0 z-10 flex items-center justify-between rounded-lg border border-neutral-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
+    <div className="sticky top-0 z-10 flex items-center justify-between rounded-lg border border-border bg-white/95 px-4 py-3 shadow-sm backdrop-blur">
       <div>
-        <p className="text-sm font-medium text-neutral-900">{primaryLabel}</p>
-        <p className="text-xs text-neutral-500">{subLine}</p>
+        <p className="text-sm font-medium text-foreground">{primaryLabel}</p>
+        <p className="text-xs text-muted-foreground">{subLine}</p>
       </div>
       <div className="flex items-center gap-2">
         <Button

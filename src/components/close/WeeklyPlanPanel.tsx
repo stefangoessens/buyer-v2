@@ -26,25 +26,25 @@ function Section({
       ? "text-primary-700"
       : tone === "warning"
         ? "text-warning-700"
-        : "text-neutral-600";
+        : "text-muted-foreground";
   return (
     <div>
       <p className={cn("text-xs font-semibold uppercase tracking-wide", toneClass)}>
         {title}
       </p>
       {items.length === 0 ? (
-        <p className="mt-2 text-sm text-neutral-500">{emptyLabel}</p>
+        <p className="mt-2 text-sm text-muted-foreground">{emptyLabel}</p>
       ) : (
         <ul className="mt-2 flex flex-col gap-2">
           {items.map((item) => (
             <li
               key={`${item.kind}-${item.milestone.id}`}
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              className="rounded-lg border border-border bg-white px-3 py-2 text-sm"
             >
-              <p className="font-medium text-neutral-900">
+              <p className="font-medium text-foreground">
                 {item.milestone.name}
               </p>
-              <p className="mt-0.5 text-xs text-neutral-500">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {item.reason} · due {item.milestone.dueDate}
               </p>
             </li>
@@ -60,14 +60,14 @@ export function WeeklyPlanPanel({ plan }: WeeklyPlanPanelProps) {
     <Card>
       <CardHeader>
         <div className="flex items-baseline justify-between">
-          <CardTitle className="text-lg font-semibold text-neutral-900">
+          <CardTitle className="text-lg font-semibold text-foreground">
             Weekly plan
           </CardTitle>
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-muted-foreground">
             {plan.weekStartDate} → {plan.weekEndDate}
           </span>
         </div>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-muted-foreground">
           {plan.headline} · {plan.summary}
         </p>
       </CardHeader>

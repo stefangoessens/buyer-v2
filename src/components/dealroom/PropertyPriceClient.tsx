@@ -30,14 +30,14 @@ export function PropertyPriceClient({ propertyId }: PropertyPriceClientProps) {
 
   if (dealRoomId === null) {
     return (
-      <section className="rounded-3xl border border-dashed border-neutral-200 bg-white p-10 text-center">
+      <section className="rounded-3xl border border-dashed border-border bg-white p-10 text-center">
         <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
           Pricing
         </p>
-        <h2 className="mt-2 text-lg font-semibold text-neutral-800">
+        <h2 className="mt-2 text-lg font-semibold text-foreground">
           Start your analysis to unlock pricing
         </h2>
-        <p className="mt-2 text-sm text-neutral-500">
+        <p className="mt-2 text-sm text-muted-foreground">
           The fair-price range, leverage score, and monthly cost estimate live
           inside your private deal room.
         </p>
@@ -68,14 +68,14 @@ function PriceOverview({
 
   if (overview === null) {
     return (
-      <section className="rounded-3xl border border-neutral-200 bg-white p-10 text-center">
+      <section className="rounded-3xl border border-border bg-white p-10 text-center">
         <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
           Pricing
         </p>
-        <h2 className="mt-2 text-lg font-semibold text-neutral-800">
+        <h2 className="mt-2 text-lg font-semibold text-foreground">
           Pricing not available
         </h2>
-        <p className="mt-2 text-sm text-neutral-500">
+        <p className="mt-2 text-sm text-muted-foreground">
           We couldn&apos;t load the pricing overview for this deal room.
         </p>
       </section>
@@ -112,12 +112,12 @@ function PriceOverview({
   return (
     <div className="flex flex-col gap-6">
       {showSpectrum && pricingData ? (
-        <section className="rounded-[24px] border border-neutral-200 bg-white p-6 sm:p-8">
+        <section className="rounded-[24px] border border-border bg-white p-6 sm:p-8">
           <header className="mb-6">
             <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
               Price spectrum
             </p>
-            <h2 className="mt-1 text-lg font-semibold text-neutral-800">
+            <h2 className="mt-1 text-lg font-semibold text-foreground">
               Where every anchor sits on the price line
             </h2>
           </header>
@@ -179,7 +179,7 @@ function PriceSkeleton() {
 function SkeletonCard({ className }: { className?: string }) {
   return (
     <section
-      className={`rounded-3xl border border-neutral-200 bg-white p-6 sm:p-8 ${className ?? ""}`}
+      className={`rounded-3xl border border-border bg-white p-6 sm:p-8 ${className ?? ""}`}
     >
       <div className="h-4 w-32 animate-pulse rounded-full bg-neutral-200" />
       <div className="mt-3 h-6 w-56 animate-pulse rounded-full bg-neutral-200" />
@@ -187,7 +187,7 @@ function SkeletonCard({ className }: { className?: string }) {
         {Array.from({ length: 4 }).map((_, i) => (
           <div
             key={i}
-            className="h-16 animate-pulse rounded-2xl bg-neutral-100"
+            className="h-16 animate-pulse rounded-2xl bg-muted"
           />
         ))}
       </div>

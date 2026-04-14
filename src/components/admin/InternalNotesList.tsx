@@ -63,7 +63,7 @@ export function InternalNotesList({
 
   if (rows === undefined) {
     return (
-      <div className="rounded-xl border border-dashed border-neutral-300 bg-white px-6 py-10 text-center text-sm text-neutral-500">
+      <div className="rounded-xl border border-dashed border-neutral-300 bg-white px-6 py-10 text-center text-sm text-muted-foreground">
         Loading notes…
       </div>
     );
@@ -72,10 +72,10 @@ export function InternalNotesList({
   if (rows.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-neutral-300 bg-white px-6 py-10 text-center">
-        <div className="text-sm font-medium text-neutral-900">
+        <div className="text-sm font-medium text-foreground">
           {emptyTitle ?? "No notes yet"}
         </div>
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           {emptyDescription ??
             "Internal notes appear here as soon as ops writes them."}
         </p>
@@ -90,7 +90,7 @@ export function InternalNotesList({
           key={row._id}
           className={cn(
             "rounded-xl border bg-white p-4",
-            row.pinned ? "border-primary-500/40" : "border-neutral-200",
+            row.pinned ? "border-primary-500/40" : "border-border",
           )}
         >
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
@@ -100,11 +100,11 @@ export function InternalNotesList({
                   Pinned
                 </span>
               ) : null}
-              <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                 {NOTE_VISIBILITY_LABELS[row.visibility]}
               </span>
               {!subject ? (
-                <span className="text-neutral-500">
+                <span className="text-muted-foreground">
                   {(NOTE_SUBJECT_LABELS[row.subjectType as NoteSubjectType] ??
                     row.subjectType)}
                   <span className="ml-1 font-mono text-[10px] text-neutral-400">
@@ -117,11 +117,11 @@ export function InternalNotesList({
                 <span className="text-neutral-400">Revision</span>
               ) : null}
             </div>
-            <span className="text-neutral-500">
+            <span className="text-muted-foreground">
               {formatConsoleTimestamp(row.createdAt)}
             </span>
           </div>
-          <p className="whitespace-pre-wrap text-sm text-neutral-800">
+          <p className="whitespace-pre-wrap text-sm text-foreground">
             {row.body}
           </p>
         </li>

@@ -127,11 +127,11 @@ export function OverrideForm({ role }: OverrideFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-xl border border-neutral-200 bg-white p-6"
+      className="rounded-xl border border-border bg-white p-6"
     >
       <div className="mb-4">
-        <div className="text-sm font-semibold text-neutral-900">Execute override</div>
-        <p className="mt-0.5 text-xs text-neutral-500">
+        <div className="text-sm font-semibold text-foreground">Execute override</div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Every override is logged with your identity, before/after values, and
           structured reason.
         </p>
@@ -140,7 +140,7 @@ export function OverrideForm({ role }: OverrideFormProps) {
         <div>
           <label
             htmlFor="override-field"
-            className="mb-1 block text-xs font-semibold uppercase tracking-wider text-neutral-500"
+            className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
           >
             Field
           </label>
@@ -152,7 +152,7 @@ export function OverrideForm({ role }: OverrideFormProps) {
               setAfterValue("");
               setBeforeValue("");
             }}
-            className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+            className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
             <option value="">Choose a field…</option>
             {availableFields.map((def) => (
@@ -162,13 +162,13 @@ export function OverrideForm({ role }: OverrideFormProps) {
             ))}
           </select>
           {selected ? (
-            <p className="mt-1 text-xs text-neutral-500">{selected.description}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{selected.description}</p>
           ) : null}
         </div>
         <div>
           <label
             htmlFor="override-target"
-            className="mb-1 block text-xs font-semibold uppercase tracking-wider text-neutral-500"
+            className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
           >
             Target ID
           </label>
@@ -197,7 +197,7 @@ export function OverrideForm({ role }: OverrideFormProps) {
         <div>
           <label
             htmlFor="override-reason-code"
-            className="mb-1 block text-xs font-semibold uppercase tracking-wider text-neutral-500"
+            className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
           >
             Reason
           </label>
@@ -205,7 +205,7 @@ export function OverrideForm({ role }: OverrideFormProps) {
             id="override-reason-code"
             value={reasonCode}
             onChange={(e) => setReasonCode(e.target.value as OverrideReasonCode)}
-            className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+            className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           >
             {OVERRIDE_REASON_CODES.map((code) => (
               <option key={code} value={code}>
@@ -218,7 +218,7 @@ export function OverrideForm({ role }: OverrideFormProps) {
       <div className="mt-4">
         <label
           htmlFor="override-reason-detail"
-          className="mb-1 block text-xs font-semibold uppercase tracking-wider text-neutral-500"
+          className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
         >
           Reason detail
         </label>
@@ -229,7 +229,7 @@ export function OverrideForm({ role }: OverrideFormProps) {
           maxLength={2000}
           rows={4}
           placeholder="Why is this override necessary? Minimum 10 characters."
-          className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
         />
         <div className="mt-1 text-right text-[11px] text-neutral-400">
           {reasonDetail.length} / 2000
@@ -269,7 +269,7 @@ function ValueInput({ label, field, value, onChange, optional }: ValueInputProps
       <div>
         <label
           htmlFor={id}
-          className="mb-1 block text-xs font-semibold uppercase tracking-wider text-neutral-500"
+          className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
         >
           {label}
         </label>
@@ -281,7 +281,7 @@ function ValueInput({ label, field, value, onChange, optional }: ValueInputProps
     <div>
       <label
         htmlFor={id}
-        className="mb-1 block text-xs font-semibold uppercase tracking-wider text-neutral-500"
+        className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
       >
         {label}
         {optional ? " (optional)" : ""}
@@ -291,7 +291,7 @@ function ValueInput({ label, field, value, onChange, optional }: ValueInputProps
           id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm"
+          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm"
         >
           <option value="">{optional ? "(leave blank)" : "Select…"}</option>
           {field.enumValues?.map((opt) => (
@@ -305,7 +305,7 @@ function ValueInput({ label, field, value, onChange, optional }: ValueInputProps
           id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm"
+          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm"
         >
           <option value="">{optional ? "(leave blank)" : "Select…"}</option>
           <option value="true">true</option>

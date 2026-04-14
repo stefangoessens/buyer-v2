@@ -40,9 +40,9 @@ export function DashboardSection({
     >
       <header className="flex items-baseline justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-neutral-900">{title}</h2>
+          <h2 className="text-base font-semibold text-foreground">{title}</h2>
           {subtitle && (
-            <p className="mt-0.5 text-xs text-neutral-500">{subtitle}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>
           )}
         </div>
         <span className={cn("text-2xl font-bold", accentStyles[tone])}>
@@ -50,7 +50,7 @@ export function DashboardSection({
         </span>
       </header>
       {count === 0 ? (
-        <p className="rounded-xl border border-dashed border-neutral-200 bg-white/80 p-4 text-center text-sm text-neutral-500">
+        <p className="rounded-xl border border-dashed border-border bg-white/80 p-4 text-center text-sm text-muted-foreground">
           {empty ?? "Nothing here right now."}
         </p>
       ) : (

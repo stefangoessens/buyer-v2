@@ -13,12 +13,12 @@ export function PropertyStatsBar({ stats }: PropertyStatsBarProps) {
       {stats.map((stat) => (
         <div
           key={stat.label}
-          className="rounded-[20px] border border-neutral-200/80 bg-white px-5 py-4 shadow-sm"
+          className="rounded-[20px] border border-border/80 bg-white px-5 py-4 shadow-sm"
         >
-          <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             {stat.label}
           </p>
-          <p className="mt-1 text-2xl font-semibold tracking-[-0.003em] text-neutral-800">
+          <p className="mt-1 text-2xl font-semibold tracking-[-0.003em] text-foreground">
             {stat.value}
           </p>
         </div>

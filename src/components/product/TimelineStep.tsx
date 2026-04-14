@@ -50,9 +50,9 @@ export function TimelineStep({
       </div>
 
       <div className={cn("pb-6", isLast && "pb-0")}>
-        <p className="font-medium text-neutral-900">{label}</p>
+        <p className="font-medium text-foreground">{label}</p>
         {description && (
-          <p className="mt-0.5 text-sm text-neutral-500">{description}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
         )}
       </div>
     </div>

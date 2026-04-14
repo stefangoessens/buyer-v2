@@ -19,7 +19,7 @@ const BADGE_CONFIG: Record<BrokerReviewState, BadgeConfig> = {
   not_submitted: {
     label: "Not submitted",
     variant: "secondary",
-    className: "bg-neutral-100 text-neutral-700 border-neutral-200",
+    className: "bg-muted text-neutral-700 border-border",
   },
   pending_review: {
     label: "Pending broker review",
@@ -48,7 +48,7 @@ export function BrokerReviewBadge({ state, note }: BrokerReviewBadgeProps) {
       <Badge variant={config.variant} className={config.className}>
         {config.label}
       </Badge>
-      {showNote ? <p className="text-xs text-neutral-600">{note}</p> : null}
+      {showNote ? <p className="text-xs text-muted-foreground">{note}</p> : null}
     </div>
   );
 }

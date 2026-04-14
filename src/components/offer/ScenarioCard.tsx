@@ -46,10 +46,10 @@ const riskStyles: Record<
 };
 
 function vsListColorClass(offerPrice: number, listPrice: number): string {
-  if (listPrice <= 0) return "text-neutral-500";
+  if (listPrice <= 0) return "text-muted-foreground";
   if (offerPrice > listPrice) return "text-error-600";
   if (offerPrice < listPrice) return "text-success-600";
-  return "text-neutral-500";
+  return "text-muted-foreground";
 }
 
 function formatContingencies(contingencies: string[]): string {
@@ -76,7 +76,7 @@ export function ScenarioCard({
         "relative flex h-full flex-col border transition-all",
         isSelected
           ? "border-primary-400 ring-2 ring-primary-200 shadow-md"
-          : "border-neutral-200 hover:border-neutral-300",
+          : "border-border hover:border-neutral-300",
       )}
     >
       {isRecommended && !isSelected && (
@@ -87,7 +87,7 @@ export function ScenarioCard({
 
       <CardHeader className="gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <CardTitle className="text-xl font-semibold text-neutral-900">
+          <CardTitle className="text-xl font-semibold text-foreground">
             {scenario.name}
           </CardTitle>
           {isRecommended && isSelected && (
@@ -109,7 +109,7 @@ export function ScenarioCard({
 
       <CardContent className="flex flex-1 flex-col gap-5">
         <div>
-          <p className="text-3xl font-bold text-neutral-900">
+          <p className="text-3xl font-bold text-foreground">
             {currencyFormatter.format(scenario.price)}
           </p>
           <p className={cn("mt-1 text-sm font-medium", vsListColor)}>
@@ -119,27 +119,27 @@ export function ScenarioCard({
 
         <dl className="flex flex-col gap-2 border-t border-neutral-100 pt-4">
           <div className="flex justify-between text-sm">
-            <dt className="text-neutral-500">Earnest money</dt>
-            <dd className="font-medium text-neutral-900">
+            <dt className="text-muted-foreground">Earnest money</dt>
+            <dd className="font-medium text-foreground">
               {currencyFormatter.format(scenario.earnestMoney)}
             </dd>
           </div>
           <div className="flex justify-between text-sm">
-            <dt className="text-neutral-500">Closing</dt>
-            <dd className="font-medium text-neutral-900">
+            <dt className="text-muted-foreground">Closing</dt>
+            <dd className="font-medium text-foreground">
               {scenario.closingDays} days
             </dd>
           </div>
           <div className="flex justify-between gap-4 text-sm">
-            <dt className="shrink-0 text-neutral-500">Contingencies</dt>
-            <dd className="text-right font-medium text-neutral-900">
+            <dt className="shrink-0 text-muted-foreground">Contingencies</dt>
+            <dd className="text-right font-medium text-foreground">
               {formatContingencies(scenario.contingencies)}
             </dd>
           </div>
         </dl>
 
         <div className="flex items-center justify-between border-t border-neutral-100 pt-4">
-          <span className="text-sm text-neutral-500">Competitiveness</span>
+          <span className="text-sm text-muted-foreground">Competitiveness</span>
           <ScoreBadge
             score={scenario.competitivenessScore / 10}
             maxScore={10}
@@ -147,7 +147,7 @@ export function ScenarioCard({
           />
         </div>
 
-        <p className="text-sm leading-relaxed text-neutral-600">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           {scenario.explanation}
         </p>
       </CardContent>

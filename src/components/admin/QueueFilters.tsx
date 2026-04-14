@@ -52,7 +52,7 @@ function PillGroup<T extends string>({
 }: PillGroupProps<T>) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
       <div className="flex flex-wrap gap-1.5">
@@ -65,7 +65,7 @@ function PillGroup<T extends string>({
               "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               active === opt.value
                 ? "border-primary-500 bg-primary-50 text-primary-700"
-                : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900",
+                : "border-border bg-white text-muted-foreground hover:border-neutral-300 hover:text-foreground",
             )}
           >
             {opt.label}
@@ -102,7 +102,7 @@ export function QueueFilters({
   const ageOptions = AGE_BUCKETS.map((a) => ({ value: a, label: AGE_BUCKET_LABELS[a] }));
 
   return (
-    <div className="mb-6 rounded-xl border border-neutral-200 bg-white p-5">
+    <div className="mb-6 rounded-xl border border-border bg-white p-5">
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         <PillGroup
           label="Status"
@@ -123,7 +123,7 @@ export function QueueFilters({
           buildHref={(value) => pillHref(pathname, baseFilter, { age: value })}
         />
       </div>
-      <div className="mt-4 flex items-center justify-between gap-2 text-xs text-neutral-500">
+      <div className="mt-4 flex items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
           {hideQueueKey
             ? "Filters apply to this queue."

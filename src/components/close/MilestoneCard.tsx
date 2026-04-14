@@ -28,7 +28,7 @@ const urgencyStyles: Record<Urgency, { label: string; className: string }> = {
   },
   later: {
     label: "Later",
-    className: "border-neutral-200 bg-neutral-50 text-neutral-600",
+    className: "border-border bg-muted text-muted-foreground",
   },
   completed: {
     label: "Completed",
@@ -78,16 +78,16 @@ export function MilestoneCard({ milestone, emphasize }: MilestoneCardProps) {
         "border transition-all",
         emphasize
           ? "border-primary-300 shadow-md"
-          : "border-neutral-200 hover:border-neutral-300",
+          : "border-border hover:border-neutral-300",
       )}
     >
       <CardContent className="flex flex-col gap-3 px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1">
-            <p className="text-sm font-semibold text-neutral-900">
+            <p className="text-sm font-semibold text-foreground">
               {milestone.name}
             </p>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               {formatDue(milestone)}
             </p>
           </div>
@@ -101,17 +101,17 @@ export function MilestoneCard({ milestone, emphasize }: MilestoneCardProps) {
         <div className="flex flex-wrap items-center gap-2">
           <Badge
             variant="outline"
-            className="border-neutral-200 bg-neutral-50 text-neutral-600"
+            className="border-border bg-muted text-muted-foreground"
           >
             {WORKSTREAM_LABELS[milestone.workstream]}
           </Badge>
           <Badge
             variant="outline"
             className={cn(
-              "border-neutral-200",
+              "border-border",
               milestone.responsibleParty === "buyer"
                 ? "bg-accent-50 text-accent-700"
-                : "bg-white text-neutral-600",
+                : "bg-white text-muted-foreground",
             )}
           >
             {partyLabels[milestone.responsibleParty]}

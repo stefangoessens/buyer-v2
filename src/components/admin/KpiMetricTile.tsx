@@ -34,22 +34,22 @@ export function KpiMetricTile({ metric, value }: KpiMetricTileProps) {
       )}
     >
       <CardHeader className="pb-0">
-        <CardDescription className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+        <CardDescription className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {metric.label}
         </CardDescription>
-        <CardTitle className="text-3xl font-semibold tracking-tight text-neutral-900">
+        <CardTitle className="text-3xl font-semibold tracking-tight text-foreground">
           {formatted}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex items-baseline justify-between gap-3 text-xs">
-        <span className="text-neutral-500">{metric.description}</span>
+        <span className="text-muted-foreground">{metric.description}</span>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <span
             className={cn(
               "font-medium tabular-nums",
               delta.tone === "positive" && "text-success-700",
               delta.tone === "negative" && "text-error-700",
-              delta.tone === "neutral" && "text-neutral-500",
+              delta.tone === "neutral" && "text-muted-foreground",
             )}
           >
             {delta.direction === "up"

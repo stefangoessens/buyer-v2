@@ -95,7 +95,7 @@ function Eyebrow() {
     <div className="flex items-center gap-2">
       <span className="relative flex size-2">
         <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary-400 opacity-60" />
-        <span className="relative inline-flex size-2 rounded-full bg-primary-500" />
+        <span className="relative inline-flex size-2 rounded-full bg-primary" />
       </span>
       <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
         AI analysis
@@ -106,7 +106,7 @@ function Eyebrow() {
 
 function CardShell({ children }: { children: React.ReactNode }) {
   return (
-    <section className="relative overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-6 shadow-[0_1px_0_0_rgba(16,24,40,0.04),0_12px_32px_-12px_rgba(59,60,158,0.08)] md:p-8">
+    <section className="relative overflow-hidden rounded-[24px] border border-border bg-white p-6 shadow-[0_1px_0_0_rgba(16,24,40,0.04),0_12px_32px_-12px_rgba(59,60,158,0.08)] md:p-8">
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
@@ -129,10 +129,10 @@ function CardHeader({
     <header className="mb-6 flex flex-col gap-3 md:mb-8 md:flex-row md:items-end md:justify-between">
       <div>
         <Eyebrow />
-        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.003em] text-neutral-800 md:text-[28px] md:leading-[1.2]">
+        <h2 className="mt-2 text-2xl font-semibold tracking-[-0.003em] text-foreground md:text-[28px] md:leading-[1.2]">
           Key insights on this listing
         </h2>
-        <p className="mt-2 text-sm text-neutral-500">
+        <p className="mt-2 text-sm text-muted-foreground">
           {count != null && generatedAt ? (
             <>
               {count} {count === 1 ? "take" : "takes"} from our AI engines
@@ -222,19 +222,19 @@ function LoadingSkeleton() {
       <div className="mb-6 md:mb-8">
         <div className="h-3.5 w-24 animate-pulse rounded-full bg-neutral-200" />
         <div className="mt-3 h-7 w-80 animate-pulse rounded-full bg-neutral-200" />
-        <div className="mt-3 h-3 w-56 animate-pulse rounded-full bg-neutral-100" />
+        <div className="mt-3 h-3 w-56 animate-pulse rounded-full bg-muted" />
       </div>
       <div className="divide-y divide-neutral-100">
         {[0, 1, 2].map((i) => (
           <div key={i} className="flex gap-4 py-6 first:pt-0 last:pb-0 md:gap-5">
-            <div className="size-11 shrink-0 animate-pulse rounded-2xl bg-neutral-100" />
+            <div className="size-11 shrink-0 animate-pulse rounded-2xl bg-muted" />
             <div className="flex-1 space-y-2.5">
-              <div className="h-3 w-20 animate-pulse rounded-full bg-neutral-100" />
+              <div className="h-3 w-20 animate-pulse rounded-full bg-muted" />
               <div className="h-4 w-3/4 animate-pulse rounded-full bg-neutral-200" />
-              <div className="h-3 w-full animate-pulse rounded-full bg-neutral-100" />
-              <div className="h-3 w-5/6 animate-pulse rounded-full bg-neutral-100" />
+              <div className="h-3 w-full animate-pulse rounded-full bg-muted" />
+              <div className="h-3 w-5/6 animate-pulse rounded-full bg-muted" />
             </div>
-            <div className="hidden h-6 w-24 shrink-0 animate-pulse rounded-full bg-neutral-100 md:block" />
+            <div className="hidden h-6 w-24 shrink-0 animate-pulse rounded-full bg-muted md:block" />
           </div>
         ))}
       </div>
@@ -250,13 +250,13 @@ function GenerationInProgress() {
         <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-primary-100">
           <span className="relative flex size-3">
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary-400 opacity-70" />
-            <span className="relative inline-flex size-3 rounded-full bg-primary-500" />
+            <span className="relative inline-flex size-3 rounded-full bg-primary" />
           </span>
         </div>
-        <p className="mt-4 text-base font-semibold text-neutral-800">
+        <p className="mt-4 text-base font-semibold text-foreground">
           Analysis in progress
         </p>
-        <p className="mx-auto mt-2 max-w-sm text-sm text-neutral-500">
+        <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
           Our engines are reviewing pricing, comps, Florida risk factors, and
           negotiation leverage. This takes a few seconds.
         </p>
@@ -310,7 +310,7 @@ function LockedInsightRow({ teaser }: { teaser: LockedTeaser }) {
 
   return (
     <div className="flex items-center gap-4 py-5 md:gap-5 md:py-6">
-      <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-neutral-50 text-neutral-400 ring-1 ring-neutral-200">
+      <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-muted text-neutral-400 ring-1 ring-neutral-200">
         <svg
           className="size-5"
           fill="none"
@@ -328,19 +328,19 @@ function LockedInsightRow({ teaser }: { teaser: LockedTeaser }) {
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+          <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             {label}
           </span>
           <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
             · Premium
           </span>
         </div>
-        <p className="mt-1 text-base font-semibold leading-tight text-neutral-500">
+        <p className="mt-1 text-base font-semibold leading-tight text-muted-foreground">
           Sign up to reveal this analysis
         </p>
       </div>
       {confidencePct !== null ? (
-        <div className="hidden shrink-0 items-center gap-1.5 rounded-full bg-neutral-50 px-2.5 py-1 text-[11px] font-medium text-neutral-400 ring-1 ring-neutral-200 md:inline-flex">
+        <div className="hidden shrink-0 items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-neutral-400 ring-1 ring-neutral-200 md:inline-flex">
           <span className="size-1.5 rounded-full bg-neutral-300" />
           {confidencePct}% confidence
         </div>

@@ -36,7 +36,7 @@ interface QueueItemRowProps {
  */
 export function QueueItemRow({ row, now, showQueueKey = true }: QueueItemRowProps) {
   return (
-    <tr className="border-t border-neutral-100 last:border-b-0 hover:bg-neutral-50">
+    <tr className="border-t border-neutral-100 last:border-b-0 hover:bg-muted">
       <td className="px-4 py-3">
         <span
           className={cn(
@@ -48,18 +48,18 @@ export function QueueItemRow({ row, now, showQueueKey = true }: QueueItemRowProp
         </span>
       </td>
       {showQueueKey ? (
-        <td className="px-4 py-3 text-xs text-neutral-500">
+        <td className="px-4 py-3 text-xs text-muted-foreground">
           {QUEUE_KEY_LABELS[row.queueKey]}
         </td>
       ) : null}
       <td className="px-4 py-3 text-sm">
         <Link
           href={`/queues/${row.queueKey}#${row._id}`}
-          className="font-medium text-neutral-900 hover:text-primary-700"
+          className="font-medium text-foreground hover:text-primary-700"
         >
           {row.summary}
         </Link>
-        <div className="mt-0.5 text-xs text-neutral-500">
+        <div className="mt-0.5 text-xs text-muted-foreground">
           {row.subjectType} · {row.subjectId.slice(0, 12)}
           {row.subjectId.length > 12 ? "…" : ""}
         </div>
@@ -74,7 +74,7 @@ export function QueueItemRow({ row, now, showQueueKey = true }: QueueItemRowProp
           {QUEUE_STATUS_LABELS[row.status]}
         </span>
       </td>
-      <td className="px-4 py-3 text-right text-xs text-neutral-500 tabular-nums">
+      <td className="px-4 py-3 text-right text-xs text-muted-foreground tabular-nums">
         {shortAge(row.openedAt, now)}
       </td>
     </tr>
@@ -92,10 +92,10 @@ export function QueueItemTable({ rows, now, showQueueKey = true }: QueueItemTabl
     return null;
   }
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+    <div className="overflow-hidden rounded-xl border border-border bg-white">
       <table className="w-full">
-        <thead className="border-b border-neutral-200 bg-neutral-50">
-          <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+        <thead className="border-b border-border bg-muted">
+          <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <th className="px-4 py-3 w-28">Priority</th>
             {showQueueKey ? <th className="px-4 py-3 w-40">Queue</th> : null}
             <th className="px-4 py-3">Subject</th>

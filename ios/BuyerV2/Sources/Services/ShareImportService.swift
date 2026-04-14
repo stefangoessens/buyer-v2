@@ -290,7 +290,7 @@ final class ShareImportService {
             let outcome = try decodeOutcome(from: response)
             pendingUrl = nil
             state = .imported(outcome)
-        } catch let ShareImportError.notAuthenticated {
+        } catch ShareImportError.notAuthenticated {
             // Backend rejected our token — treat as session expired
             pendingUrl = url
             state = .sessionExpired(pendingUrl: url)

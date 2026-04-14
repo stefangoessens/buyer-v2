@@ -48,11 +48,11 @@ export function QueueActionPanel({ itemId, currentStatus }: QueueActionPanelProp
 
   if (terminal) {
     return (
-      <div className="rounded-xl border border-neutral-200 bg-white p-5">
+      <div className="rounded-xl border border-border bg-white p-5">
         <div className="text-sm font-medium text-neutral-700">
           This item is {currentStatus}.
         </div>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           Queue items are append-only — open a new item if further ops review is needed.
         </p>
       </div>
@@ -60,17 +60,17 @@ export function QueueActionPanel({ itemId, currentStatus }: QueueActionPanelProp
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-5">
+    <div className="rounded-xl border border-border bg-white p-5">
       <div className="mb-3">
-        <div className="text-sm font-medium text-neutral-900">Queue actions</div>
-        <p className="mt-0.5 text-xs text-neutral-500">
+        <div className="text-sm font-medium text-foreground">Queue actions</div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Every action writes a row to the audit log with your identity and the
           previous state.
         </p>
       </div>
       <label
         htmlFor="queue-action-notes"
-        className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-neutral-500"
+        className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-muted-foreground"
       >
         Notes / reason
       </label>
@@ -81,7 +81,7 @@ export function QueueActionPanel({ itemId, currentStatus }: QueueActionPanelProp
         maxLength={2000}
         rows={4}
         placeholder="Required for resolve or dismiss. Plain text."
-        className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+        className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
       />
       <div className="mt-1 text-right text-[11px] text-neutral-400">
         {notes.length} / 2000

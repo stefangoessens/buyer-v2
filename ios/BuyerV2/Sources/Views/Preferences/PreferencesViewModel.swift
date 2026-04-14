@@ -48,7 +48,7 @@ struct PreferencesViewModel {
         switch authState {
         case .restoring:
             return .loading
-        case .signedOut, .expired:
+        case .signedOut, .expired, .authUnavailable:
             return .signedOut
         case .signedIn:
             break

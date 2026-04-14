@@ -93,11 +93,11 @@ export function InternalNoteComposer({
   return (
     <form
       onSubmit={handleSubmit}
-      className="rounded-xl border border-neutral-200 bg-white p-5"
+      className="rounded-xl border border-border bg-white p-5"
     >
       <div className="mb-3">
-        <div className="text-sm font-semibold text-neutral-900">New note</div>
-        <p className="mt-0.5 text-xs text-neutral-500">
+        <div className="text-sm font-semibold text-foreground">New note</div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Internal notes are hidden from buyers. Append-only — edits create a
           new revision linked to this entry.
         </p>
@@ -107,7 +107,7 @@ export function InternalNoteComposer({
         <div>
           <label
             htmlFor="note-subject-type"
-            className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
+            className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
           >
             Subject type
           </label>
@@ -116,7 +116,7 @@ export function InternalNoteComposer({
             value={subjectType}
             onChange={(e) => setSubjectType(e.target.value as NoteSubjectType)}
             disabled={locked}
-            className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm disabled:bg-neutral-50"
+            className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm disabled:bg-muted"
           >
             {NOTE_SUBJECT_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -128,7 +128,7 @@ export function InternalNoteComposer({
         <div>
           <label
             htmlFor="note-subject-id"
-            className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
+            className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
           >
             Subject ID
           </label>
@@ -145,7 +145,7 @@ export function InternalNoteComposer({
       <div className="mt-3">
         <label
           htmlFor="note-body"
-          className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
+          className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
         >
           Note
         </label>
@@ -156,7 +156,7 @@ export function InternalNoteComposer({
           maxLength={NOTE_BODY_MAX_CHARS}
           rows={5}
           placeholder="Plain text. Markdown is not rendered."
-          className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
         />
         <div className="mt-1 text-right text-[11px] text-neutral-400">
           {body.length} / {NOTE_BODY_MAX_CHARS}
@@ -166,7 +166,7 @@ export function InternalNoteComposer({
       <div className="mt-3">
         <label
           htmlFor="note-visibility"
-          className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
+          className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
         >
           Visibility
         </label>
@@ -174,7 +174,7 @@ export function InternalNoteComposer({
           id="note-visibility"
           value={visibility}
           onChange={(e) => setVisibility(e.target.value as NoteVisibility)}
-          className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm"
+          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm shadow-sm"
         >
           {allowedVisibilities.map((v) => (
             <option key={v} value={v}>
@@ -182,7 +182,7 @@ export function InternalNoteComposer({
             </option>
           ))}
         </select>
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           {NOTE_VISIBILITY_DESCRIPTIONS[visibility]}
         </p>
       </div>

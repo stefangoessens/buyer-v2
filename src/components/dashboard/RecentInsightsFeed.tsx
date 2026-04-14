@@ -35,7 +35,7 @@ export function RecentInsightsFeed() {
                 className={`mt-2 size-2 shrink-0 rounded-full ${
                   insight.severity === "warning"
                     ? "bg-warning-500"
-                    : "bg-primary-500"
+                    : "bg-primary"
                 }`}
               />
               <div className="min-w-0 flex-1">

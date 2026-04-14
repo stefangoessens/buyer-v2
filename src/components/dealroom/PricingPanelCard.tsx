@@ -32,7 +32,7 @@ function percent(value: number): string {
 function deltaTone(delta: number): string {
   if (delta > 0.005) return "text-emerald-600";
   if (delta < -0.005) return "text-rose-600";
-  return "text-neutral-500";
+  return "text-muted-foreground";
 }
 
 interface PricePillProps {
@@ -50,13 +50,13 @@ function PricePill({ label, value, consensus, accent = "neutral" }: PricePillPro
         "flex flex-col gap-1 rounded-2xl border p-5",
         accent === "primary"
           ? "border-primary-200 bg-primary-50/40"
-          : "border-neutral-200 bg-neutral-50",
+          : "border-border bg-muted",
       )}
     >
-      <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <span className="text-2xl font-bold text-neutral-900">
+      <span className="text-2xl font-bold text-foreground">
         {currency.format(value)}
       </span>
       <span className={cn("text-xs font-semibold", deltaTone(delta))}>
@@ -72,13 +72,13 @@ export function PricingPanelCard({
   reason,
 }: PricingPanelCardProps) {
   return (
-    <section className="col-span-1 rounded-[24px] border border-neutral-200 bg-white p-8 transition-shadow hover:shadow-md lg:col-span-2">
+    <section className="col-span-1 rounded-[24px] border border-border bg-white p-8 transition-shadow hover:shadow-md lg:col-span-2">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
             Pricing panel
           </p>
-          <h2 className="mt-1 text-lg font-semibold text-neutral-800">
+          <h2 className="mt-1 text-lg font-semibold text-foreground">
             Where this price sits in the market
           </h2>
         </div>
@@ -123,7 +123,7 @@ export function PricingPanelCard({
       )}
 
       {status === "available" && data ? (
-        <p className="mt-6 text-xs text-neutral-500">
+        <p className="mt-6 text-xs text-muted-foreground">
           Confidence {Math.round(data.overallConfidence * 100)}% — blended from
           portal estimates and recent comparables.
         </p>
@@ -142,9 +142,9 @@ function EmptyPricingState({
   const label =
     status === "pending" ? "Analysis in progress" : "Pricing not available yet";
   return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 p-8 text-center">
+    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-border bg-muted p-8 text-center">
       <p className="text-sm font-semibold text-neutral-700">{label}</p>
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted-foreground">
         {reason ??
           "We'll fill in the pricing picture as soon as the engine finishes."}
       </p>

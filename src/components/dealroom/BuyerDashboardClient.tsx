@@ -17,18 +17,18 @@ const BuyerDashboardInner = dynamic(
     loading: () => (
       <div className="flex flex-col gap-6">
         <header>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
+          <p className="text-xs uppercase tracking-wide text-muted-foreground">
             Welcome back
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-neutral-900">
+          <h1 className="mt-1 text-2xl font-semibold text-foreground">
             Buyer Dashboard
           </h1>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-muted-foreground">
             Pick up where you left off or analyze a new listing.
           </p>
         </header>
         <Card>
-          <CardContent className="py-12 text-center text-sm text-neutral-500">
+          <CardContent className="py-12 text-center text-sm text-muted-foreground">
             Loading your searches…
           </CardContent>
         </Card>

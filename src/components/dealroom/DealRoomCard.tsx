@@ -37,7 +37,7 @@ export function DealRoomCard({ row, now, nextAction }: DealRoomCardProps) {
       className="group block"
     >
       <Card className="h-full overflow-hidden p-0 transition-all hover:ring-2 hover:ring-primary-300 hover:shadow-md">
-        <div className="relative aspect-video bg-neutral-100">
+        <div className="relative aspect-video bg-muted">
           {row.primaryPhotoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -46,7 +46,7 @@ export function DealRoomCard({ row, now, nextAction }: DealRoomCardProps) {
               className="h-full w-full object-cover transition-transform group-hover:scale-105"
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-neutral-100 px-4 text-center text-xs text-neutral-400">
+            <div className="flex h-full w-full items-center justify-center bg-muted px-4 text-center text-xs text-neutral-400">
               {row.detailState === "loading"
                 ? "Property photo loading"
                 : "Photo unavailable"}
@@ -56,11 +56,11 @@ export function DealRoomCard({ row, now, nextAction }: DealRoomCardProps) {
         <CardContent className="flex flex-col gap-2 p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-sm font-semibold text-neutral-900">
+              <p className="line-clamp-2 text-sm font-semibold text-foreground">
                 {row.addressLine}
               </p>
               {row.detailState !== "complete" && (
-                <p className="mt-1 text-xs text-neutral-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {describeDetailState(row)}
                 </p>
               )}
@@ -72,7 +72,7 @@ export function DealRoomCard({ row, now, nextAction }: DealRoomCardProps) {
               ? "Price pending"
               : currencyFormatter.format(row.listPrice)}
           </p>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{formatMetric(row.beds, "bd", false)}</span>
             <span className="text-neutral-300">·</span>
             <span>{formatMetric(row.baths, "ba", true)}</span>

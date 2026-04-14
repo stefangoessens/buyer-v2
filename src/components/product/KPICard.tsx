@@ -18,8 +18,8 @@ export function KPICard({ label, value, trend, description }: KPICardProps) {
   return (
     <Card>
       <CardContent className="p-6">
-        <p className="text-3xl font-bold text-neutral-900">{value}</p>
-        <p className="mt-1 text-sm font-medium text-neutral-500">{label}</p>
+        <p className="text-3xl font-bold text-foreground">{value}</p>
+        <p className="mt-1 text-sm font-medium text-muted-foreground">{label}</p>
         {trend && (
           <p className={cn("mt-2 text-sm font-medium", trendConfig[trend.direction].className)}>
             {trendConfig[trend.direction].symbol} {trend.percentage}%

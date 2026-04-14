@@ -34,12 +34,12 @@ export function KpiDateRangePicker({ range }: KpiDateRangePickerProps) {
   };
 
   return (
-    <div className="mb-6 flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-5 md:flex-row md:items-center md:justify-between">
+    <div className="mb-6 flex flex-col gap-3 rounded-xl border border-border bg-white p-5 md:flex-row md:items-center md:justify-between">
       <div>
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Range
         </div>
-        <div className="text-sm font-medium text-neutral-900">
+        <div className="text-sm font-medium text-foreground">
           {formatRangeLabel(range)}
         </div>
       </div>
@@ -53,7 +53,7 @@ export function KpiDateRangePicker({ range }: KpiDateRangePickerProps) {
               "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               range.preset === preset
                 ? "border-primary-500 bg-primary-50 text-primary-700"
-                : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:text-neutral-900",
+                : "border-border bg-white text-muted-foreground hover:border-neutral-300 hover:text-foreground",
             )}
           >
             {DATE_RANGE_PRESET_LABELS[preset]}

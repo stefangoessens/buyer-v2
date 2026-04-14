@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 
 export function EmptyDashboardState() {
   return (
-    <Card className="border border-dashed border-neutral-300 bg-neutral-50/60">
+    <Card className="border border-dashed border-neutral-300 bg-muted/60">
       <CardContent className="flex flex-col items-center gap-3 px-6 py-12 text-center">
         <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-50 text-primary-600">
           <svg
@@ -22,10 +22,10 @@ export function EmptyDashboardState() {
           </svg>
         </div>
         <div>
-          <p className="text-base font-semibold text-neutral-900">
+          <p className="text-base font-semibold text-foreground">
             Paste a listing to get started
           </p>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-muted-foreground">
             Your first deal room will appear here as soon as you drop a
             Zillow, Redfin, or Realtor.com link above.
           </p>

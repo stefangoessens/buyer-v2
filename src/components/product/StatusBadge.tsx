@@ -19,7 +19,7 @@ const statusConfig = {
   },
   closed: {
     dot: "bg-neutral-400",
-    badge: "bg-neutral-100 text-neutral-600",
+    badge: "bg-muted text-muted-foreground",
     defaultLabel: "Closed",
   },
   urgent: {

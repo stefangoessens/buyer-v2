@@ -41,10 +41,10 @@ export function ScenarioComparison({
   return (
     <section className="flex flex-col gap-4">
       <header className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold text-neutral-900">
+        <h2 className="text-lg font-semibold text-foreground">
           Offer scenarios
         </h2>
-        <p className="text-sm text-neutral-500">
+        <p className="text-sm text-muted-foreground">
           Pick a starting scenario, then edit the terms below.
         </p>
         {inputSummary && (

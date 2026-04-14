@@ -75,7 +75,7 @@ function directionIcon(direction: "bullish" | "bearish" | "neutral"): string {
 function directionTone(direction: "bullish" | "bearish" | "neutral"): string {
   if (direction === "bullish") return "text-emerald-600";
   if (direction === "bearish") return "text-rose-600";
-  return "text-neutral-500";
+  return "text-muted-foreground";
 }
 
 export function LeverageScoreCard({
@@ -91,12 +91,12 @@ export function LeverageScoreCard({
       : null;
 
   return (
-    <section className="rounded-[24px] border border-neutral-200 bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
+    <section className="rounded-[24px] border border-border bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
       <header className="mb-5">
         <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
           Leverage score
         </p>
-        <h2 className="mt-1 text-lg font-semibold text-neutral-800">
+        <h2 className="mt-1 text-lg font-semibold text-foreground">
           How much room you have
         </h2>
       </header>
@@ -115,21 +115,21 @@ export function LeverageScoreCard({
               >
                 {scoreTone(data.score).label}
               </span>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-muted-foreground">
                 Confidence {Math.round(data.overallConfidence * 100)}%
               </p>
             </div>
           </div>
 
           {narrative ? (
-            <p className="mt-5 text-sm leading-relaxed text-neutral-600">
+            <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
               {narrative}
             </p>
           ) : null}
 
           <ul className="mt-6 space-y-3 border-t border-neutral-100 pt-5">
             {data.topSignals.length === 0 ? (
-              <li className="text-sm text-neutral-500">
+              <li className="text-sm text-muted-foreground">
                 No dominant signals yet — more data needed.
               </li>
             ) : (
@@ -174,7 +174,7 @@ export function LeverageScoreCard({
                         <span className="text-sm font-medium text-neutral-700">
                           {signal.label}
                         </span>
-                        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                           {signal.source}
                         </span>
                         {isAi ? (
@@ -196,7 +196,7 @@ export function LeverageScoreCard({
                     </div>
                     <div className="flex items-center justify-between gap-3">
                       {signal.sourceRef ? (
-                        <span className="text-xs text-neutral-500">
+                        <span className="text-xs text-muted-foreground">
                           {signal.sourceRef}
                         </span>
                       ) : (
@@ -267,9 +267,9 @@ function LeverageEmptyState({
   const label =
     status === "pending" ? "Under review" : "Insufficient data";
   return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 p-6 text-center">
+    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-border bg-muted p-6 text-center">
       <p className="text-sm font-semibold text-neutral-700">{label}</p>
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted-foreground">
         {reason ?? "We'll score leverage signals once the engine completes."}
       </p>
     </div>

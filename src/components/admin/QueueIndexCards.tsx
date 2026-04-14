@@ -49,31 +49,31 @@ export function QueueIndexCards({ counts }: QueueIndexCardsProps) {
               )}
             >
               <CardHeader>
-                <CardDescription className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                <CardDescription className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   Queue
                 </CardDescription>
-                <CardTitle className="text-lg font-semibold text-neutral-900">
+                <CardTitle className="text-lg font-semibold text-foreground">
                   {QUEUE_KEY_LABELS[key]}
                 </CardTitle>
-                <p className="mt-1 text-sm text-neutral-500">
+                <p className="mt-1 text-sm text-muted-foreground">
                   {QUEUE_KEY_DESCRIPTIONS[key]}
                 </p>
               </CardHeader>
               <CardContent className="flex items-end justify-between">
                 <div className="flex gap-4">
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-neutral-500">
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
                       Open
                     </div>
-                    <div className="text-2xl font-semibold tabular-nums text-neutral-900">
+                    <div className="text-2xl font-semibold tabular-nums text-foreground">
                       {row.open}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-neutral-500">
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
                       In review
                     </div>
-                    <div className="text-2xl font-semibold tabular-nums text-neutral-500">
+                    <div className="text-2xl font-semibold tabular-nums text-muted-foreground">
                       {row.inReview}
                     </div>
                   </div>

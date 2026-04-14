@@ -30,10 +30,10 @@ export function AdminTopbar({ user, snapshot }: AdminTopbarProps) {
 
   return (
     <header
-      className="flex h-16 items-center justify-between border-b border-neutral-200 bg-white px-8"
+      className="flex h-16 items-center justify-between border-b border-border bg-white px-8"
       role="banner"
     >
-      <div className="flex items-center gap-6 text-sm text-neutral-600">
+      <div className="flex items-center gap-6 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
           <span className="inline-flex size-2 rounded-full bg-success-500" aria-hidden="true" />
           <span>Live</span>
@@ -68,10 +68,10 @@ export function AdminTopbar({ user, snapshot }: AdminTopbarProps) {
       </div>
       <div className="flex items-center gap-4">
         <div className="hidden flex-col items-end leading-tight sm:flex">
-          <span className="text-sm font-medium text-neutral-900">
+          <span className="text-sm font-medium text-foreground">
             {user.name}
           </span>
-          <span className="text-xs text-neutral-500">{user.email}</span>
+          <span className="text-xs text-muted-foreground">{user.email}</span>
         </div>
         <div
           className="flex size-9 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700"
@@ -79,7 +79,7 @@ export function AdminTopbar({ user, snapshot }: AdminTopbarProps) {
         >
           {initials}
         </div>
-        <span className="hidden rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-medium text-neutral-600 md:inline-flex">
+        <span className="hidden rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground md:inline-flex">
           {roleLabel(user.role)}
         </span>
       </div>

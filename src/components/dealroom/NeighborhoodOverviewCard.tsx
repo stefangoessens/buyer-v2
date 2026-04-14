@@ -32,9 +32,9 @@ function ScoreCircle({ label, score }: ScoreCircleProps) {
         </span>
       </div>
       <div className="flex flex-col items-center gap-1">
-        <span className="text-xs font-medium text-neutral-600">{label}</span>
+        <span className="text-xs font-medium text-muted-foreground">{label}</span>
         {!hasScore && (
-          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             Soon
           </span>
         )}
@@ -66,11 +66,11 @@ export function NeighborhoodOverviewCard({
           <p className="font-heading text-xl font-semibold text-foreground">
             {neighborhood ?? `${city}, ${state}`}
           </p>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-muted-foreground">
             Located in {city}, {state}
           </p>
         </div>
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted-foreground">
           Crime + school ratings coming soon
         </p>
       </CardContent>
