@@ -13,6 +13,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "what_is_buyer_v2",
     category: "getting_started",
+    stage: "pre_offer",
     question: "What is buyer-v2?",
     answer:
       "buyer-v2 is an AI-native Florida buyer brokerage. We help you analyze any listing you paste, negotiate on your behalf, and rebate a portion of the buyer-agent commission back to you at closing.",
@@ -21,6 +22,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "who_can_use_buyer_v2",
     category: "getting_started",
+    stage: "pre_offer",
     question: "Who can use buyer-v2?",
     answer:
       "Anyone buying a home in Florida. We're a licensed Florida real estate brokerage. If you're shopping outside Florida today, join our waitlist — we'll let you know when we expand.",
@@ -29,6 +31,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "paste_link_flow",
     category: "getting_started",
+    stage: "pre_offer",
     question: "How does the paste-a-link flow work?",
     answer:
       "Paste any Zillow, Redfin, or Realtor.com URL on our homepage. We fetch the listing, normalize the property data, run our AI pricing and comps analysis, and surface everything in a free deal room — usually in under 10 seconds.",
@@ -39,6 +42,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "how_much_does_it_cost",
     category: "pricing",
+    stage: "pre_offer",
     question: "How much does buyer-v2 cost?",
     answer:
       "buyer-v2 is free to browse and free to engage. Our fee comes out of the buyer-agent commission at closing — we never charge you up front. If a listing has no buyer-agent commission, we'll tell you before you engage.",
@@ -47,6 +51,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "how_is_the_rebate_calculated",
     category: "pricing",
+    stage: "pre_offer",
     question: "How is my buyer credit calculated?",
     answer:
       "We rebate a portion of the buyer-agent commission back to you at closing. The exact percentage depends on the listing's co-broke offer and is disclosed before you sign a buyer representation agreement. Use our savings calculator to see a typical example.",
@@ -55,6 +60,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "agent_bonus_split",
     category: "pricing",
+    stage: "pre_offer",
     question: "Internal: agent bonus split for referrals?",
     answer:
       "Referral bonuses are split 70/30 between the closing broker and the referring partner. This is internal-only — do not share publicly.",
@@ -65,6 +71,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "who_shows_me_homes",
     category: "process",
+    stage: "pre_offer",
     question: "Who actually shows me homes?",
     answer:
       "Our network of licensed Florida showing agents. You book a tour through the deal room and we dispatch the closest agent with coverage in that area. You meet them at the property.",
@@ -73,6 +80,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "can_i_negotiate_myself",
     category: "process",
+    stage: "making_offer",
     question: "Can I negotiate the offer myself?",
     answer:
       "You can submit offers yourself through our AI-assisted offer tool, or you can hand negotiation off to one of our licensed brokers. Most buyers choose the assisted path and let us run counter-offers.",
@@ -81,6 +89,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "what_happens_at_closing",
     category: "process",
+    stage: "post_close",
     question: "What happens at closing?",
     answer:
       "You close at a title company just like any other Florida transaction. The buyer credit shows up on your closing disclosure as a reduction of closing costs or cash to close (subject to lender approval).",
@@ -91,6 +100,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "is_buyer_v2_a_broker",
     category: "legal",
+    stage: "pre_offer",
     question: "Is buyer-v2 a licensed real estate brokerage?",
     answer:
       "Yes. buyer-v2 is a licensed Florida real estate brokerage. All license-critical actions — buyer representation agreements, compensation disclosures, and contract execution — are reviewed by a licensed broker.",
@@ -99,6 +109,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "what_about_ai_decisions",
     category: "legal",
+    stage: "making_offer",
     question: "Does AI make decisions on my behalf?",
     answer:
       "No. AI helps analyze listings, comps, and offer scenarios, but license-critical actions (agreements, compensation, contract terms, calls) are always reviewed by a human licensed broker. You'll see every AI recommendation before anything happens.",
@@ -109,6 +120,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "do_you_support_mls_direct",
     category: "technical",
+    stage: "pre_offer",
     question: "Do you pull listings directly from the MLS?",
     answer:
       "We normalize listings from the major portals you already use (Zillow, Redfin, Realtor.com). Direct MLS feeds are on our roadmap but not required — every listing you'd see on a portal is in scope today.",
@@ -117,6 +129,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "is_my_data_private",
     category: "technical",
+    stage: "pre_offer",
     question: "Is my data private?",
     answer:
       "Yes. We never sell your data and never share it with third parties for marketing. Your deal room is private to you and the licensed broker assigned to your deal. See our Privacy Policy for details.",
@@ -125,6 +138,7 @@ export const FAQ_ENTRIES: FAQEntry[] = [
   {
     id: "internal_eng_roadmap",
     category: "technical",
+    stage: "under_contract",
     question: "Internal: current engineering priorities?",
     answer:
       "iOS launch, multi-state expansion foundations, and AI engine v2. Internal-only.",

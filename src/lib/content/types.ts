@@ -43,9 +43,22 @@ export type FAQCategory =
   | "legal"
   | "technical";
 
+/**
+ * Buying-journey stage used on /faq to group questions by where a
+ * buyer is in the process. Independent from `category` (which groups
+ * by topic for internal review) so the public page can tell a
+ * narrative while the content module retains its ops structure.
+ */
+export type FAQStage =
+  | "pre_offer"
+  | "making_offer"
+  | "under_contract"
+  | "post_close";
+
 export interface FAQEntry extends HasVisibility {
   id: string;
   category: FAQCategory;
+  stage: FAQStage;
   question: string;
   answer: string;
 }
