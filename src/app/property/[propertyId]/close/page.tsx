@@ -25,11 +25,16 @@ export default async function PropertyClosePage({
 }) {
   const { propertyId } = await params;
   const token = await convexAuthNextjsToken();
-  const dealRoomId = await fetchQuery(
-    api.dealRooms.getUserDealRoomForProperty,
-    { propertyId: propertyId as Id<"properties"> },
-    { token },
-  );
+  let dealRoomId: Id<"dealRooms"> | null = null;
+  try {
+    dealRoomId = await fetchQuery(
+      api.dealRooms.getUserDealRoomForProperty,
+      { propertyId: propertyId as Id<"properties"> },
+      { token },
+    );
+  } catch {
+    dealRoomId = null;
+  }
 
   return (
     <div className="mx-auto w-full max-w-6xl">

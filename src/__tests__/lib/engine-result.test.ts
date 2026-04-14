@@ -58,6 +58,7 @@ describe("ENGINE_TYPES", () => {
     expect(ENGINE_TYPES).toContain("doc_parser");
     expect(ENGINE_TYPES).toContain("copilot");
     expect(ENGINE_TYPES).toContain("case_synthesis");
-    expect(ENGINE_TYPES.length).toBe(8);
+    expect(ENGINE_TYPES).toContain("insights");
+    expect(ENGINE_TYPES.length).toBe(9);
   });
 });
