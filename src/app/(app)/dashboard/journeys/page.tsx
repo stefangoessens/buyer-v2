@@ -18,7 +18,7 @@ export default function DashboardJourneysPage() {
           Your properties
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Every property you're working on, with what to do next.
+          Every property you&apos;re working on, with what to do next.
         </p>
       </header>
       <JourneysPage />

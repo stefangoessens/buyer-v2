@@ -33,7 +33,7 @@ export function JourneysEmptyState(props: JourneysEmptyStateProps) {
           </span>
           <div className="flex flex-col gap-1">
             <p className="text-base font-semibold text-foreground">
-              You haven't started any journeys yet
+              You haven&apos;t started any journeys yet
             </p>
             <p className="max-w-sm text-sm text-muted-foreground">
               Paste a Zillow, Redfin, or Realtor link to start your first
@@ -56,7 +56,7 @@ export function JourneysEmptyState(props: JourneysEmptyStateProps) {
         </span>
         <div className="flex flex-col gap-1">
           <p className="text-base font-semibold text-foreground">
-            You've archived all your journeys
+            You&apos;ve archived all your journeys
           </p>
           <p className="max-w-sm text-sm text-muted-foreground">
             Switch to the Archived view to review them, or paste a new link to
