@@ -60,6 +60,37 @@ export const buyerProfileInternalValidator = v.object({
   notes: v.optional(v.string()),
 });
 
+export const buyerProfileSavedSearchCriteriaValidator = v.object({
+  preferredAreas: v.array(v.string()),
+  propertyTypes: v.optional(v.array(v.string())),
+  priceMin: v.optional(v.number()),
+  priceMax: v.optional(v.number()),
+  bedsMin: v.optional(v.number()),
+  bathsMin: v.optional(v.number()),
+  yearBuiltMin: v.optional(v.number()),
+  mustHaves: v.optional(v.array(v.string())),
+});
+
+export const buyerProfileSavedSearchValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  criteria: buyerProfileSavedSearchCriteriaValidator,
+  createdAt: v.string(),
+  lastRunAt: v.optional(v.string()),
+});
+
+export const buyerProfileRebatePayoutMethodValidator = v.object({
+  method: v.union(
+    v.literal("bank"),
+    v.literal("check"),
+    v.literal("cashapp"),
+    v.literal("none"),
+  ),
+  accountLast4: v.optional(v.string()),
+  payoutAddress: v.optional(v.string()),
+  updatedAt: v.string(),
+});
+
 export const buyerProfileIdentityValidator = v.object({
   name: v.string(),
   email: v.string(),
@@ -73,6 +104,8 @@ export const buyerProfileRecordFields = {
   searchPreferences: buyerProfileSearchPreferencesValidator,
   household: buyerProfileHouseholdValidator,
   internal: v.optional(buyerProfileInternalValidator),
+  savedSearches: v.optional(v.array(buyerProfileSavedSearchValidator)),
+  rebatePayoutMethod: v.optional(buyerProfileRebatePayoutMethodValidator),
   createdAt: v.string(),
   updatedAt: v.string(),
 };
@@ -86,6 +119,8 @@ export const buyerProfileViewValidator = v.object({
   searchPreferences: buyerProfileSearchPreferencesValidator,
   communicationPreferences: communicationPreferencesViewValidator,
   household: buyerProfileHouseholdValidator,
+  savedSearches: v.array(buyerProfileSavedSearchValidator),
+  rebatePayoutMethod: v.union(buyerProfileRebatePayoutMethodValidator, v.null()),
   createdAt: v.union(v.string(), v.null()),
   updatedAt: v.union(v.string(), v.null()),
   internal: v.optional(buyerProfileInternalValidator),
@@ -162,11 +197,39 @@ export type BuyerProfileView = {
     householdSize?: number;
     attendeeCountDefault?: number;
   };
+  savedSearches: BuyerProfileSavedSearch[];
+  rebatePayoutMethod: BuyerProfileRebatePayoutMethod | null;
   createdAt: string | null;
   updatedAt: string | null;
   internal?: {
     notes?: string;
   };
+};
+
+export type BuyerProfileSavedSearchCriteria = {
+  preferredAreas: string[];
+  propertyTypes?: string[];
+  priceMin?: number;
+  priceMax?: number;
+  bedsMin?: number;
+  bathsMin?: number;
+  yearBuiltMin?: number;
+  mustHaves?: string[];
+};
+
+export type BuyerProfileSavedSearch = {
+  id: string;
+  name: string;
+  criteria: BuyerProfileSavedSearchCriteria;
+  createdAt: string;
+  lastRunAt?: string;
+};
+
+export type BuyerProfileRebatePayoutMethod = {
+  method: "bank" | "check" | "cashapp" | "none";
+  accountLast4?: string;
+  payoutAddress?: string;
+  updatedAt: string;
 };
 
 type BuyerProfileSections = Pick<
@@ -305,6 +368,8 @@ export function buildBuyerProfileView(params: {
       params.messagePreferences,
     ),
     household: sections.household,
+    savedSearches: params.profile?.savedSearches ?? [],
+    rebatePayoutMethod: params.profile?.rebatePayoutMethod ?? null,
     createdAt: params.profile?.createdAt ?? null,
     updatedAt: params.profile?.updatedAt ?? null,
     internal: params.includeInternal ? sections.internal : undefined,
