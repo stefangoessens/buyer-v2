@@ -7,7 +7,18 @@ import { formatDealRoomActivity } from "@/lib/dealroom/dashboard-types";
 interface DealRoomCardProps {
   row: DashboardDealRow;
   now: string;
+  nextAction?: {
+    label: string;
+    href: string;
+    severity: "info" | "warning" | "error";
+  };
 }
+
+const SEVERITY_PILL_CLASSES: Record<"info" | "warning" | "error", string> = {
+  info: "bg-primary/10 text-primary ring-primary/20",
+  warning: "bg-amber-100 text-amber-900 ring-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:ring-amber-400/30",
+  error: "bg-destructive/10 text-destructive ring-destructive/20",
+};
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -17,7 +28,7 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
-export function DealRoomCard({ row, now }: DealRoomCardProps) {
+export function DealRoomCard({ row, now, nextAction }: DealRoomCardProps) {
   const badge = projectStatusBadge(row);
 
   return (
@@ -71,6 +82,13 @@ export function DealRoomCard({ row, now }: DealRoomCardProps) {
           <p className="text-xs text-neutral-400">
             {formatDealRoomActivity(row.updatedAt, now)}
           </p>
+          {nextAction && (
+            <span
+              className={`mt-2 inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset ${SEVERITY_PILL_CLASSES[nextAction.severity]}`}
+            >
+              {nextAction.label}
+            </span>
+          )}
         </CardContent>
       </Card>
     </Link>
