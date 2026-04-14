@@ -34,10 +34,9 @@ describe("robots.txt", () => {
       expect.arrayContaining([
         "/intake",
         "/dashboard",
-        "/compare",
-        "/favourites",
-        "/profile",
-        "/reports",
+        "/dashboard/favourites",
+        "/dashboard/profile",
+        "/dashboard/agreements",
         "/property",
         "/dealroom",
         "/console",

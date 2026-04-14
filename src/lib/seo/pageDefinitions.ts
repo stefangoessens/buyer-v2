@@ -133,38 +133,29 @@ export const STATIC_SEO_PAGES = {
       kind: "product",
     },
   },
-  compare: {
-    seo: {
-      title: "Compare",
-      description: "Compare your shortlisted properties side-by-side.",
-      path: "/compare",
-      visibility: "gated",
-      kind: "product",
-    },
-  },
-  favourites: {
+  dashboardFavourites: {
     seo: {
       title: "Favourites",
       description: "Your starred properties and saved searches.",
-      path: "/favourites",
+      path: "/dashboard/favourites",
       visibility: "gated",
       kind: "product",
     },
   },
-  profile: {
+  dashboardProfile: {
     seo: {
       title: "Profile",
       description: "Account, notifications, and buyer preferences.",
-      path: "/profile",
+      path: "/dashboard/profile",
       visibility: "gated",
       kind: "product",
     },
   },
-  reports: {
+  dashboardAgreements: {
     seo: {
-      title: "Reports",
-      description: "All your deal-room reports and analyses.",
-      path: "/reports",
+      title: "Agreements",
+      description: "Your buyer agreements, signed and pending.",
+      path: "/dashboard/agreements",
       visibility: "gated",
       kind: "product",
     },

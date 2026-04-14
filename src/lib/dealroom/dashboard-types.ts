@@ -32,9 +32,8 @@ export type DealRoomTileStatus =
 
 export type DashboardNavKey =
   | "home"
-  | "reports"
-  | "compare"
   | "favourites"
+  | "agreements"
   | "profile";
 
 export interface DashboardNavItem {
@@ -52,27 +51,21 @@ export const DASHBOARD_NAV: ReadonlyArray<DashboardNavItem> = [
     description: "Your latest searches and what to do next.",
   },
   {
-    key: "reports",
-    label: "Reports",
-    href: "/reports",
-    description: "Every deal room you've opened with pricing and leverage reports.",
-  },
-  {
-    key: "compare",
-    label: "Compare",
-    href: "/compare",
-    description: "Side-by-side comparison of shortlisted properties.",
-  },
-  {
     key: "favourites",
     label: "Favourites",
-    href: "/favourites",
+    href: "/dashboard/favourites",
     description: "Saved searches and starred properties.",
+  },
+  {
+    key: "agreements",
+    label: "Agreements",
+    href: "/dashboard/agreements",
+    description: "Your buyer agreements and active deal rooms.",
   },
   {
     key: "profile",
     label: "Profile",
-    href: "/profile",
+    href: "/dashboard/profile",
     description: "Account, notifications, and buyer preferences.",
   },
 ];

@@ -51,7 +51,7 @@ export const appSurfaceDefinitions = {
   },
   buyerApp: {
     routeGroup: "(app)",
-    rootPaths: ["/dashboard", "/compare", "/favourites", "/profile", "/reports"],
+    rootPaths: ["/dashboard"],
     access: "authenticated",
     runtime: "nodejs",
     dynamic: "force-dynamic",
