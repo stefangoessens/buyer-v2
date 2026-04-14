@@ -1,3 +1,4 @@
+import { PropertyAIChatDrawerMount } from "@/components/property/PropertyAIChatDrawerMount";
 import { PropertyWizardHeader } from "@/components/property/PropertyWizardHeader";
 import { PropertyWizardStepper } from "@/components/property/PropertyWizardStepper";
 
@@ -14,6 +15,7 @@ export default async function PropertyWizardLayout({
       <PropertyWizardHeader propertyId={propertyId} />
       <PropertyWizardStepper propertyId={propertyId} />
       <main>{children}</main>
+      <PropertyAIChatDrawerMount propertyId={propertyId} />
     </div>
   );
 }

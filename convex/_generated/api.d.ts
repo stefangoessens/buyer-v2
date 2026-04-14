@@ -105,6 +105,7 @@ import type * as opsQueues from "../opsQueues.js";
 import type * as promptRegistry from "../promptRegistry.js";
 import type * as properties from "../properties.js";
 import type * as propertyCases from "../propertyCases.js";
+import type * as propertyChat from "../propertyChat.js";
 import type * as propertyComparisons from "../propertyComparisons.js";
 import type * as propertyMerge from "../propertyMerge.js";
 import type * as rateLimits from "../rateLimits.js";
@@ -229,6 +230,7 @@ declare const fullApi: ApiFromModules<{
   promptRegistry: typeof promptRegistry;
   properties: typeof properties;
   propertyCases: typeof propertyCases;
+  propertyChat: typeof propertyChat;
   propertyComparisons: typeof propertyComparisons;
   propertyMerge: typeof propertyMerge;
   rateLimits: typeof rateLimits;
