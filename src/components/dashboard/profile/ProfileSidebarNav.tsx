@@ -9,8 +9,8 @@ const NAV_ITEMS: { id: string; label: string }[] = [
   { id: "security", label: "Security" },
   { id: "search", label: "Search criteria" },
   { id: "saved-searches", label: "Saved searches" },
-  { id: "rebate", label: "Rebate payout" },
-  { id: "agreements", label: "Agreements" },
+  { id: "rebate-payout", label: "Rebate payout" },
+  { id: "agreements-history", label: "Agreements" },
 ];
 
 export function ProfileSidebarNav() {
