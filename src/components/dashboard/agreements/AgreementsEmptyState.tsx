@@ -43,7 +43,7 @@ export function AgreementsEmptyState({ className }: AgreementsEmptyStateProps) {
             <Link href="/dashboard">Back to dashboard</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/dashboard/deals">Browse deal rooms</Link>
+            <Link href="/dashboard/journeys">View all journeys</Link>
           </Button>
         </div>
       </CardContent>

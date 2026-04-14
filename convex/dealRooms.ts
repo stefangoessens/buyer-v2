@@ -247,3 +247,152 @@ export const upgradeAccess = mutation({
     return null;
   },
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Journey personalization mutations (KIN-1082)
+//
+// Buyers can archive a deal room, restore it from the archive, set its
+// priority (high/normal/low), and apply a short free-text label. Brokers
+// and admins can do the same to support buyers directly. Every write hits
+// `auditLog` for traceability.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const JOURNEY_LABEL_MAX_LENGTH = 24;
+
+async function requireJourneyWriteAccess(
+  ctx: { db: any; auth: any },
+  dealRoomId: any,
+) {
+  const user = await requireAuth(ctx as any);
+  const dealRoom = await ctx.db.get(dealRoomId);
+  if (!dealRoom) throw new Error("Deal room not found");
+  const isBuyer = dealRoom.buyerId === user._id;
+  const isStaff = user.role === "broker" || user.role === "admin";
+  if (!isBuyer && !isStaff) {
+    throw new Error("Not authorized");
+  }
+  return { user, dealRoom };
+}
+
+export const archiveJourney = mutation({
+  args: { dealRoomId: v.id("dealRooms") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user } = await requireJourneyWriteAccess(ctx, args.dealRoomId);
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.dealRoomId, {
+      archivedAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "deal_room_archived",
+      entityType: "dealRooms",
+      entityId: args.dealRoomId,
+      details: JSON.stringify({
+        dealRoomId: args.dealRoomId,
+        archivedAt: now,
+      }),
+      timestamp: now,
+    });
+    return null;
+  },
+});
+
+export const restoreJourney = mutation({
+  args: { dealRoomId: v.id("dealRooms") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user } = await requireJourneyWriteAccess(ctx, args.dealRoomId);
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.dealRoomId, {
+      archivedAt: undefined,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "deal_room_restored",
+      entityType: "dealRooms",
+      entityId: args.dealRoomId,
+      details: JSON.stringify({ dealRoomId: args.dealRoomId }),
+      timestamp: now,
+    });
+    return null;
+  },
+});
+
+export const setJourneyPriority = mutation({
+  args: {
+    dealRoomId: v.id("dealRooms"),
+    priority: v.union(
+      v.literal("high"),
+      v.literal("normal"),
+      v.literal("low"),
+    ),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user } = await requireJourneyWriteAccess(ctx, args.dealRoomId);
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.dealRoomId, {
+      journeyPriority: args.priority,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "deal_room_journey_priority_set",
+      entityType: "dealRooms",
+      entityId: args.dealRoomId,
+      details: JSON.stringify({
+        dealRoomId: args.dealRoomId,
+        priority: args.priority,
+      }),
+      timestamp: now,
+    });
+    return null;
+  },
+});
+
+export const setJourneyLabel = mutation({
+  args: {
+    dealRoomId: v.id("dealRooms"),
+    label: v.union(v.string(), v.null()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const { user } = await requireJourneyWriteAccess(ctx, args.dealRoomId);
+    const now = new Date().toISOString();
+    let nextLabel: string | undefined;
+    if (args.label === null) {
+      nextLabel = undefined;
+    } else {
+      const trimmed = args.label.trim();
+      if (trimmed.length === 0) {
+        nextLabel = undefined;
+      } else {
+        if (trimmed.length > JOURNEY_LABEL_MAX_LENGTH) {
+          throw new Error(
+            `Journey label cannot exceed ${JOURNEY_LABEL_MAX_LENGTH} characters`,
+          );
+        }
+        nextLabel = trimmed;
+      }
+    }
+    await ctx.db.patch(args.dealRoomId, {
+      journeyLabel: nextLabel,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "deal_room_journey_label_set",
+      entityType: "dealRooms",
+      entityId: args.dealRoomId,
+      details: JSON.stringify({
+        dealRoomId: args.dealRoomId,
+        label: nextLabel ?? null,
+      }),
+      timestamp: now,
+    });
+    return null;
+  },
+});

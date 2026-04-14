@@ -32,6 +32,7 @@ export type DealRoomTileStatus =
 
 export type DashboardNavKey =
   | "home"
+  | "journeys"
   | "favourites"
   | "agreements"
   | "profile";
@@ -49,6 +50,12 @@ export const DASHBOARD_NAV: ReadonlyArray<DashboardNavItem> = [
     label: "Home",
     href: "/dashboard",
     description: "Your latest searches and what to do next.",
+  },
+  {
+    key: "journeys",
+    label: "Journeys",
+    href: "/dashboard/journeys",
+    description: "Every property you're working on, with next steps.",
   },
   {
     key: "favourites",
