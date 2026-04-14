@@ -18,7 +18,7 @@ const STEPS = [
   { id: "price", label: "Price" },
   { id: "disclosures", label: "Disclosures" },
   { id: "offer", label: "Offer" },
-  { id: "close", label: "Close" },
+  { id: "close", label: "Closing", slug: "closing" },
 ] as const;
 
 type StepId = (typeof STEPS)[number]["id"];
@@ -31,7 +31,9 @@ function resolveActiveStep(pathname: string | null): StepId {
   if (!pathname) return "details";
   const segments = pathname.split("/").filter(Boolean);
   const last = segments[segments.length - 1];
-  const match = STEPS.find((step) => step.id === last);
+  const match = STEPS.find(
+    (step) => step.id === last || ("slug" in step && step.slug === last),
+  );
   return match?.id ?? "details";
 }
 
@@ -46,7 +48,8 @@ export function PropertyWizardStepper({
       <BreadcrumbList className="text-muted-foreground">
         {STEPS.map((step, idx) => {
           const isActive = step.id === activeId;
-          const href = `/property/${propertyId}/${step.id}`;
+          const slug = "slug" in step ? step.slug : step.id;
+          const href = `/property/${propertyId}/${slug}`;
           return (
             <Fragment key={step.id}>
               {idx > 0 && <BreadcrumbSeparator />}

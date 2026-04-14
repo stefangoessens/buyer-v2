@@ -111,12 +111,15 @@ function projectStep(
           severity: "warning",
         },
       };
+    // NOTE: promotion from offer_sent → under_contract is assumed to happen via an
+    // existing broker mutation path or manual update. If you need to test the /closing
+    // route end-to-end in dev, set dealRoom.status = "under_contract" manually.
     case "under_contract":
       return {
         currentStep: "offer",
         nextAction: {
-          label: "Track contract milestones",
-          href: `/property/${propertyId}/offer`,
+          label: "Track your closing",
+          href: `/property/${propertyId}/closing`,
           severity: "warning",
         },
       };
@@ -124,8 +127,8 @@ function projectStep(
       return {
         currentStep: "close",
         nextAction: {
-          label: "Close workflow",
-          href: `/property/${propertyId}/close`,
+          label: "Closing workflow",
+          href: `/property/${propertyId}/closing`,
           severity: "info",
         },
       };

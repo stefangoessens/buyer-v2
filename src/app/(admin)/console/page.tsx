@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { AdminShell, type AdminShellSession } from "@/components/admin/AdminShell";
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import { AdminMetricCard } from "@/components/admin/AdminMetricCard";
 import { AdminEmptyState } from "@/components/admin/AdminEmptyState";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatConsoleTimestamp, pluralize } from "@/lib/admin/format";
 
 /**
@@ -91,6 +93,35 @@ function ConsoleOverviewContent() {
           />
         </div>
         <div>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-500">
+            Closing deals
+          </h2>
+          <Link
+            href="/console/closing"
+            className="block rounded-4xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          >
+            <Card className="h-full transition-shadow hover:shadow-md">
+              <CardHeader>
+                <CardDescription className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Closing command center
+                </CardDescription>
+                <CardTitle className="text-lg font-semibold text-foreground">
+                  Active deals board
+                </CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Every under-contract and closing deal in one view, with
+                  stuck-deal signals for blocked, overdue, and stale handoffs.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <span className="inline-flex items-center text-sm font-medium text-primary">
+                  Open the board →
+                </span>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+        <div className="lg:col-span-2">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-500">
             KPI dashboard
           </h2>

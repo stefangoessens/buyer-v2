@@ -11,6 +11,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { requireAuth, requireRole } from "./lib/session";
 import {
   buildCloseTaskTransitionPatch,
@@ -77,6 +78,40 @@ const closeTaskOwnerRoleValidator = v.union(
   v.literal("other"),
 );
 
+// ─── KIN-1080: closing command center validators ───
+const closingTabValidator = v.union(
+  v.literal("title"),
+  v.literal("financing"),
+  v.literal("inspections"),
+  v.literal("insurance"),
+  v.literal("moving_in"),
+  v.literal("addendums"),
+);
+
+const waitingOnRoleValidator = v.union(
+  v.literal("buyer"),
+  v.literal("broker"),
+  v.literal("title_company"),
+  v.literal("lender"),
+  v.literal("inspector"),
+  v.literal("insurance_agent"),
+  v.literal("hoa"),
+  v.literal("seller_side"),
+  v.literal("moving_company"),
+  v.literal("other"),
+);
+
+const blockedCodeValidator = v.union(
+  v.literal("awaiting_response"),
+  v.literal("awaiting_document"),
+  v.literal("awaiting_quote"),
+  v.literal("awaiting_schedule"),
+  v.literal("awaiting_signature"),
+  v.literal("awaiting_payment"),
+  v.literal("dependency"),
+  v.literal("other"),
+);
+
 const closeTaskRecordValidator = v.object({
   _id: v.id("closeTasks"),
   _creationTime: v.number(),
@@ -96,6 +131,18 @@ const closeTaskRecordValidator = v.object({
   createdAt: v.string(),
   updatedAt: v.string(),
   completedAt: v.optional(v.string()),
+  // KIN-1080 fields — all optional for backfill compatibility.
+  tab: v.optional(closingTabValidator),
+  groupKey: v.optional(v.string()),
+  groupTitle: v.optional(v.string()),
+  templateKey: v.optional(v.string()),
+  contractMilestoneId: v.optional(v.id("contractMilestones")),
+  sortOrder: v.optional(v.number()),
+  waitingOnRole: v.optional(waitingOnRoleValidator),
+  blockedCode: v.optional(blockedCodeValidator),
+  blockedTaskIds: v.optional(v.array(v.id("closeTasks"))),
+  dependsOn: v.optional(v.array(v.id("closeTasks"))),
+  manuallyOverriddenDueDate: v.optional(v.boolean()),
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -209,6 +256,18 @@ export const create = mutation({
     ownerDisplayName: v.optional(v.string()),
     dueDate: v.optional(v.string()),
     internalNotes: v.optional(v.string()),
+    // KIN-1080 closing command center fields.
+    tab: v.optional(closingTabValidator),
+    groupKey: v.optional(v.string()),
+    groupTitle: v.optional(v.string()),
+    templateKey: v.optional(v.string()),
+    contractMilestoneId: v.optional(v.id("contractMilestones")),
+    sortOrder: v.optional(v.number()),
+    waitingOnRole: v.optional(waitingOnRoleValidator),
+    blockedCode: v.optional(blockedCodeValidator),
+    blockedTaskIds: v.optional(v.array(v.id("closeTasks"))),
+    dependsOn: v.optional(v.array(v.id("closeTasks"))),
+    manuallyOverriddenDueDate: v.optional(v.boolean()),
   },
   returns: v.id("closeTasks"),
   handler: async (ctx, args) => {
@@ -238,25 +297,37 @@ export const create = mutation({
       }
     }
 
-    const id = await ctx.db.insert(
-      "closeTasks",
-      buildCreateCloseTask(
-        {
-          dealRoomId: args.dealRoomId as unknown as string,
-          contractId: args.contractId as unknown as string | undefined,
-          title: args.title,
-          description: args.description,
-          category: args.category,
-          visibility: args.visibility,
-          ownerRole: args.ownerRole,
-          ownerUserId: args.ownerUserId as unknown as string | undefined,
-          ownerDisplayName: args.ownerDisplayName,
-          dueDate: args.dueDate,
-          internalNotes: args.internalNotes,
-        },
-        now,
-      ) as Omit<Doc<"closeTasks">, "_id" | "_creationTime">,
-    );
+    const base = buildCreateCloseTask(
+      {
+        dealRoomId: args.dealRoomId as unknown as string,
+        contractId: args.contractId as unknown as string | undefined,
+        title: args.title,
+        description: args.description,
+        category: args.category,
+        visibility: args.visibility,
+        ownerRole: args.ownerRole,
+        ownerUserId: args.ownerUserId as unknown as string | undefined,
+        ownerDisplayName: args.ownerDisplayName,
+        dueDate: args.dueDate,
+        internalNotes: args.internalNotes,
+      },
+      now,
+    ) as Omit<Doc<"closeTasks">, "_id" | "_creationTime">;
+
+    const id = await ctx.db.insert("closeTasks", {
+      ...base,
+      tab: args.tab,
+      groupKey: args.groupKey,
+      groupTitle: args.groupTitle,
+      templateKey: args.templateKey,
+      contractMilestoneId: args.contractMilestoneId,
+      sortOrder: args.sortOrder,
+      waitingOnRole: args.waitingOnRole,
+      blockedCode: args.blockedCode,
+      blockedTaskIds: args.blockedTaskIds,
+      dependsOn: args.dependsOn,
+      manuallyOverriddenDueDate: args.manuallyOverriddenDueDate ?? false,
+    });
 
     await ctx.db.insert("auditLog", {
       userId: user._id,
@@ -318,6 +389,15 @@ export const transitionStatus = mutation({
       timestamp: now,
     });
 
+    // KIN-1080: when a task moves to completed, check if any siblings
+    // were blocked on it via a dependency and unblock them.
+    if (args.newStatus === "completed" && task.status !== "completed") {
+      await ctx.runMutation(
+        internal.closingCommandCenter.unblockDependents,
+        { taskId: args.taskId },
+      );
+    }
+
     return null;
   },
 });
@@ -338,6 +418,16 @@ export const update = mutation({
     ownerUserId: v.optional(v.id("users")),
     ownerDisplayName: v.optional(v.string()),
     internalNotes: v.optional(v.string()),
+    // KIN-1080 closing command center patch fields.
+    tab: v.optional(closingTabValidator),
+    groupKey: v.optional(v.string()),
+    groupTitle: v.optional(v.string()),
+    sortOrder: v.optional(v.number()),
+    waitingOnRole: v.optional(waitingOnRoleValidator),
+    blockedCode: v.optional(blockedCodeValidator),
+    blockedTaskIds: v.optional(v.array(v.id("closeTasks"))),
+    dependsOn: v.optional(v.array(v.id("closeTasks"))),
+    manuallyOverriddenDueDate: v.optional(v.boolean()),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -368,9 +458,61 @@ export const update = mutation({
       now,
     );
 
+    const extraPatch: Partial<Doc<"closeTasks">> = {};
+    if (args.tab !== undefined && args.tab !== task.tab) {
+      extraPatch.tab = args.tab;
+      changedFields.push("tab");
+    }
+    if (args.groupKey !== undefined && args.groupKey !== task.groupKey) {
+      extraPatch.groupKey = args.groupKey;
+      changedFields.push("groupKey");
+    }
+    if (args.groupTitle !== undefined && args.groupTitle !== task.groupTitle) {
+      extraPatch.groupTitle = args.groupTitle;
+      changedFields.push("groupTitle");
+    }
+    if (args.sortOrder !== undefined && args.sortOrder !== task.sortOrder) {
+      extraPatch.sortOrder = args.sortOrder;
+      changedFields.push("sortOrder");
+    }
+    if (
+      args.waitingOnRole !== undefined &&
+      args.waitingOnRole !== task.waitingOnRole
+    ) {
+      extraPatch.waitingOnRole = args.waitingOnRole;
+      changedFields.push("waitingOnRole");
+    }
+    if (
+      args.blockedCode !== undefined &&
+      args.blockedCode !== task.blockedCode
+    ) {
+      extraPatch.blockedCode = args.blockedCode;
+      changedFields.push("blockedCode");
+    }
+    if (args.blockedTaskIds !== undefined) {
+      extraPatch.blockedTaskIds = args.blockedTaskIds;
+      changedFields.push("blockedTaskIds");
+    }
+    if (args.dependsOn !== undefined) {
+      extraPatch.dependsOn = args.dependsOn;
+      changedFields.push("dependsOn");
+    }
+    if (
+      args.manuallyOverriddenDueDate !== undefined &&
+      args.manuallyOverriddenDueDate !== task.manuallyOverriddenDueDate
+    ) {
+      extraPatch.manuallyOverriddenDueDate = args.manuallyOverriddenDueDate;
+      changedFields.push("manuallyOverriddenDueDate");
+    }
+
     if (changedFields.length === 0) return null;
 
-    await ctx.db.patch(args.taskId, patch as Partial<Doc<"closeTasks">>);
+    const fullPatch = { ...(patch as Partial<Doc<"closeTasks">>), ...extraPatch };
+    if (Object.keys(extraPatch).length > 0 && !("updatedAt" in fullPatch)) {
+      fullPatch.updatedAt = now;
+    }
+
+    await ctx.db.patch(args.taskId, fullPatch);
 
     await ctx.db.insert("auditLog", {
       userId: user._id,

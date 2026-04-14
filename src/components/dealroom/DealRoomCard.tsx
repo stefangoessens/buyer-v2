@@ -30,10 +30,16 @@ const numberFormatter = new Intl.NumberFormat("en-US");
 
 export function DealRoomCard({ row, now, nextAction }: DealRoomCardProps) {
   const badge = projectStatusBadge(row);
+  const targetHref =
+    row.status === "under_contract" || row.status === "closing"
+      ? `/property/${row.propertyId}/closing`
+      : row.status === "offer_sent"
+      ? `/property/${row.propertyId}/offer`
+      : `/property/${row.propertyId}/details`;
 
   return (
     <Link
-      href={`/property/${row.propertyId}/offer`}
+      href={targetHref}
       className="group block"
     >
       <Card className="h-full overflow-hidden p-0 transition-all hover:ring-2 hover:ring-primary-300 hover:shadow-md">

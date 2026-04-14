@@ -1421,6 +1421,11 @@ export default defineSchema({
     contractId: v.id("contracts"),
     dealRoomId: v.id("dealRooms"),
     name: v.string(),
+    // KIN-1080: stable identifier for amendment-driven resync. Optional
+    // because existing rows pre-date this field — backfill is a later
+    // follow-up. Closing command center templates reference milestones
+    // by this key to stay stable through date edits and amendments.
+    milestoneKey: v.optional(v.string()),
     workstream: v.union(
       v.literal("inspection"),
       v.literal("financing"),
@@ -1466,6 +1471,7 @@ export default defineSchema({
   })
     .index("by_contractId", ["contractId"])
     .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_dealRoomId_and_milestoneKey", ["dealRoomId", "milestoneKey"])
     .index("by_contractId_and_status", ["contractId", "status"])
     .index("by_flaggedForReview", ["flaggedForReview"])
     .index("by_workstream", ["workstream"]),
@@ -2509,11 +2515,107 @@ export default defineSchema({
     createdAt: v.string(),
     updatedAt: v.string(),
     completedAt: v.optional(v.string()),
+    // ─── KIN-1080: closing command center fields ───
+    // All optional for backfill safety on existing rows. Application-layer
+    // helpers enforce required-when-seeded semantics.
+    tab: v.optional(
+      v.union(
+        v.literal("title"),
+        v.literal("financing"),
+        v.literal("inspections"),
+        v.literal("insurance"),
+        v.literal("moving_in"),
+        v.literal("addendums"),
+      ),
+    ),
+    groupKey: v.optional(v.string()),
+    groupTitle: v.optional(v.string()),
+    templateKey: v.optional(v.string()),
+    contractMilestoneId: v.optional(v.id("contractMilestones")),
+    sortOrder: v.optional(v.number()),
+    waitingOnRole: v.optional(
+      v.union(
+        v.literal("buyer"),
+        v.literal("broker"),
+        v.literal("title_company"),
+        v.literal("lender"),
+        v.literal("inspector"),
+        v.literal("insurance_agent"),
+        v.literal("hoa"),
+        v.literal("seller_side"),
+        v.literal("moving_company"),
+        v.literal("other"),
+      ),
+    ),
+    blockedCode: v.optional(
+      v.union(
+        v.literal("awaiting_response"),
+        v.literal("awaiting_document"),
+        v.literal("awaiting_quote"),
+        v.literal("awaiting_schedule"),
+        v.literal("awaiting_signature"),
+        v.literal("awaiting_payment"),
+        v.literal("dependency"),
+        v.literal("other"),
+      ),
+    ),
+    blockedTaskIds: v.optional(v.array(v.id("closeTasks"))),
+    dependsOn: v.optional(v.array(v.id("closeTasks"))),
+    manuallyOverriddenDueDate: v.optional(v.boolean()),
   })
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_dealRoomId_and_status", ["dealRoomId", "status"])
+    .index("by_dealRoomId_and_tab", ["dealRoomId", "tab"])
     .index("by_ownerUserId", ["ownerUserId"])
     .index("by_contractId", ["contractId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CLOSE TASK DOCUMENTS & NOTES (KIN-1080)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Sibling tables to closeTasks. Documents carry uploaded artifacts
+  // (inspection PDFs, loan estimates, wire instructions) scoped to a single
+  // task, and notes are free-form broker / buyer comments. Visibility
+  // mirrors the closeTasks rules — internal notes/docs stay invisible
+  // to buyers via server-side filtering (never relying on the client).
+
+  closeTaskDocuments: defineTable({
+    taskId: v.id("closeTasks"),
+    dealRoomId: v.id("dealRooms"),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    contentType: v.string(),
+    sizeBytes: v.number(),
+    uploadedBy: v.id("users"),
+    visibility: v.union(
+      v.literal("buyer_visible"),
+      v.literal("internal_only"),
+    ),
+    createdAt: v.number(),
+    deletedAt: v.optional(v.number()),
+  })
+    .index("by_taskId", ["taskId"])
+    .index("by_dealRoomId", ["dealRoomId"]),
+
+  closeTaskNotes: defineTable({
+    taskId: v.id("closeTasks"),
+    dealRoomId: v.id("dealRooms"),
+    authorId: v.id("users"),
+    authorRole: v.union(
+      v.literal("buyer"),
+      v.literal("broker"),
+      v.literal("admin"),
+    ),
+    body: v.string(),
+    visibility: v.union(
+      v.literal("buyer_visible"),
+      v.literal("internal_only"),
+    ),
+    createdAt: v.number(),
+    deletedAt: v.optional(v.number()),
+  })
+    .index("by_taskId", ["taskId"])
+    .index("by_dealRoomId", ["dealRoomId"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // SHOWING COORDINATOR NOTES (KIN-803)
