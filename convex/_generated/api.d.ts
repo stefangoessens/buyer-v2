@@ -44,6 +44,7 @@ import type * as engines_offer from "../engines/offer.js";
 import type * as engines_orchestrate from "../engines/orchestrate.js";
 import type * as engines_orchestrateMutations from "../engines/orchestrateMutations.js";
 import type * as engines_pricing from "../engines/pricing.js";
+import type * as engines_prosConsSynthesizer from "../engines/prosConsSynthesizer.js";
 import type * as enrichment from "../enrichment.js";
 import type * as enrichmentJobs from "../enrichmentJobs.js";
 import type * as externalAccess from "../externalAccess.js";
@@ -163,6 +164,7 @@ declare const fullApi: ApiFromModules<{
   "engines/orchestrate": typeof engines_orchestrate;
   "engines/orchestrateMutations": typeof engines_orchestrateMutations;
   "engines/pricing": typeof engines_pricing;
+  "engines/prosConsSynthesizer": typeof engines_prosConsSynthesizer;
   enrichment: typeof enrichment;
   enrichmentJobs: typeof enrichmentJobs;
   externalAccess: typeof externalAccess;
