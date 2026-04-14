@@ -814,3 +814,63 @@ class TestJsonLdTypeAsList:
         assert prop.property_type is not None
         assert "[" not in prop.property_type
         assert "'" not in prop.property_type
+
+
+class TestZestimateExtraction:
+    """Zestimate + rentZestimate round-trip from NEXT_DATA and Apollo blobs."""
+
+    def test_real_miami_condo_zestimate_round_trips(self) -> None:
+        html = _load("zillow_real_miami_condo_20260413.html")
+        url = "https://www.zillow.com/homedetails/247700480_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.zestimate_usd == 271_200
+        assert prop.rent_zestimate_usd == 2_910
+
+    def test_apollo_fixture_without_zestimate_is_none(self) -> None:
+        html = _load("zillow_sfh_boca_raton.html")
+        url = str(_EXPECTED["zillow_sfh_boca_raton.html"]["source_url"])
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.zestimate_usd is None
+        assert prop.rent_zestimate_usd is None
+
+    def test_next_data_zestimate_key_extracts(self) -> None:
+        """Inline __NEXT_DATA__ with a zestimate key populates zestimate_usd."""
+        import json as _json
+
+        cache_inner = _json.dumps(
+            {
+                "ForSalePriorityQuery": {
+                    "property": {
+                        "zpid": "7000",
+                        "streetAddress": "123 Zest Ln",
+                        "city": "Miami",
+                        "state": "FL",
+                        "zipcode": "33131",
+                        "price": 800_000,
+                        "bedrooms": 3,
+                        "bathrooms": 2,
+                        "livingArea": 1500,
+                        "zestimate": 500_000,
+                        "rentZestimate": 3_200,
+                    }
+                }
+            }
+        )
+        next_payload = _json.dumps(
+            {
+                "props": {
+                    "pageProps": {
+                        "componentProps": {"gdpClientCache": cache_inner}
+                    }
+                }
+            }
+        )
+        html = (
+            "<!DOCTYPE html><html><head>"
+            f'<script id="__NEXT_DATA__" type="application/json">{next_payload}</script>'
+            "</head><body></body></html>"
+        )
+        url = "https://www.zillow.com/homedetails/7000_zpid/"
+        prop = ZillowExtractor().extract(html=html, source_url=url)
+        assert prop.zestimate_usd == 500_000
+        assert prop.rent_zestimate_usd == 3_200
