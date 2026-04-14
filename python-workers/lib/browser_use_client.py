@@ -101,8 +101,12 @@ class BrowserUseClient:
     def _headers(self) -> dict[str, str]:
         if not self._api_key:
             raise BrowserUseError("BROWSER_USE_API_KEY is not set")
+        # Browser Use Cloud's REST API expects the key in
+        # `X-Browser-Use-API-Key`, not the standard Authorization header.
+        # Codex flagged the previous Bearer scheme as a real-world
+        # auth failure waiting to happen.
         return {
-            "Authorization": f"Bearer {self._api_key}",
+            "X-Browser-Use-API-Key": self._api_key,
             "Content-Type": "application/json",
         }
 
@@ -124,7 +128,7 @@ class BrowserUseClient:
         headers = self._headers()
         try:
             response = self._client.post(
-                f"{self._base_url}/runs",
+                f"{self._base_url}/api/v2/tasks",
                 json=payload,
                 headers=headers,
             )
@@ -151,7 +155,7 @@ class BrowserUseClient:
         headers = self._headers()
         try:
             response = self._client.get(
-                f"{self._base_url}/runs/{run_id}",
+                f"{self._base_url}/api/v2/tasks/{run_id}",
                 headers=headers,
             )
         except httpx.HTTPError as exc:

@@ -51,7 +51,7 @@ The thin Python client wrapper lives at `python-workers/lib/browser_use_client.p
 ### Usage pattern
 
 ```python
-from python_workers.lib.browser_use_client import BrowserUseClient, is_configured
+from lib.browser_use_client import BrowserUseClient, is_configured
 
 if not is_configured():
     # Fall back to the deterministic parser path or surface a clear error to the caller —

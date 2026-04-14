@@ -39,13 +39,13 @@ def test_is_configured_returns_false_when_api_key_missing(
     assert is_configured() is False
 
 
-def test_create_run_posts_to_runs_with_auth_and_residential_proxy() -> None:
+def test_create_run_posts_to_tasks_with_auth_and_residential_proxy() -> None:
     captured: dict[str, Any] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["method"] = request.method
         captured["url"] = str(request.url)
-        captured["auth"] = request.headers.get("authorization")
+        captured["auth"] = request.headers.get("x-browser-use-api-key")
         captured["content_type"] = request.headers.get("content-type")
         captured["body"] = json.loads(request.content)
         return httpx.Response(
@@ -72,8 +72,8 @@ def test_create_run_posts_to_runs_with_auth_and_residential_proxy() -> None:
     assert run.run_id == "run_abc123"
     assert run.status == "queued"
     assert captured["method"] == "POST"
-    assert captured["url"] == f"{DEFAULT_BASE_URL}/runs"
-    assert captured["auth"] == "Bearer test-key-xyz"
+    assert captured["url"] == f"{DEFAULT_BASE_URL}/api/v2/tasks"
+    assert captured["auth"] == "test-key-xyz"
     assert captured["content_type"] == "application/json"
     assert captured["body"]["task"] == "Scrape property list"
     assert captured["body"]["max_steps"] == 25
@@ -114,7 +114,7 @@ def test_create_run_raises_when_api_key_missing(
 def test_get_result_parses_cost_and_duration_fields() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
-        assert str(request.url) == f"{DEFAULT_BASE_URL}/runs/run_abc123"
+        assert str(request.url) == f"{DEFAULT_BASE_URL}/api/v2/tasks/run_abc123"
         return httpx.Response(
             200,
             json={
@@ -173,4 +173,4 @@ def test_custom_base_url_is_honored(
         )
         client.create_run(task="probe")
 
-    assert captured["url"] == "https://custom.example.com/runs"
+    assert captured["url"] == "https://custom.example.com/api/v2/tasks"
