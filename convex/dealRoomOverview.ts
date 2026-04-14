@@ -50,6 +50,8 @@ const pricingEnvelopeValidator = v.object({
       walkAway: v.number(),
       overallConfidence: v.number(),
       consensusEstimate: v.number(),
+      zestimate: v.optional(v.number()),
+      redfinEstimate: v.optional(v.number()),
     }),
   ),
   reason: v.optional(v.string()),
@@ -237,6 +239,14 @@ export const getOverview = query({
       };
     }
 
+    const property = await ctx.db.get(dealRoom.propertyId);
+    const propertyAvms = property
+      ? {
+          zestimate: property.zestimate,
+          redfinEstimate: property.redfinEstimate,
+        }
+      : undefined;
+
     const inputs: OverviewInputs = {
       dealRoomId: dealRoom._id,
       propertyId: dealRoom.propertyId,
@@ -244,6 +254,7 @@ export const getOverview = query({
       updatedAt: dealRoom.updatedAt,
       engines,
       latestOffer,
+      propertyAvms,
     };
 
     const forRole =

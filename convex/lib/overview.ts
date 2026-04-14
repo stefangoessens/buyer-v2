@@ -20,6 +20,8 @@ export interface PricingSummary {
   walkAway: number;
   overallConfidence: number;
   consensusEstimate: number;
+  zestimate?: number;
+  redfinEstimate?: number;
 }
 
 export interface LeverageSummary {
@@ -117,6 +119,10 @@ export interface OverviewInputs {
     competitivenessScore: number;
     scenarioCount: number;
   };
+  propertyAvms?: {
+    zestimate?: number;
+    redfinEstimate?: number;
+  };
 }
 
 export function composeOverview(
@@ -131,7 +137,10 @@ export function composeOverview(
     }
   }
 
-  const pricing = composePricingSection(engineByType.get("pricing"));
+  const pricing = composePricingSection(
+    engineByType.get("pricing"),
+    inputs.propertyAvms,
+  );
   const leverage = composeLeverageSection(engineByType.get("leverage"));
   const cost = composeCostSection(engineByType.get("cost"));
   const offer = composeOfferSection(
@@ -171,6 +180,7 @@ export function composeOverview(
 
 function composePricingSection(
   raw: RawEngineOutput | undefined,
+  propertyAvms: OverviewInputs["propertyAvms"],
 ): SectionEnvelope<PricingSummary> {
   if (!raw) {
     return {
@@ -208,6 +218,8 @@ function composePricingSection(
         walkAway: parsed.walkAway.value,
         overallConfidence: parsed.overallConfidence,
         consensusEstimate: parsed.consensusEstimate,
+        zestimate: propertyAvms?.zestimate,
+        redfinEstimate: propertyAvms?.redfinEstimate,
       },
       confidence: raw.confidence,
     };

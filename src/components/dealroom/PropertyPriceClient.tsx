@@ -88,8 +88,9 @@ function PriceOverview({
   // Map pricing engine output to the spectrum bar's anchor props.
   // The pricing engine doesn't currently expose an explicit listingPrice — we
   // use consensusEstimate as a proxy (it blends portal estimates with comps,
-  // which is the closest thing to "what the seller is asking"). KIN-1071 will
-  // wire through a real Zestimate; lowestPossible is still TBD.
+  // which is the closest thing to "what the seller is asking"). Portal AVMs
+  // (Zestimate, Redfin Estimate) come from the property record via
+  // dealRoomOverview; lowestPossible is still TBD.
   const showSpectrum =
     pricingData !== null &&
     Number.isFinite(pricingData.fairValue) &&
@@ -122,6 +123,8 @@ function PriceOverview({
           </header>
           <PriceSpectrumBar
             fairPrice={pricingData.fairValue}
+            zestimate={pricingData.zestimate}
+            redfinEstimate={pricingData.redfinEstimate}
             listingPrice={pricingData.consensusEstimate}
             walkAway={pricingData.walkAway}
             strongOpener={pricingData.strongOpener}

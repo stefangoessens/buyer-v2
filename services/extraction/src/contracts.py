@@ -40,7 +40,10 @@ class CanonicalPropertyResponse(BaseModel):
     year_built: int | None
     days_on_market: int | None
     hoa_monthly_usd: int | None
-    description: str | None
+    zestimate_usd: int | None = None
+    rent_zestimate_usd: int | None = None
+    redfin_estimate_usd: int | None = None
+    description: str | None = None
     photos: list[PropertyPhotoResponse] = Field(default_factory=list)
 
 

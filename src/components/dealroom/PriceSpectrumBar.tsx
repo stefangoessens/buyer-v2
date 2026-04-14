@@ -11,6 +11,7 @@ interface PriceSpectrumBarProps {
   lowestPossible?: number;
   fairPrice: number;
   zestimate?: number;
+  redfinEstimate?: number;
   listingPrice: number;
   walkAway: number;
   strongOpener?: number;
@@ -34,6 +35,7 @@ export function PriceSpectrumBar({
   lowestPossible,
   fairPrice,
   zestimate,
+  redfinEstimate,
   listingPrice,
   walkAway,
   strongOpener,
@@ -65,6 +67,14 @@ export function PriceSpectrumBar({
       label: "Zestimate",
       value: zestimate,
       tooltip: "Zestimate — Zillow's automated valuation model.",
+    });
+  }
+  if (redfinEstimate !== undefined) {
+    anchors.push({
+      key: "redfinEstimate",
+      label: "Redfin",
+      value: redfinEstimate,
+      tooltip: "Redfin Estimate — Redfin's automated valuation model.",
     });
   }
   anchors.push({

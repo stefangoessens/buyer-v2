@@ -199,6 +199,8 @@ class ZillowExtractor:
             "hoa_monthly_usd": _to_int(
                 prop.get("monthlyHoaFee") or prop.get("hoaFee")
             ),
+            "zestimate_usd": _to_int(prop.get("zestimate")),
+            "rent_zestimate_usd": _to_int(prop.get("rentZestimate")),
             "description": _clean_str(prop.get("description")),
         }
 
@@ -320,6 +322,8 @@ class ZillowExtractor:
             "year_built": _to_int(prop.get("yearBuilt")),
             "days_on_market": _to_int(prop.get("daysOnZillow")),
             "hoa_monthly_usd": _to_int(prop.get("hoaFee")),
+            "zestimate_usd": _to_int(prop.get("zestimate")),
+            "rent_zestimate_usd": _to_int(prop.get("rentZestimate")),
             "description": _clean_str(prop.get("description")),
         }
         return out
@@ -431,6 +435,8 @@ class ZillowExtractor:
             year_built=raw.get("year_built"),
             days_on_market=raw.get("days_on_market"),
             hoa_monthly_usd=raw.get("hoa_monthly_usd"),
+            zestimate_usd=raw.get("zestimate_usd"),
+            rent_zestimate_usd=raw.get("rent_zestimate_usd"),
             description=raw.get("description"),
             photos=photos,
         )

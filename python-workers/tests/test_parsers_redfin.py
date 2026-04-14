@@ -45,6 +45,7 @@ _EXPECTED: Mapping[str, Mapping[str, object]] = {
         "living_area_sqft": 1_150,
         "year_built": 2016,
         "property_type": "condo",
+        "redfin_estimate_usd": 695_000,
     },
     "redfin_sfh_weston.html": {
         "source_url": "https://www.redfin.com/FL/Weston/2885-Lakeside-Pl-33326/home/20000002",
@@ -116,6 +117,8 @@ class TestHappyPath:
         assert prop.living_area_sqft == exp["living_area_sqft"]
         assert prop.year_built == exp["year_built"]
         assert prop.property_type == exp["property_type"]
+        if "redfin_estimate_usd" in exp:
+            assert prop.redfin_estimate_usd == exp["redfin_estimate_usd"]
 
 
 class TestSourceMetadata:
@@ -867,3 +870,44 @@ class TestJsonLdMainEntityEdgeCases:
         url = "https://www.redfin.com/FL/Tampa/88-list-blank-ct/home/30000007"
         prop = RedfinExtractor().extract(html=html, source_url=url)
         assert prop.price_usd == 995_000
+
+
+class TestRedfinEstimateExtraction:
+    """Redfin Estimate (AVM) round-trips from the redux propertyInfo blob."""
+
+    def test_redfin_estimate_extracts_from_redux(self) -> None:
+        html = _load("redfin_condo_miami_beach.html")
+        url = str(_EXPECTED["redfin_condo_miami_beach.html"]["source_url"])
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+        assert prop.redfin_estimate_usd == 695_000
+
+    def test_missing_avm_is_none(self) -> None:
+        """A fixture without an avm field must leave redfin_estimate_usd None."""
+        html = _load("redfin_sfh_cutler_bay.html")
+        url = str(_EXPECTED["redfin_sfh_cutler_bay.html"]["source_url"])
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+        assert prop.redfin_estimate_usd is None
+
+    def test_alternate_key_redfin_estimate_extracts(self) -> None:
+        """Older Redfin templates expose the estimate under ``redfinEstimate``."""
+        html = (
+            "<!DOCTYPE html><html><head>"
+            '<script>reactServerState = {"propertyInfo": {'
+            '"propertyId": "42424242",'
+            '"price": 1200000,'
+            '"beds": 4,'
+            '"baths": 3,'
+            '"sqFt": 2400,'
+            '"redfinEstimate": 1180000,'
+            '"propertyType": "Single Family Residential",'
+            '"address": {'
+            '"streetAddress": "42 Estimate Ct",'
+            '"city": "Coral Gables",'
+            '"state": "FL",'
+            '"zip": "33134"'
+            '}}};</script>'
+            "</head><body></body></html>"
+        )
+        url = "https://www.redfin.com/FL/Coral-Gables/42-estimate-ct/home/42424242"
+        prop = RedfinExtractor().extract(html=html, source_url=url)
+        assert prop.redfin_estimate_usd == 1_180_000
