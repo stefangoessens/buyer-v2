@@ -36,12 +36,12 @@ export function CostEstimateCard({
   enableCustomize = false,
 }: CostEstimateCardProps) {
   return (
-    <section className="flex flex-col rounded-[24px] border border-neutral-200 bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
+    <section className="flex flex-col rounded-[24px] border border-border bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
       <header className="mb-5">
         <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
           Cost of ownership
         </p>
-        <h2 className="mt-1 text-lg font-semibold text-neutral-800">
+        <h2 className="mt-1 text-lg font-semibold text-foreground">
           What you&apos;d actually pay monthly
         </h2>
       </header>
@@ -49,16 +49,16 @@ export function CostEstimateCard({
       {status === "available" && data ? (
         <>
           <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-neutral-500">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
               Monthly — PITI + HOA + insurance
             </span>
-            <span className="text-3xl font-bold text-neutral-900">
+            <span className="text-3xl font-bold text-foreground">
               {currency.format(data.monthlyMid)}
-              <span className="ml-1 text-base font-medium text-neutral-500">
+              <span className="ml-1 text-base font-medium text-muted-foreground">
                 /mo
               </span>
             </span>
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-muted-foreground">
               Range {currency.format(data.monthlyRange.low)} –{" "}
               {currency.format(data.monthlyRange.high)}
             </span>
@@ -66,18 +66,18 @@ export function CostEstimateCard({
 
           <dl className="mt-5 grid grid-cols-2 gap-4 border-t border-neutral-100 pt-5 text-sm">
             <div>
-              <dt className="text-xs uppercase tracking-wide text-neutral-500">
+              <dt className="text-xs uppercase tracking-wide text-muted-foreground">
                 Annual
               </dt>
-              <dd className="mt-1 font-semibold text-neutral-800">
+              <dd className="mt-1 font-semibold text-foreground">
                 {currency.format(data.annualTotal)}
               </dd>
             </div>
             <div>
-              <dt className="text-xs uppercase tracking-wide text-neutral-500">
+              <dt className="text-xs uppercase tracking-wide text-muted-foreground">
                 Down payment
               </dt>
-              <dd className="mt-1 font-semibold text-neutral-800">
+              <dd className="mt-1 font-semibold text-foreground">
                 {currency.format(data.downPayment)}
               </dd>
             </div>
@@ -156,7 +156,7 @@ function CustomizeSection({
   return (
     <div className="mt-5 border-t border-neutral-100 pt-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-neutral-800">
+        <h3 className="text-sm font-semibold text-foreground">
           Customize assumptions
         </h3>
         <Button
@@ -171,7 +171,7 @@ function CustomizeSection({
 
       <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
-          <dt className="text-xs uppercase tracking-wide text-neutral-500">
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
             Interest rate (%)
           </dt>
           <dd className="mt-1">
@@ -188,7 +188,7 @@ function CustomizeSection({
           </dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-wide text-neutral-500">
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
             Property taxes (yr)
           </dt>
           <dd className="mt-1">
@@ -205,7 +205,7 @@ function CustomizeSection({
           </dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-wide text-neutral-500">
+          <dt className="text-xs uppercase tracking-wide text-muted-foreground">
             Home insurance (yr)
           </dt>
           <dd className="mt-1">
@@ -223,13 +223,13 @@ function CustomizeSection({
         </div>
       </dl>
 
-      <div className="mt-5 flex flex-col gap-1 rounded-2xl bg-neutral-50 p-4">
-        <span className="text-xs uppercase tracking-wide text-neutral-500">
+      <div className="mt-5 flex flex-col gap-1 rounded-2xl bg-muted p-4">
+        <span className="text-xs uppercase tracking-wide text-muted-foreground">
           Customized monthly
         </span>
-        <span className="text-2xl font-bold text-neutral-900">
+        <span className="text-2xl font-bold text-foreground">
           {currency.format(customizedMonthly)}
-          <span className="ml-1 text-sm font-medium text-neutral-500">
+          <span className="ml-1 text-sm font-medium text-muted-foreground">
             /mo
           </span>
         </span>
@@ -259,9 +259,9 @@ function CostEmptyState({
   const label =
     status === "pending" ? "Analysis in progress" : "Cost estimate unavailable";
   return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 p-6 text-center">
+    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-border bg-muted p-6 text-center">
       <p className="text-sm font-semibold text-neutral-700">{label}</p>
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted-foreground">
         {reason ?? "Cost modeling will appear once property facts are gathered."}
       </p>
     </div>

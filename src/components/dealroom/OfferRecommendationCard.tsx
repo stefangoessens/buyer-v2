@@ -39,12 +39,12 @@ export function OfferRecommendationCard({
   propertyId,
 }: OfferRecommendationCardProps) {
   return (
-    <section className="flex flex-col rounded-[24px] border border-neutral-200 bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
+    <section className="flex flex-col rounded-[24px] border border-border bg-white p-6 transition-shadow hover:shadow-md sm:p-8">
       <header className="mb-5">
         <p className="text-xs font-semibold uppercase tracking-widest text-primary-400">
           Offer recommendation
         </p>
-        <h2 className="mt-1 text-lg font-semibold text-neutral-800">
+        <h2 className="mt-1 text-lg font-semibold text-foreground">
           Where we&apos;d open negotiations
         </h2>
       </header>
@@ -52,13 +52,13 @@ export function OfferRecommendationCard({
       {status === "available" && data ? (
         <>
           <div className="flex flex-col gap-1">
-            <span className="text-xs uppercase tracking-wide text-neutral-500">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
               {data.recommendedScenarioName}
             </span>
-            <span className="text-3xl font-bold text-neutral-900">
+            <span className="text-3xl font-bold text-foreground">
               {currency.format(data.recommendedPrice)}
             </span>
-            <p className="mt-1 text-sm text-neutral-600">
+            <p className="mt-1 text-sm text-muted-foreground">
               Balances seller momentum with buyer protections. Based on{" "}
               {data.scenarioCount}{" "}
               {data.scenarioCount === 1 ? "scenario" : "scenarios"} modeled for
@@ -67,7 +67,7 @@ export function OfferRecommendationCard({
           </div>
 
           <div className="mt-5 flex items-center gap-3">
-            <span className="text-xs uppercase tracking-wide text-neutral-500">
+            <span className="text-xs uppercase tracking-wide text-muted-foreground">
               Competitiveness
             </span>
             <span
@@ -105,9 +105,9 @@ function OfferEmptyState({
   const label =
     status === "pending" ? "Modeling scenarios" : "Scenarios not ready";
   return (
-    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-neutral-200 bg-neutral-50 p-6 text-center">
+    <div className="flex flex-col gap-2 rounded-2xl border border-dashed border-border bg-muted p-6 text-center">
       <p className="text-sm font-semibold text-neutral-700">{label}</p>
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted-foreground">
         {reason ?? "The offer engine will recommend scenarios once pricing and leverage land."}
       </p>
     </div>

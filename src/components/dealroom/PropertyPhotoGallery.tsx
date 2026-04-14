@@ -12,7 +12,7 @@ function PhotoPlaceholder({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-center rounded-[20px] bg-neutral-100 text-neutral-300",
+        "flex items-center justify-center rounded-[20px] bg-muted text-neutral-300",
         className,
       )}
       aria-hidden="true"
@@ -43,7 +43,7 @@ export function PropertyPhotoGallery({
 
   if (!hero) {
     return (
-      <div className="relative flex aspect-[21/9] w-full flex-col items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-neutral-200 bg-white/60 text-center backdrop-blur-sm">
+      <div className="relative flex aspect-[21/9] w-full flex-col items-center justify-center overflow-hidden rounded-[24px] border border-dashed border-border bg-white/60 text-center backdrop-blur-sm">
         <svg
           className="size-12 text-neutral-300"
           fill="none"
@@ -58,7 +58,7 @@ export function PropertyPhotoGallery({
             d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
           />
         </svg>
-        <p className="mt-4 text-base font-medium text-neutral-600">
+        <p className="mt-4 text-base font-medium text-muted-foreground">
           No photos available for this listing
         </p>
         <p className="mt-1 text-sm text-neutral-400">
@@ -70,7 +70,7 @@ export function PropertyPhotoGallery({
 
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-      <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[24px] bg-neutral-100">
+      <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[24px] bg-muted">
         <Image
           src={hero}
           alt={`Main photo of ${address}`}
@@ -95,7 +95,7 @@ export function PropertyPhotoGallery({
           return (
             <div
               key={idx}
-              className="relative aspect-[16/10] w-full overflow-hidden rounded-[20px] bg-neutral-100"
+              className="relative aspect-[16/10] w-full overflow-hidden rounded-[20px] bg-muted"
             >
               <Image
                 src={url}

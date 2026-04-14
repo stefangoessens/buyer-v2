@@ -91,16 +91,16 @@ function NotFoundView() {
           <span className="inline-block size-1.5 rounded-full bg-primary-400" />
           Property not found
         </div>
-        <h1 className="mt-6 text-3xl font-semibold tracking-[-0.006em] text-neutral-800 lg:text-4xl">
+        <h1 className="mt-6 text-3xl font-semibold tracking-[-0.006em] text-foreground lg:text-4xl">
           We couldn&apos;t find that listing
         </h1>
-        <p className="mt-4 text-lg leading-relaxed text-neutral-500">
+        <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
           The property may have been removed, or the link may be broken. Try
           pasting a fresh Zillow, Redfin, or Realtor.com URL on the home page.
         </p>
         <Link
           href="/"
-          className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary-700 px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-600"
+          className="mt-8 inline-flex items-center gap-2 rounded-full bg-primary-700 px-6 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary"
         >
           <svg
             className="size-4"
@@ -208,7 +208,7 @@ export function PropertyDetailClient({
           <div className="mb-6">
             <Link
               href="/"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 transition-colors hover:text-primary-700"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-primary-700"
             >
               <svg
                 className="size-4"
@@ -237,11 +237,11 @@ export function PropertyDetailClient({
           <div className="mt-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
               {priceDisplay ? (
-                <h1 className="text-4xl font-semibold tracking-[-0.006em] text-neutral-800 sm:text-5xl lg:text-[52px] lg:leading-[1.05]">
+                <h1 className="text-4xl font-semibold tracking-[-0.006em] text-foreground sm:text-5xl lg:text-[52px] lg:leading-[1.05]">
                   {priceDisplay}
                 </h1>
               ) : (
-                <h1 className="text-3xl font-semibold tracking-[-0.006em] text-neutral-800 lg:text-4xl">
+                <h1 className="text-3xl font-semibold tracking-[-0.006em] text-foreground lg:text-4xl">
                   Price unavailable
                 </h1>
               )}
@@ -252,10 +252,10 @@ export function PropertyDetailClient({
             </div>
 
             <div className="lg:text-right">
-              <p className="text-xl font-semibold text-neutral-800">
+              <p className="text-xl font-semibold text-foreground">
                 {line1}
               </p>
-              <p className="mt-1 text-base text-neutral-500">{line2}</p>
+              <p className="mt-1 text-base text-muted-foreground">{line2}</p>
             </div>
           </div>
 
@@ -286,10 +286,10 @@ export function PropertyDetailClient({
               <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">
                 About this home
               </p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[32px] lg:leading-[1.2]">
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-foreground lg:text-[32px] lg:leading-[1.2]">
                 Listing description
               </h2>
-              <div className="mt-6 text-[17px] leading-[1.65] text-neutral-600">
+              <div className="mt-6 text-[17px] leading-[1.65] text-muted-foreground">
                 {descriptionText ? (
                   <>
                     <p className="whitespace-pre-line">{visibleDescription}</p>
@@ -416,10 +416,10 @@ export function PropertyDetailClient({
       </section>
 
       {/* Footer meta */}
-      <section className="w-full bg-neutral-50 py-8">
-        <div className="mx-auto max-w-[1248px] px-6 text-center text-xs text-neutral-500">
+      <section className="w-full bg-muted py-8">
+        <div className="mx-auto max-w-[1248px] px-6 text-center text-xs text-muted-foreground">
           Data from{" "}
-          <span className="font-medium text-neutral-600">{sourceLabel}</span>
+          <span className="font-medium text-muted-foreground">{sourceLabel}</span>
           {" · "}Extracted {formatRelativeTime(updatedAt)}
         </div>
       </section>

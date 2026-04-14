@@ -27,10 +27,10 @@ export function PasteLinkCTA() {
           <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">
             Start a new analysis
           </p>
-          <h2 className="mt-1 text-xl font-semibold text-neutral-900 md:text-2xl">
+          <h2 className="mt-1 text-xl font-semibold text-foreground md:text-2xl">
             Paste any listing link to see pricing, comps, and leverage.
           </h2>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-muted-foreground">
             Drop a Zillow, Redfin, or Realtor.com URL. We&apos;ll create a deal
             room and analyze it in seconds.
           </p>

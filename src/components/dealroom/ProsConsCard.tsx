@@ -46,9 +46,9 @@ export function ProsConsCard({ propertyId }: ProsConsCardProps) {
                 <li key={i} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 text-success-500">✓</span>
                   <div>
-                    <span className="text-neutral-800">{p.text}</span>
+                    <span className="text-foreground">{p.text}</span>
                     {p.citation && (
-                      <span className="ml-1 text-xs text-neutral-500">
+                      <span className="ml-1 text-xs text-muted-foreground">
                         — {p.citation}
                       </span>
                     )}
@@ -56,7 +56,7 @@ export function ProsConsCard({ propertyId }: ProsConsCardProps) {
                 </li>
               ))}
               {data.pros.length === 0 && (
-                <li className="text-sm text-neutral-500">
+                <li className="text-sm text-muted-foreground">
                   No pros surfaced yet
                 </li>
               )}
@@ -71,9 +71,9 @@ export function ProsConsCard({ propertyId }: ProsConsCardProps) {
                 <li key={i} className="flex items-start gap-2 text-sm">
                   <span className="mt-0.5 text-error-500">✗</span>
                   <div>
-                    <span className="text-neutral-800">{c.text}</span>
+                    <span className="text-foreground">{c.text}</span>
                     {c.citation && (
-                      <span className="ml-1 text-xs text-neutral-500">
+                      <span className="ml-1 text-xs text-muted-foreground">
                         — {c.citation}
                       </span>
                     )}
@@ -81,7 +81,7 @@ export function ProsConsCard({ propertyId }: ProsConsCardProps) {
                 </li>
               ))}
               {data.cons.length === 0 && (
-                <li className="text-sm text-neutral-500">
+                <li className="text-sm text-muted-foreground">
                   No concerns surfaced yet
                 </li>
               )}

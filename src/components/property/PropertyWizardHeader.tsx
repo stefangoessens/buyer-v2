@@ -68,8 +68,8 @@ export async function PropertyWizardHeader({
 
   if (!property) {
     return (
-      <header className="rounded-3xl border border-neutral-200 bg-white p-6">
-        <p className="text-sm font-medium text-neutral-500">
+      <header className="rounded-3xl border border-border bg-white p-6">
+        <p className="text-sm font-medium text-muted-foreground">
           Property not found
         </p>
       </header>
@@ -98,9 +98,9 @@ export async function PropertyWizardHeader({
   }
 
   return (
-    <header className="flex flex-col gap-6 rounded-3xl border border-neutral-200 bg-white p-6 lg:flex-row lg:items-center lg:gap-8">
+    <header className="flex flex-col gap-6 rounded-3xl border border-border bg-white p-6 lg:flex-row lg:items-center lg:gap-8">
       {primaryPhoto ? (
-        <div className="relative h-48 w-full overflow-hidden rounded-2xl bg-neutral-100 lg:h-40 lg:w-64 lg:flex-shrink-0">
+        <div className="relative h-48 w-full overflow-hidden rounded-2xl bg-muted lg:h-40 lg:w-64 lg:flex-shrink-0">
           <Image
             src={primaryPhoto}
             alt={line1}
@@ -112,16 +112,16 @@ export async function PropertyWizardHeader({
       ) : (
         <div
           aria-hidden="true"
-          className="h-48 w-full rounded-2xl bg-neutral-100 lg:h-40 lg:w-64 lg:flex-shrink-0"
+          className="h-48 w-full rounded-2xl bg-muted lg:h-40 lg:w-64 lg:flex-shrink-0"
         />
       )}
 
       <div className="flex flex-1 flex-col gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-neutral-800 lg:text-3xl">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
             {line1}
           </h1>
-          <p className="mt-1 text-sm text-neutral-500">{line2}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{line2}</p>
         </div>
 
         {stats.length > 0 && (
@@ -129,12 +129,12 @@ export async function PropertyWizardHeader({
             {stats.map((stat) => (
               <li
                 key={stat.label}
-                className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-700"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-3 py-1 text-xs font-medium text-neutral-700"
               >
-                <span className="font-semibold text-neutral-800">
+                <span className="font-semibold text-foreground">
                   {stat.value}
                 </span>
-                <span className="text-neutral-500">{stat.label}</span>
+                <span className="text-muted-foreground">{stat.label}</span>
               </li>
             ))}
           </ul>

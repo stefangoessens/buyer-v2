@@ -22,8 +22,8 @@ const STATUS_STYLES: Record<PropertyStatus, string> = {
   active: "bg-emerald-50 text-emerald-700 ring-emerald-100",
   pending: "bg-amber-50 text-amber-700 ring-amber-100",
   contingent: "bg-amber-50 text-amber-700 ring-amber-100",
-  sold: "bg-neutral-100 text-neutral-600 ring-neutral-200",
-  withdrawn: "bg-neutral-100 text-neutral-500 ring-neutral-200",
+  sold: "bg-muted text-muted-foreground ring-neutral-200",
+  withdrawn: "bg-muted text-muted-foreground ring-neutral-200",
 };
 
 const STATUS_LABELS: Record<PropertyStatus, string> = {
@@ -94,10 +94,10 @@ export function DealRoomHeader({ property }: DealRoomHeaderProps) {
   const thumb = property?.photoUrls?.[0];
 
   return (
-    <header className="sticky top-0 z-30 border-b border-neutral-200 bg-white/95 backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-border bg-white/95 backdrop-blur">
       <div className="flex h-16 items-center gap-4 px-4 sm:px-6 lg:px-8">
         <div className="flex min-w-0 flex-1 items-center gap-4">
-          <div className="hidden size-10 shrink-0 overflow-hidden rounded-[10px] bg-neutral-100 ring-1 ring-neutral-200 sm:block">
+          <div className="hidden size-10 shrink-0 overflow-hidden rounded-[10px] bg-muted ring-1 ring-neutral-200 sm:block">
             {thumb ? (
               <Image
                 src={thumb}
@@ -125,7 +125,7 @@ export function DealRoomHeader({ property }: DealRoomHeaderProps) {
           </div>
           <div className="min-w-0 flex-1">
             <DealRoomBreadcrumb propertyLabel={line1} />
-            <div className="mt-0.5 flex items-center gap-2 text-[12px] text-neutral-500">
+            <div className="mt-0.5 flex items-center gap-2 text-[12px] text-muted-foreground">
               <span className="truncate" title={full}>
                 {line2}
               </span>

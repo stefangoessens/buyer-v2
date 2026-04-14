@@ -13,14 +13,14 @@ interface AppSidebarProps {
 export function AppSidebar({ buyerName, buyerEmail }: AppSidebarProps) {
   const pathname = usePathname();
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-neutral-200 bg-white md:flex">
-      <div className="flex items-center gap-2 border-b border-neutral-200 px-5 py-4">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-500 text-sm font-semibold text-white">
+    <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-white md:flex">
+      <div className="flex items-center gap-2 border-b border-border px-5 py-4">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-semibold text-white">
           bv
         </div>
         <div>
-          <p className="text-sm font-semibold text-neutral-900">buyer-v2</p>
-          <p className="text-xs text-neutral-500">Your deals home</p>
+          <p className="text-sm font-semibold text-foreground">buyer-v2</p>
+          <p className="text-xs text-muted-foreground">Your deals home</p>
         </div>
       </div>
 
@@ -39,22 +39,22 @@ export function AppSidebar({ buyerName, buyerEmail }: AppSidebarProps) {
                 "flex flex-col gap-0.5 rounded-lg px-3 py-2 text-sm transition-colors",
                 isActive
                   ? "bg-primary-50 text-primary-700"
-                  : "text-neutral-700 hover:bg-neutral-50",
+                  : "text-neutral-700 hover:bg-muted",
               )}
             >
               <span className="font-medium">{item.label}</span>
-              <span className="text-xs text-neutral-500">{item.description}</span>
+              <span className="text-xs text-muted-foreground">{item.description}</span>
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t border-neutral-200 p-4">
-        <p className="text-sm font-medium text-neutral-900">
+      <div className="border-t border-border p-4">
+        <p className="text-sm font-medium text-foreground">
           {buyerName ?? "Signed-in buyer"}
         </p>
         {buyerEmail && (
-          <p className="truncate text-xs text-neutral-500">{buyerEmail}</p>
+          <p className="truncate text-xs text-muted-foreground">{buyerEmail}</p>
         )}
       </div>
     </aside>
@@ -64,7 +64,7 @@ export function AppSidebar({ buyerName, buyerEmail }: AppSidebarProps) {
 export function AppTopNav() {
   const pathname = usePathname();
   return (
-    <nav className="flex gap-2 overflow-x-auto border-b border-neutral-200 bg-white px-4 py-3 md:hidden">
+    <nav className="flex gap-2 overflow-x-auto border-b border-border bg-white px-4 py-3 md:hidden">
       {DASHBOARD_NAV.map((item) => {
         const isActive =
           pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -76,7 +76,7 @@ export function AppTopNav() {
               "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               isActive
                 ? "border-primary-400 bg-primary-50 text-primary-700"
-                : "border-neutral-200 bg-white text-neutral-600",
+                : "border-border bg-white text-muted-foreground",
             )}
           >
             {item.label}

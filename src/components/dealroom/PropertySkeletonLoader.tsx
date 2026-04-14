@@ -28,7 +28,7 @@ export function PropertySkeletonLoader() {
         {[0, 1, 2, 3, 4].map((i) => (
           <div
             key={i}
-            className="h-[88px] animate-pulse rounded-[20px] bg-neutral-100"
+            className="h-[88px] animate-pulse rounded-[20px] bg-muted"
             style={{ animationDelay: `${i * 60}ms` }}
           />
         ))}
@@ -36,12 +36,12 @@ export function PropertySkeletonLoader() {
 
       <div className="mt-10 space-y-3">
         <div className="h-5 w-40 animate-pulse rounded-full bg-neutral-200" />
-        <div className="h-4 w-full animate-pulse rounded-full bg-neutral-100" />
-        <div className="h-4 w-11/12 animate-pulse rounded-full bg-neutral-100" />
-        <div className="h-4 w-9/12 animate-pulse rounded-full bg-neutral-100" />
+        <div className="h-4 w-full animate-pulse rounded-full bg-muted" />
+        <div className="h-4 w-11/12 animate-pulse rounded-full bg-muted" />
+        <div className="h-4 w-9/12 animate-pulse rounded-full bg-muted" />
       </div>
 
-      <div className="mt-12 h-[220px] w-full animate-pulse rounded-[24px] bg-neutral-100" />
+      <div className="mt-12 h-[220px] w-full animate-pulse rounded-[24px] bg-muted" />
     </div>
   );
 }

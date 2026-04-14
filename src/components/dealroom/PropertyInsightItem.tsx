@@ -194,16 +194,16 @@ export function PropertyInsightItem({ insight }: PropertyInsightItemProps) {
             {categoryLabel}
           </span>
         </div>
-        <h3 className="text-[17px] font-semibold leading-[1.3] text-neutral-800 md:text-lg">
+        <h3 className="text-[17px] font-semibold leading-[1.3] text-foreground md:text-lg">
           {insight.headline}
         </h3>
-        <p className="line-clamp-2 text-[15px] leading-[1.55] text-neutral-600 md:line-clamp-none">
+        <p className="line-clamp-2 text-[15px] leading-[1.55] text-muted-foreground md:line-clamp-none">
           {insight.body}
         </p>
       </div>
 
       <div className="hidden shrink-0 md:block">
-        <div className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-neutral-600">
+        <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
           <span className="inline-block size-1.5 rounded-full bg-neutral-400" />
           {confidencePercent}% confidence
         </div>

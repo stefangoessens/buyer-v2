@@ -46,8 +46,8 @@ export function KeyDetailsTable(props: KeyDetailsTableProps) {
               key={k}
               className="flex justify-between border-b border-neutral-100 pb-2 last:border-0"
             >
-              <dt className="text-neutral-500">{k}</dt>
-              <dd className="font-medium text-neutral-800">{v}</dd>
+              <dt className="text-muted-foreground">{k}</dt>
+              <dd className="font-medium text-foreground">{v}</dd>
             </div>
           ))}
         </dl>

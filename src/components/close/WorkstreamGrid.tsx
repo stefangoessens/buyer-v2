@@ -13,7 +13,7 @@ export function WorkstreamGrid({ groups }: WorkstreamGridProps) {
   if (groups.length === 0) {
     return (
       <Card>
-        <CardContent className="py-10 text-center text-sm text-neutral-500">
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">
           No milestones yet. They will appear here once your contract is
           extracted.
         </CardContent>
@@ -26,7 +26,7 @@ export function WorkstreamGrid({ groups }: WorkstreamGridProps) {
         <Card key={group.workstream}>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold text-neutral-900">
+              <CardTitle className="text-base font-semibold text-foreground">
                 {WORKSTREAM_LABELS[group.workstream]}
               </CardTitle>
               <div className="flex items-center gap-1.5">
@@ -40,7 +40,7 @@ export function WorkstreamGrid({ groups }: WorkstreamGridProps) {
                 )}
                 <Badge
                   variant="outline"
-                  className="border-neutral-200 bg-neutral-50 text-neutral-600"
+                  className="border-border bg-muted text-muted-foreground"
                 >
                   {group.completedCount}/{group.milestones.length} done
                 </Badge>

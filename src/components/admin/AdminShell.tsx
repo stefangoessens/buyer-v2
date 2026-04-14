@@ -51,7 +51,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   // title on internal routes.
   if (!convex) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-neutral-50 px-6">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-muted px-6">
         <h1 className="sr-only">Broker Console</h1>
         <ShellUnavailableCard />
       </div>
@@ -79,7 +79,7 @@ function AdminShellLive({ children }: { children: ReactNode }) {
 
   if (session === null) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-neutral-50 px-6">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-muted px-6">
         <h1 className="sr-only">Broker Console</h1>
         <AccessDeniedCard />
       </div>
@@ -91,7 +91,7 @@ function AdminShellLive({ children }: { children: ReactNode }) {
   const navItems = session.navItems as unknown as NavItem[];
 
   return (
-    <div className="flex min-h-screen bg-neutral-50 text-neutral-900">
+    <div className="flex min-h-screen bg-muted text-foreground">
       <h1 className="sr-only">Broker Console</h1>
       <AdminSidebar
         navItems={navItems}

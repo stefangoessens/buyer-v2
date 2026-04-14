@@ -32,17 +32,17 @@ export function AdminSidebar({
   return (
     <aside
       aria-label="Internal console navigation"
-      className="hidden w-64 shrink-0 border-r border-neutral-200 bg-white md:flex md:flex-col"
+      className="hidden w-64 shrink-0 border-r border-border bg-white md:flex md:flex-col"
     >
-      <div className="flex h-16 items-center gap-3 border-b border-neutral-200 px-6">
+      <div className="flex h-16 items-center gap-3 border-b border-border px-6">
         <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-sm">
           <span className="text-sm font-semibold">K</span>
         </div>
         <div className="flex flex-col leading-tight">
-          <span className="text-sm font-semibold text-neutral-900">
+          <span className="text-sm font-semibold text-foreground">
             Kindservices
           </span>
-          <span className="text-xs text-neutral-500">Internal console</span>
+          <span className="text-xs text-muted-foreground">Internal console</span>
         </div>
       </div>
       <nav
@@ -68,13 +68,13 @@ export function AdminSidebar({
                         "group relative flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors",
                         active
                           ? "bg-primary-50 font-medium text-primary-700"
-                          : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
                       )}
                     >
                       {active ? (
                         <span
                           aria-hidden="true"
-                          className="absolute left-0 top-1.5 h-[calc(100%-0.75rem)] w-0.5 rounded-r bg-primary-500"
+                          className="absolute left-0 top-1.5 h-[calc(100%-0.75rem)] w-0.5 rounded-r bg-primary"
                         />
                       ) : null}
                       <span>{item.label}</span>
@@ -99,10 +99,10 @@ export function AdminSidebar({
           </div>
         ))}
       </nav>
-      <div className="border-t border-neutral-200 px-6 py-4 text-xs text-neutral-500">
+      <div className="border-t border-border px-6 py-4 text-xs text-muted-foreground">
         <div className="flex items-center justify-between">
           <span>Role</span>
-          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-neutral-700">
+          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium uppercase tracking-wider text-neutral-700">
             {roleLabel(role)}
           </span>
         </div>

@@ -113,7 +113,7 @@ export function PriceSpectrumBar({
             <span
               key={`label-${anchor.key}`}
               style={{ left: `${pct(anchor.value)}%` }}
-              className="absolute -translate-x-1/2 text-xs text-neutral-500"
+              className="absolute -translate-x-1/2 text-xs text-muted-foreground"
             >
               {anchor.label}
             </span>
@@ -161,7 +161,7 @@ export function PriceSpectrumBar({
               <span className="font-semibold text-primary-700">
                 {currency.format(strongOpener)}
               </span>
-              <span className="text-neutral-500">Strong opener</span>
+              <span className="text-muted-foreground">Strong opener</span>
             </div>
           </div>
         ) : null}

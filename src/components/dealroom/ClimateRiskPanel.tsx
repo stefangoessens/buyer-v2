@@ -122,7 +122,7 @@ export function ClimateRiskPanel({
       </CardHeader>
       <CardContent>
         {isEmpty ? (
-          <div className="rounded-2xl border border-dashed border-neutral-200 bg-neutral-50/60 p-6 text-center">
+          <div className="rounded-2xl border border-dashed border-border bg-muted/60 p-6 text-center">
             <p className="text-sm text-muted-foreground">
               Coming soon — flood/heat/storms data lands with the climate
               crawler.
@@ -132,7 +132,7 @@ export function ClimateRiskPanel({
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {visibleSections.map((section) => (
               <div key={section.key}>
-                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-neutral-500">
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                   {section.label}
                 </h3>
                 <ul className="mt-2 list-disc list-inside text-sm text-neutral-700 marker:text-neutral-300">

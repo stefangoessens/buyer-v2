@@ -12,13 +12,13 @@ export function ShellUnavailableCard() {
         <CardTitle>Console backend unavailable</CardTitle>
         <CardDescription>
           The internal console could not reach the Convex backend. Check that
-          <code className="mx-1 rounded bg-neutral-100 px-1 py-0.5 text-xs">
+          <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">
             NEXT_PUBLIC_CONVEX_URL
           </code>
           is set for this deployment.
         </CardDescription>
       </CardHeader>
-      <CardContent className="text-sm text-neutral-600">
+      <CardContent className="text-sm text-muted-foreground">
         If you are a Kindservices broker or admin, ask the engineering team to
         re-run the platform bootstrap and retry.
       </CardContent>

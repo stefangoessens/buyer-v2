@@ -42,8 +42,8 @@ export function PropertyWizardStepper({
   const activeId = resolveActiveStep(pathname);
 
   return (
-    <Breadcrumb className="rounded-3xl border border-neutral-200 bg-white p-4">
-      <BreadcrumbList className="text-neutral-500">
+    <Breadcrumb className="rounded-3xl border border-border bg-white p-4">
+      <BreadcrumbList className="text-muted-foreground">
         {STEPS.map((step, idx) => {
           const isActive = step.id === activeId;
           const href = `/property/${propertyId}/${step.id}`;
@@ -58,7 +58,7 @@ export function PropertyWizardStepper({
                 ) : (
                   <BreadcrumbLink
                     asChild
-                    className="text-neutral-500 hover:text-primary-700"
+                    className="text-muted-foreground hover:text-primary-700"
                   >
                     <Link href={href}>{step.label}</Link>
                   </BreadcrumbLink>

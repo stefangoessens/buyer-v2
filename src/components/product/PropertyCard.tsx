@@ -58,13 +58,13 @@ export function PropertyCard({
       </div>
       <CardContent className="space-y-2 p-4">
         <div>
-          <p className="truncate font-semibold text-neutral-900">{address}</p>
-          <p className="text-sm text-neutral-500">{city}</p>
+          <p className="truncate font-semibold text-foreground">{address}</p>
+          <p className="text-sm text-muted-foreground">{city}</p>
         </div>
         <p className="text-xl font-bold text-primary-700">
           {formatPrice(price)}
         </p>
-        <div className="flex items-center gap-2 text-sm text-neutral-600">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span>{beds} bd</span>
           <span className="text-neutral-300">|</span>
           <span>{baths} ba</span>

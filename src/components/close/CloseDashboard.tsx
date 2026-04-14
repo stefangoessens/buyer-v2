@@ -24,7 +24,7 @@ export function CloseDashboard({ dealRoomId }: CloseDashboardProps) {
   if (data === undefined) {
     return (
       <Card>
-        <CardContent className="py-12 text-center text-sm text-neutral-500">
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">
           Loading close dashboard…
         </CardContent>
       </Card>
@@ -34,7 +34,7 @@ export function CloseDashboard({ dealRoomId }: CloseDashboardProps) {
   if (data === null) {
     return (
       <Card>
-        <CardContent className="py-12 text-center text-sm text-neutral-500">
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">
           Close dashboard is not available for this deal room.
         </CardContent>
       </Card>
@@ -46,13 +46,13 @@ export function CloseDashboard({ dealRoomId }: CloseDashboardProps) {
   return (
     <div className="flex flex-col gap-6">
       <header>
-        <p className="text-xs uppercase tracking-wide text-neutral-500">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
           Close dashboard
         </p>
-        <h1 className="mt-1 text-2xl font-semibold text-neutral-900">
+        <h1 className="mt-1 text-2xl font-semibold text-foreground">
           {data.propertyAddress}
         </h1>
-        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-neutral-500">
+        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
           <span>
             {data.completedMilestones} of {data.totalMilestones} milestones
             complete
@@ -110,7 +110,7 @@ export function CloseDashboard({ dealRoomId }: CloseDashboardProps) {
             <MilestoneCard key={m.id} milestone={m} />
           ))}
           {data.onTrack.length > 5 && (
-            <p className="text-center text-xs text-neutral-500">
+            <p className="text-center text-xs text-muted-foreground">
               +{data.onTrack.length - 5} more
             </p>
           )}
@@ -120,7 +120,7 @@ export function CloseDashboard({ dealRoomId }: CloseDashboardProps) {
       <WeeklyPlanPanel plan={data.weeklyPlan} />
 
       <section>
-        <h2 className="mb-4 text-lg font-semibold text-neutral-900">
+        <h2 className="mb-4 text-lg font-semibold text-foreground">
           By workstream
         </h2>
         <WorkstreamGrid groups={data.byWorkstream} />

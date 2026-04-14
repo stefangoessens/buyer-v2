@@ -36,16 +36,16 @@ function ComingSoonCard({ tabId }: { tabId: DealRoomTabId }) {
   const label = TAB_LABELS[tabId];
   const tagline = TAB_TAGLINES[tabId];
   return (
-    <div className="rounded-[20px] border border-neutral-200 bg-white p-10">
+    <div className="rounded-[20px] border border-border bg-white p-10">
       <div className="mx-auto max-w-md text-center">
         <span className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-primary-700 ring-1 ring-primary-100">
           Coming soon
         </span>
-        <h2 className="mt-5 text-[22px] font-semibold tracking-[-0.006em] text-neutral-800">
+        <h2 className="mt-5 text-[22px] font-semibold tracking-[-0.006em] text-foreground">
           {label}
         </h2>
         {tagline ? (
-          <p className="mt-3 text-[14px] leading-[1.55] text-neutral-500">
+          <p className="mt-3 text-[14px] leading-[1.55] text-muted-foreground">
             {tagline}
           </p>
         ) : null}
@@ -61,9 +61,9 @@ function ComingSoonCard({ tabId }: { tabId: DealRoomTabId }) {
 function ShellSkeleton() {
   return (
     <div className="flex min-h-screen flex-col">
-      <div className="h-16 border-b border-neutral-200 bg-white/95" />
+      <div className="h-16 border-b border-border bg-white/95" />
       <div className="flex flex-1">
-        <div className="sticky top-0 hidden h-screen w-[248px] shrink-0 border-r border-neutral-200 bg-neutral-50 lg:block">
+        <div className="sticky top-0 hidden h-screen w-[248px] shrink-0 border-r border-border bg-muted lg:block">
           <div className="px-5 pt-7">
             <div className="h-3 w-24 animate-pulse rounded bg-neutral-200" />
             <div className="mt-3 h-3 w-40 animate-pulse rounded bg-neutral-200/70" />
@@ -80,10 +80,10 @@ function ShellSkeleton() {
         <div className="flex-1 px-4 py-8 sm:px-6 lg:px-10">
           <div className="mx-auto max-w-5xl space-y-4">
             <div className="h-6 w-48 animate-pulse rounded bg-neutral-200" />
-            <div className="h-72 animate-pulse rounded-[20px] bg-neutral-100" />
+            <div className="h-72 animate-pulse rounded-[20px] bg-muted" />
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="h-40 animate-pulse rounded-[16px] bg-neutral-100" />
-              <div className="h-40 animate-pulse rounded-[16px] bg-neutral-100" />
+              <div className="h-40 animate-pulse rounded-[16px] bg-muted" />
+              <div className="h-40 animate-pulse rounded-[16px] bg-muted" />
             </div>
           </div>
         </div>
@@ -94,9 +94,9 @@ function ShellSkeleton() {
 
 function NotFoundShell() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4 py-16">
-      <div className="w-full max-w-md rounded-[20px] border border-neutral-200 bg-white p-8 text-center shadow-sm">
-        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-neutral-100 text-neutral-400">
+    <div className="flex min-h-screen items-center justify-center bg-muted px-4 py-16">
+      <div className="w-full max-w-md rounded-[20px] border border-border bg-white p-8 text-center shadow-sm">
+        <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-neutral-400">
           <svg
             className="size-6"
             viewBox="0 0 24 24"
@@ -112,10 +112,10 @@ function NotFoundShell() {
             <path d="M12 16h.01" />
           </svg>
         </div>
-        <h1 className="mt-5 text-[20px] font-semibold tracking-[-0.006em] text-neutral-800">
+        <h1 className="mt-5 text-[20px] font-semibold tracking-[-0.006em] text-foreground">
           Deal room not found
         </h1>
-        <p className="mt-2 text-[14px] leading-[1.55] text-neutral-500">
+        <p className="mt-2 text-[14px] leading-[1.55] text-muted-foreground">
           We couldn&apos;t load this deal room. It may have been archived, or you
           may not have access.
         </p>

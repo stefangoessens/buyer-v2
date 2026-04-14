@@ -27,7 +27,7 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
   if (cockpit.loading) {
     return (
       <Card>
-        <CardContent className="py-12 text-center text-sm text-neutral-500">
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">
           Loading offer cockpit…
         </CardContent>
       </Card>
@@ -37,7 +37,7 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
   if (!cockpit.data) {
     return (
       <Card>
-        <CardContent className="py-12 text-center text-sm text-neutral-500">
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">
           This deal room is not available.
         </CardContent>
       </Card>
@@ -56,13 +56,13 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
       <div className="flex flex-col gap-6">
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-neutral-500">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Offer cockpit
             </p>
-            <h1 className="mt-1 text-2xl font-semibold text-neutral-900">
+            <h1 className="mt-1 text-2xl font-semibold text-foreground">
               {data.propertyAddress}
             </h1>
-            <p className="mt-1 text-sm text-neutral-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               Listed at {currency.format(data.listPrice)}
             </p>
           </div>
@@ -93,7 +93,7 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
           />
         ) : (
           <Card>
-            <CardContent className="py-8 text-center text-sm text-neutral-500">
+            <CardContent className="py-8 text-center text-sm text-muted-foreground">
               Offer scenarios have not been generated yet. Your broker will run the
               offer engine shortly.
             </CardContent>
@@ -111,8 +111,8 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
 
         <OfferValidationSummary validation={cockpit.validation} />
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="text-sm text-neutral-500">
+        <footer className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-white p-4 shadow-sm">
+          <div className="text-sm text-muted-foreground">
             {cockpit.status === "pending_review" &&
               "This draft is with your broker. You'll be notified once it's reviewed."}
             {cockpit.status === "approved" &&

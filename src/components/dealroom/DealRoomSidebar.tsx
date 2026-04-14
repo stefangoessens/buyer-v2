@@ -175,12 +175,12 @@ export function DealRoomSidebar({ activeTab, onSelect }: DealRoomSidebarProps) {
   return (
     <>
       {/* Desktop: vertical rail */}
-      <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 border-r border-neutral-200 bg-neutral-50 lg:flex lg:flex-col">
+      <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 border-r border-border bg-muted lg:flex lg:flex-col">
         <div className="px-5 pt-7 pb-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-400">
             Your deal room
           </p>
-          <p className="mt-1 text-[13px] leading-snug text-neutral-500">
+          <p className="mt-1 text-[13px] leading-snug text-muted-foreground">
             Everything our AI engines and brokers find on this property.
           </p>
         </div>
@@ -198,7 +198,7 @@ export function DealRoomSidebar({ activeTab, onSelect }: DealRoomSidebarProps) {
                       "group flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left text-[14px] font-medium transition-colors",
                       isActive
                         ? "bg-primary-50 text-primary-700 ring-1 ring-primary-100"
-                        : "text-neutral-600 hover:bg-white hover:text-neutral-800",
+                        : "text-muted-foreground hover:bg-white hover:text-foreground",
                     )}
                   >
                     <span
@@ -206,14 +206,14 @@ export function DealRoomSidebar({ activeTab, onSelect }: DealRoomSidebarProps) {
                         "transition-colors",
                         isActive
                           ? "text-primary-700"
-                          : "text-neutral-400 group-hover:text-neutral-600",
+                          : "text-neutral-400 group-hover:text-muted-foreground",
                       )}
                     >
                       {tab.icon}
                     </span>
                     <span className="flex-1">{tab.label}</span>
                     {!tab.ready ? (
-                      <span className="rounded-full bg-neutral-200/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+                      <span className="rounded-full bg-neutral-200/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                         Soon
                       </span>
                     ) : null}
@@ -226,7 +226,7 @@ export function DealRoomSidebar({ activeTab, onSelect }: DealRoomSidebarProps) {
       </aside>
 
       {/* Mobile: horizontal scrollable pills */}
-      <div className="sticky top-[64px] z-20 border-b border-neutral-200 bg-white/95 backdrop-blur lg:hidden">
+      <div className="sticky top-[64px] z-20 border-b border-border bg-white/95 backdrop-blur lg:hidden">
         <nav
           className="flex gap-2 overflow-x-auto px-4 py-3"
           aria-label="Deal room sections"
@@ -243,7 +243,7 @@ export function DealRoomSidebar({ activeTab, onSelect }: DealRoomSidebarProps) {
                   "inline-flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
                   isActive
                     ? "border-primary-200 bg-primary-50 text-primary-700"
-                    : "border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300",
+                    : "border-border bg-white text-muted-foreground hover:border-neutral-300",
                 )}
               >
                 <span className={isActive ? "text-primary-700" : "text-neutral-400"}>

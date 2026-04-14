@@ -110,8 +110,8 @@ export function OfferTermsEditor({
   return (
     <Card className={disabled ? "opacity-60" : undefined}>
       <CardHeader>
-        <CardTitle className="text-lg font-semibold text-neutral-900">Offer terms</CardTitle>
-        <CardDescription className="text-sm text-neutral-500">
+        <CardTitle className="text-lg font-semibold text-foreground">Offer terms</CardTitle>
+        <CardDescription className="text-sm text-muted-foreground">
           Fine-tune the scenario you picked. Broker review happens before anything goes to the seller.
         </CardDescription>
       </CardHeader>
@@ -134,7 +134,7 @@ export function OfferTermsEditor({
             onChange={handleNumberChange("offerPrice")}
             className="mt-1.5"
           />
-          <p className="mt-1 text-xs text-neutral-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             {formatPriceVsList(terms.offerPrice, listPrice)}
             {budgetHint ? ` · ${budgetHint}` : ""}
           </p>
@@ -159,7 +159,7 @@ export function OfferTermsEditor({
             onChange={handleNumberChange("earnestMoney")}
             className="mt-1.5"
           />
-          <p className="mt-1 text-xs text-neutral-500">{earnestPct}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{earnestPct}</p>
           <FieldMessage validation={validation} field="earnestMoney" />
         </div>
 
@@ -182,7 +182,7 @@ export function OfferTermsEditor({
             onChange={handleNumberChange("closingDays")}
             className="mt-1.5"
           />
-          <p className="mt-1 text-xs text-neutral-500">Closing typically 30-45 days.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Closing typically 30-45 days.</p>
           <FieldMessage validation={validation} field="closingDays" />
         </div>
 
@@ -204,7 +204,7 @@ export function OfferTermsEditor({
             onChange={handleNumberChange("buyerCredits")}
             className="mt-1.5"
           />
-          <p className="mt-1 text-xs text-neutral-500">Money you agree to pay the seller at close.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Money you agree to pay the seller at close.</p>
           <FieldMessage validation={validation} field="buyerCredits" />
         </div>
 
@@ -226,7 +226,7 @@ export function OfferTermsEditor({
             onChange={handleNumberChange("sellerCredits")}
             className="mt-1.5"
           />
-          <p className="mt-1 text-xs text-neutral-500">Concessions you want the seller to pay.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Concessions you want the seller to pay.</p>
           <FieldMessage validation={validation} field="sellerCredits" />
         </div>
 
@@ -260,7 +260,7 @@ export function OfferTermsEditor({
                     "inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed " +
                     (selected
                       ? "border-primary-400 bg-primary-50 text-primary-700"
-                      : "border-neutral-200 text-neutral-600 hover:border-neutral-300")
+                      : "border-border text-muted-foreground hover:border-neutral-300")
                   }
                 >
                   {contingency.label}
@@ -268,7 +268,7 @@ export function OfferTermsEditor({
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-neutral-500">{contingenciesHelper}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{contingenciesHelper}</p>
           <FieldMessage validation={validation} field="contingencies" />
         </div>
       </CardContent>

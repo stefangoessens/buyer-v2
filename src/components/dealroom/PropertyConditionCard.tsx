@@ -56,8 +56,8 @@ function evaluateSystem(
 
 const TONE_CLASSES: Record<Tone, { container: string; chip: string }> = {
   neutral: {
-    container: "bg-neutral-50 ring-1 ring-inset ring-neutral-200",
-    chip: "bg-neutral-100 text-neutral-600",
+    container: "bg-muted ring-1 ring-inset ring-neutral-200",
+    chip: "bg-muted text-muted-foreground",
   },
   ok: {
     container: "bg-success-50 ring-1 ring-inset ring-success-100",
@@ -85,7 +85,7 @@ function SystemTile({ label, year, status }: SystemTileProps) {
 
   return (
     <div className={`flex flex-col gap-2 rounded-2xl p-4 ${tone.container}`}>
-      <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
       <span className="font-heading text-lg font-semibold tabular-nums text-foreground">
@@ -121,7 +121,7 @@ export function PropertyConditionCard({
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Year built
           </span>
           <span className="font-heading text-3xl font-semibold tabular-nums text-foreground">

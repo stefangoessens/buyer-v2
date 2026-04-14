@@ -19,18 +19,18 @@ export function AdminPageHeader({
   actions,
 }: AdminPageHeaderProps) {
   return (
-    <div className="mb-8 flex flex-col gap-4 border-b border-neutral-200 pb-6 md:flex-row md:items-end md:justify-between">
+    <div className="mb-8 flex flex-col gap-4 border-b border-border pb-6 md:flex-row md:items-end md:justify-between">
       <div className="min-w-0">
         {eyebrow ? (
           <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-primary-600">
             {eyebrow}
           </div>
         ) : null}
-        <h2 className="text-2xl font-semibold text-neutral-900 md:text-3xl">
+        <h2 className="text-2xl font-semibold text-foreground md:text-3xl">
           {title}
         </h2>
         {description ? (
-          <p className="mt-2 max-w-2xl text-sm text-neutral-600">{description}</p>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p>
         ) : null}
       </div>
       {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
