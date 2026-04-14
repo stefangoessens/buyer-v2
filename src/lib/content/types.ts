@@ -127,6 +127,12 @@ export interface HowItWorksStep {
   description: string;
   imageSrc: string;
   imageAlt?: string;
+  /**
+   * Optional "behind the scenes" detail rendered as a secondary,
+   * de-emphasised line — what's happening technically while the
+   * customer-facing copy stays plain-language.
+   */
+  technicalDetail?: string;
 }
 
 /**
