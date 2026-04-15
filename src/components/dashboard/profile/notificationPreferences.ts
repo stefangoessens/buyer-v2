@@ -380,6 +380,13 @@ function deriveSmsGlobalSuppressed(value: MaybeRecord): boolean {
     return true;
   }
 
+  if (isRecord(value.effective) && isRecord(value.effective.sms)) {
+    const suppressed = value.effective.sms.isGloballySuppressed;
+    if (suppressed === true) {
+      return true;
+    }
+  }
+
   if (isRecord(value.smsConsent)) {
     const status = value.smsConsent.status;
     if (status === "opted_out" || status === "stopped" || status === "blocked") {
@@ -524,8 +531,6 @@ export function serializeMutationPayload(value: NotificationPreferenceView) {
       timezone: value.quietHours.timeZone,
       startMinutes: clockToMinutes(value.quietHours.start),
       endMinutes: clockToMinutes(value.quietHours.end),
-      suppressSms: value.quietHours.suppressSms,
-      suppressPush: value.quietHours.suppressPush,
     },
     source: "preference_center" as const,
   };
