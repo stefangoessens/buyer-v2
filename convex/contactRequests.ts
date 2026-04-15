@@ -60,7 +60,7 @@ async function queueBrokerInboxEmail(args: {
   providerMessageId?: string;
   queuedAt?: string;
 }> {
-  const driver = selectDriver();
+  let provider: "noop" | "resend" = "noop";
   const message = composeContactBrokerEmail({
     requestId: args.requestId,
     name: args.name,
@@ -74,6 +74,8 @@ async function queueBrokerInboxEmail(args: {
   });
 
   try {
+    const driver = selectDriver();
+    provider = driver.name;
     const { providerMessageId } = await driver.send({
       to: args.triageEmail,
       from: args.triageEmail,
@@ -90,17 +92,17 @@ async function queueBrokerInboxEmail(args: {
     });
 
     return {
-      provider: driver.name,
+      provider,
       providerMessageId,
       queuedAt: new Date().toISOString(),
     };
   } catch (error) {
     console.error("[contactRequests] broker inbox email failed", {
       contactRequestId: args.requestId,
-      provider: driver.name,
+      provider,
       errorName: error instanceof Error ? error.name : typeof error,
     });
-    return { provider: driver.name };
+    return { provider };
   }
 }
 
@@ -116,13 +118,15 @@ async function queueBuyerAutoReply(args: {
   providerMessageId?: string;
   queuedAt?: string;
 }> {
-  const driver = selectDriver();
+  let provider: "noop" | "resend" = "noop";
   const message = composeContactBuyerEmail({
     name: args.name,
     listingLink: args.listingLink,
   });
 
   try {
+    const driver = selectDriver();
+    provider = driver.name;
     const { providerMessageId } = await driver.send({
       to: args.email,
       from: args.triageEmail,
@@ -139,17 +143,17 @@ async function queueBuyerAutoReply(args: {
     });
 
     return {
-      provider: driver.name,
+      provider,
       providerMessageId,
       queuedAt: new Date().toISOString(),
     };
   } catch (error) {
     console.error("[contactRequests] buyer auto-reply failed", {
       contactRequestId: args.requestId,
-      provider: driver.name,
+      provider,
       errorName: error instanceof Error ? error.name : typeof error,
     });
-    return { provider: driver.name };
+    return { provider };
   }
 }
 

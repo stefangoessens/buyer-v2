@@ -69,13 +69,15 @@ async function queueWaitlistConfirmation(args: {
   providerMessageId?: string;
   queuedAt?: string;
 }> {
-  const driver = selectDriver();
+  let provider: "noop" | "resend" = "noop";
   const message = composeWaitlistConfirmationEmail({
     stateCode: args.stateCode,
     zip: args.zip,
   });
 
   try {
+    const driver = selectDriver();
+    provider = driver.name;
     const { providerMessageId } = await driver.send({
       to: args.email,
       from: args.supportEmail,
@@ -92,17 +94,17 @@ async function queueWaitlistConfirmation(args: {
     });
 
     return {
-      provider: driver.name,
+      provider,
       providerMessageId,
       queuedAt: new Date().toISOString(),
     };
   } catch (error) {
     console.error("[waitlistSignups] confirmation email failed", {
       waitlistSignupId: args.signupId,
-      provider: driver.name,
+      provider,
       errorName: error instanceof Error ? error.name : typeof error,
     });
-    return { provider: driver.name };
+    return { provider };
   }
 }
 
