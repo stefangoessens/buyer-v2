@@ -276,6 +276,27 @@ describe("track() — engagement category", () => {
       track("pricing_faq_viewed", { source: "marketing_home" }),
     ).not.toThrow();
   });
+
+  it("accepts contact_form_submitted with a PII-safe payload", () => {
+    expect(() =>
+      track("contact_form_submitted", {
+        sourcePath: "/contact",
+        listingLinkPresent: true,
+        messageLengthBucket: "medium",
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("track() — communication category", () => {
+  it("accepts welcome_email_sent with user id and template key", () => {
+    expect(() =>
+      track("welcome_email_sent", {
+        userId: "user_1",
+        templateKey: "account_welcome",
+      }),
+    ).not.toThrow();
+  });
 });
 
 describe("track() — system category", () => {
@@ -527,8 +548,25 @@ describe("listEventsByCategory()", () => {
     expect(events).toContain("guide_page_viewed");
     expect(events).toContain("guide_cta_clicked");
     expect(events).toContain("our_process_page_viewed");
-    // Total: 2 legacy + 3 HIW + 4 comparison + 9 FAQ + 6 FL strip/waitlist + 7 stories + 9 rebate slider + 3 guides/our-process = 43
-    expect(events).toHaveLength(43);
+    // KIN-1096: contact form added 1 engagement event.
+    expect(events).toContain("contact_form_submitted");
+    // Total: 2 legacy + 3 HIW + 4 comparison + 9 FAQ + 6 FL strip/waitlist + 7 stories + 9 rebate slider + 3 guides/our-process + 1 contact = 44
+    expect(events).toHaveLength(44);
+  });
+
+  it("returns all communication events", () => {
+    const events = listEventsByCategory("communication");
+    expect(events).toContain("message_sent");
+    expect(events).toContain("message_delivered");
+    expect(events).toContain("message_opened");
+    expect(events).toContain("message_clicked");
+    expect(events).toContain("disclosure_request_card_viewed");
+    expect(events).toContain("disclosure_request_preview_opened");
+    expect(events).toContain("disclosure_request_sent");
+    expect(events).toContain("disclosure_request_reply_received");
+    expect(events).toContain("disclosure_request_follow_up_scheduled");
+    expect(events).toContain("welcome_email_sent");
+    expect(events).toHaveLength(10);
   });
 });
 
