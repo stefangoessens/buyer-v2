@@ -1472,34 +1472,6 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_status", ["status"]),
 
-  // ═══ CONTACT REQUESTS (KIN-1096) ═══
-  //
-  // Durable public contact-intake records. The marketing page writes
-  // these rows first, then layers broker triage mail + buyer auto-reply
-  // on top via `convex/mailRail.ts`. The stored row is the source of
-  // truth for ops and audit; email delivery is downstream.
-  contactRequests: defineTable({
-    name: v.string(),
-    email: v.string(),
-    message: v.string(),
-    listingLink: v.optional(v.string()),
-    sourcePath: v.string(),
-    throttleKey: v.string(),
-    attributionSessionId: v.optional(v.string()),
-    userAgent: v.optional(v.string()),
-    brokerEmailSentAt: v.optional(v.string()),
-    brokerEmailProviderMessageId: v.optional(v.string()),
-    brokerEmailTemplateKey: v.optional(v.string()),
-    buyerEmailSentAt: v.optional(v.string()),
-    buyerEmailProviderMessageId: v.optional(v.string()),
-    buyerEmailTemplateKey: v.optional(v.string()),
-    createdAt: v.string(),
-    updatedAt: v.string(),
-  })
-    .index("by_throttleKey", ["throttleKey"])
-    .index("by_email", ["email"])
-    .index("by_createdAt", ["createdAt"]),
-
   // waitlistSignups (KIN-1088) — non-Florida demand capture for the public
   // marketing site. Distinct from `leadAttribution`: that table tracks
   // *attribution* for visitors who eventually register, while this one

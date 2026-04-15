@@ -208,11 +208,13 @@ struct PreferencesView: View {
 
     @ViewBuilder
     private func quietHoursSection(preferences: MessagePreferences) -> some View {
+        let quietHours = preferences.quietHours ?? QuietHours.suggestedDefault
+
         Section {
             Toggle(
                 "Hold push and SMS overnight",
                 isOn: Binding(
-                    get: { preferences.quietHours.enabled },
+                    get: { preferences.quietHours != nil },
                     set: { enabled in
                         Task { await service.setQuietHoursEnabled(enabled) }
                     }
@@ -220,13 +222,13 @@ struct PreferencesView: View {
             )
             .tint(Color(hex: 0x1B2B65))
 
-            if preferences.quietHours.enabled {
+            if preferences.quietHours != nil {
                 DatePicker(
                     "Start",
                     selection: Binding(
-                        get: { timeDate(from: preferences.quietHours.startMinutes) },
+                        get: { timeDate(from: quietHours.start) },
                         set: { date in
-                            Task { await service.setQuietHours(startMinutes: minutes(from: date)) }
+                            Task { await service.setQuietHours(start: timeString(from: date)) }
                         }
                     ),
                     displayedComponents: .hourAndMinute
@@ -235,9 +237,9 @@ struct PreferencesView: View {
                 DatePicker(
                     "End",
                     selection: Binding(
-                        get: { timeDate(from: preferences.quietHours.endMinutes) },
+                        get: { timeDate(from: quietHours.end) },
                         set: { date in
-                            Task { await service.setQuietHours(endMinutes: minutes(from: date)) }
+                            Task { await service.setQuietHours(end: timeString(from: date)) }
                         }
                     ),
                     displayedComponents: .hourAndMinute
@@ -246,7 +248,7 @@ struct PreferencesView: View {
                 Picker(
                     "Timezone",
                     selection: Binding(
-                        get: { preferences.quietHours.timezone },
+                        get: { quietHours.timezone },
                         set: { timezone in
                             Task { await service.setQuietHours(timezone: timezone) }
                         }
@@ -258,10 +260,10 @@ struct PreferencesView: View {
                 }
 
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: preferences.quietHours.crossesMidnight ? "moon.stars.fill" : "clock.fill")
+                    Image(systemName: quietHours.crossesMidnight ? "moon.stars.fill" : "clock.fill")
                         .foregroundStyle(Color(hex: 0x1B2B65))
                     Text(
-                        preferences.quietHours.crossesMidnight
+                        quietHours.crossesMidnight
                             ? "This quiet-hours window crosses midnight."
                             : "This quiet-hours window stays within the same day."
                     )
@@ -485,24 +487,34 @@ struct PreferencesView: View {
         channel == .push && service.pushPermissionState == .denied
     }
 
-    private func timeDate(from minutes: Int) -> Date {
+    private func timeDate(from hhmm: String) -> Date {
+        let parts = hhmm.split(separator: ":")
+        guard parts.count == 2,
+              let hour = Int(parts[0]),
+              let minute = Int(parts[1]),
+              (0...23).contains(hour),
+              (0...59).contains(minute)
+        else {
+            return Date()
+        }
+
         let calendar = Calendar(identifier: .gregorian)
         return calendar.date(
-            bySettingHour: minutes / 60,
-            minute: minutes % 60,
+            bySettingHour: hour,
+            minute: minute,
             second: 0,
             of: Date()
         ) ?? Date()
     }
 
-    private func minutes(from date: Date) -> Int {
+    private func timeString(from date: Date) -> String {
         let components = Calendar(identifier: .gregorian).dateComponents(
             [.hour, .minute],
             from: date
         )
         let hour = components.hour ?? 0
         let minute = components.minute ?? 0
-        return hour * 60 + minute
+        return String(format: "%02d:%02d", hour, minute)
     }
 
     private func openAppSettings() {

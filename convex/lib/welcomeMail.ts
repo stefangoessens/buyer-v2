@@ -65,6 +65,7 @@ export function composeWelcomeEmail(params: {
   ].join("\n");
 
   return {
+    kind: "raw",
     to: params.to,
     from: WELCOME_EMAIL_FROM_ADDRESS,
     fromName: WELCOME_EMAIL_FROM_NAME,

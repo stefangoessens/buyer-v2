@@ -155,14 +155,14 @@ function DisclosureRequestCardInner({ dealRoomId }: DisclosureRequestCardProps) 
               )}
             </div>
             <h2 className="font-heading text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              We'll ask the listing agent for you
+              We&apos;ll ask the listing agent for you
             </h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
               {showTimeline
                 ? isFollowUpOverdue
-                  ? "It's been more than 48 hours without a reply. Send a polite nudge and we'll keep the thread moving."
-                  : "Your request is on its way. We'll notify you as soon as the listing agent opens the email or sends the packet."
-                : "Skip the awkward ask. We'll send a broker-authored email on your behalf and ping you the moment the packet lands."}
+                  ? "It&apos;s been more than 48 hours without a reply. Send a polite nudge and we&apos;ll keep the thread moving."
+                  : "Your request is on its way. We&apos;ll notify you as soon as the listing agent opens the email or sends the packet."
+                : "Skip the awkward ask. We&apos;ll send a broker-authored email on your behalf and ping you the moment the packet lands."}
             </p>
           </div>
 
@@ -184,8 +184,8 @@ function DisclosureRequestCardInner({ dealRoomId }: DisclosureRequestCardProps) 
                 className="mt-0.5 shrink-0"
               />
               <span>
-                Most agents reply within 48 hours. We'll follow up automatically
-                if it's quiet.
+                Most agents reply within 48 hours. We&apos;ll follow up automatically
+                if it&apos;s quiet.
               </span>
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">

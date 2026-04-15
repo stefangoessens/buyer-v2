@@ -1,6 +1,12 @@
 import Foundation
 import Security
 
+protocol AuthTokenStore: Actor {
+    func save(key: String, data: Data) throws
+    func load(key: String) throws -> Data?
+    func delete(key: String) throws
+}
+
 actor KeychainStore {
 
     private let service = "com.buyerv2.auth"
@@ -68,5 +74,23 @@ actor KeychainStore {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainError.deleteFailed(status)
         }
+    }
+}
+
+extension KeychainStore: AuthTokenStore {}
+
+actor InMemoryTokenStore: AuthTokenStore {
+    private var storage: [String: Data] = [:]
+
+    func save(key: String, data: Data) {
+        storage[key] = data
+    }
+
+    func load(key: String) -> Data? {
+        storage[key]
+    }
+
+    func delete(key: String) {
+        storage.removeValue(forKey: key)
     }
 }

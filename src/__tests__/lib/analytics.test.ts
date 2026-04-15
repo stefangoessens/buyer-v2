@@ -566,7 +566,7 @@ describe("listEventsByCategory()", () => {
     expect(events).toContain("disclosure_request_reply_received");
     expect(events).toContain("disclosure_request_follow_up_scheduled");
     expect(events).toContain("welcome_email_sent");
-    expect(events).toHaveLength(10);
+    expect(events).toHaveLength(27);
   });
 });
 

@@ -115,20 +115,24 @@ final class AuthService {
     }
 
     private let provider: AuthProvider
-    private let keychain = KeychainStore()
+    private let tokenStore: any AuthTokenStore
 
     private static let accessTokenKey = "authToken"
     private static let refreshTokenKey = "refreshToken"
 
-    init(provider: AuthProvider = ConvexAuthProvider()) {
+    init(
+        provider: AuthProvider = ConvexAuthProvider(),
+        tokenStore: any AuthTokenStore = KeychainStore()
+    ) {
         self.provider = provider
+        self.tokenStore = tokenStore
     }
 
     // MARK: - Public
 
     func initialize() async {
         do {
-            guard let tokenData = try await keychain.load(key: Self.accessTokenKey),
+            guard let tokenData = try await tokenStore.load(key: Self.accessTokenKey),
                   let token = String(data: tokenData, encoding: .utf8)
             else {
                 state = .signedOut
@@ -154,8 +158,8 @@ final class AuthService {
     }
 
     func signOut() async {
-        try? await keychain.delete(key: Self.accessTokenKey)
-        try? await keychain.delete(key: Self.refreshTokenKey)
+        try? await tokenStore.delete(key: Self.accessTokenKey)
+        try? await tokenStore.delete(key: Self.refreshTokenKey)
         state = .signedOut
     }
 
@@ -172,8 +176,11 @@ final class AuthService {
     /// read tokens from a non-MainActor context; the keychain itself
     /// is the source of truth, not any in-memory cache.
     static func loadAccessToken() async -> String? {
-        let keychain = KeychainStore()
-        guard let data = try? await keychain.load(key: Self.accessTokenKey),
+        await loadAccessToken(from: KeychainStore())
+    }
+
+    static func loadAccessToken(from tokenStore: any AuthTokenStore) async -> String? {
+        guard let data = try? await tokenStore.load(key: Self.accessTokenKey),
               let token = String(data: data, encoding: .utf8),
               !token.isEmpty
         else {
@@ -184,7 +191,7 @@ final class AuthService {
 
     func restoreSession() async {
         do {
-            guard let refreshData = try await keychain.load(key: Self.refreshTokenKey),
+            guard let refreshData = try await tokenStore.load(key: Self.refreshTokenKey),
                   let refreshToken = String(data: refreshData, encoding: .utf8)
             else {
                 throw AuthError.noRefreshToken
@@ -206,8 +213,8 @@ final class AuthService {
         else {
             throw KeychainStore.KeychainError.encodingFailed
         }
-        try await keychain.save(key: Self.accessTokenKey, data: accessData)
-        try await keychain.save(key: Self.refreshTokenKey, data: refreshData)
+        try await tokenStore.save(key: Self.accessTokenKey, data: accessData)
+        try await tokenStore.save(key: Self.refreshTokenKey, data: refreshData)
     }
 
     private func isUnauthorized(_ error: Error) -> Bool {

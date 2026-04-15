@@ -96,7 +96,7 @@ private struct EmptyBody: Encodable {}
 
 private struct UpsertBody: Encodable {
     let matrix: MessagePreferenceMatrix
-    let quietHours: QuietHours
+    let quietHours: QuietHours?
     let source: String
 
     init(preferences: MessagePreferences, source: String) {

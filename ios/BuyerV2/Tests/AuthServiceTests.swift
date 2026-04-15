@@ -56,6 +56,14 @@ private let testTokens = AuthTokens(
     expiresAt: Date(timeIntervalSinceNow: 3600)
 )
 
+@MainActor
+private func makeService(
+    provider: MockAuthProvider,
+    tokenStore: InMemoryTokenStore
+) -> AuthService {
+    AuthService(provider: provider, tokenStore: tokenStore)
+}
+
 // MARK: - AuthService Tests
 
 @Suite("AuthService session state transitions", .serialized)
@@ -80,7 +88,7 @@ struct AuthServiceTests {
     @Test("initialize() transitions to .signedOut when keychain is empty")
     func testInitializeWithNoStoredToken() async {
         let provider = MockAuthProvider()
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: InMemoryTokenStore())
 
         await service.initialize()
 
@@ -94,16 +102,17 @@ struct AuthServiceTests {
     @Test("initialize() transitions to .signedIn when valid token in keychain")
     func testInitializeWithValidToken() async {
         let provider = MockAuthProvider()
+        let tokenStore = InMemoryTokenStore()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: tokenStore)
 
         // Sign in first to populate the keychain
         try? await service.signIn(email: "buyer@example.com", password: "pass")
 
         // Reset to restoring to simulate a fresh launch
         // Re-create service with same provider (keychain persists in-process)
-        let freshService = AuthService(provider: provider)
+        let freshService = makeService(provider: provider, tokenStore: tokenStore)
         provider.validateCallCount = 0
 
         await freshService.initialize()
@@ -119,9 +128,10 @@ struct AuthServiceTests {
     @Test("initialize() attempts refresh when token validation fails, then signs out if refresh also fails")
     func testInitializeWithInvalidToken() async {
         let provider = MockAuthProvider()
+        let tokenStore = InMemoryTokenStore()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: tokenStore)
 
         // Sign in to populate keychain with both access + refresh tokens
         try? await service.signIn(email: "buyer@example.com", password: "pass")
@@ -130,7 +140,7 @@ struct AuthServiceTests {
         provider.validateResult = .failure(AuthError.unauthorized)
         provider.refreshResult = .failure(AuthError.unauthorized)
         provider.refreshCallCount = 0
-        let freshService = AuthService(provider: provider)
+        let freshService = makeService(provider: provider, tokenStore: tokenStore)
 
         await freshService.initialize()
 
@@ -145,14 +155,15 @@ struct AuthServiceTests {
     @Test("initialize() transitions to .authUnavailable on non-auth provider failure")
     func testInitializeWithProviderOutage() async {
         let provider = MockAuthProvider()
+        let tokenStore = InMemoryTokenStore()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: tokenStore)
 
         try? await service.signIn(email: "buyer@example.com", password: "pass")
 
         provider.validateResult = .failure(AuthError.invalidResponse)
-        let freshService = AuthService(provider: provider)
+        let freshService = makeService(provider: provider, tokenStore: tokenStore)
         await freshService.initialize()
 
         guard case .authUnavailable = freshService.state else {
@@ -164,9 +175,10 @@ struct AuthServiceTests {
     @Test("initialize() refreshes successfully when access token expired but refresh token valid")
     func testInitializeWithExpiredAccessButValidRefresh() async {
         let provider = MockAuthProvider()
+        let tokenStore = InMemoryTokenStore()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: tokenStore)
 
         // Sign in to populate keychain with both tokens
         try? await service.signIn(email: "buyer@example.com", password: "pass")
@@ -186,7 +198,7 @@ struct AuthServiceTests {
         provider.validateCallCount = 0
         provider.refreshCallCount = 0
 
-        let freshService = AuthService(provider: provider)
+        let freshService = makeService(provider: provider, tokenStore: tokenStore)
         await freshService.initialize()
 
         guard case .signedIn(let user) = freshService.state else {
@@ -205,7 +217,7 @@ struct AuthServiceTests {
         let provider = MockAuthProvider()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: InMemoryTokenStore())
 
         try await service.signIn(email: "buyer@example.com", password: "pass")
 
@@ -225,7 +237,7 @@ struct AuthServiceTests {
     func testSignInFailure() async {
         let provider = MockAuthProvider()
         provider.authenticateResult = .failure(AuthError.unauthorized)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: InMemoryTokenStore())
 
         // Set a known pre-state
         await service.initialize() // goes to .signedOut since keychain is empty
@@ -257,9 +269,10 @@ struct AuthServiceTests {
     @Test("signOut() clears keychain and transitions to .signedOut")
     func testSignOut() async throws {
         let provider = MockAuthProvider()
+        let tokenStore = InMemoryTokenStore()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: tokenStore)
 
         // Sign in first
         try await service.signIn(email: "buyer@example.com", password: "pass")
@@ -276,7 +289,7 @@ struct AuthServiceTests {
         }
 
         // Verify keychain is cleared: a fresh service should not be able to restore
-        let freshService = AuthService(provider: provider)
+        let freshService = makeService(provider: provider, tokenStore: tokenStore)
         await freshService.initialize()
         guard case .signedOut = freshService.state else {
             Issue.record("Expected .signedOut on fresh init after signOut, got \(freshService.state)")
@@ -291,7 +304,7 @@ struct AuthServiceTests {
         let provider = MockAuthProvider()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: InMemoryTokenStore())
 
         // Sign in first
         try await service.signIn(email: "buyer@example.com", password: "pass")
@@ -311,7 +324,7 @@ struct AuthServiceTests {
         let provider = MockAuthProvider()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: InMemoryTokenStore())
 
         // Sign in to populate keychain with refresh token
         try await service.signIn(email: "buyer@example.com", password: "pass")
@@ -350,7 +363,7 @@ struct AuthServiceTests {
         let provider = MockAuthProvider()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: InMemoryTokenStore())
 
         // Sign in to populate keychain
         try await service.signIn(email: "buyer@example.com", password: "pass")
@@ -374,7 +387,7 @@ struct AuthServiceTests {
         let provider = MockAuthProvider()
         provider.authenticateResult = .success(testTokens)
         provider.validateResult = .success(testUser)
-        let service = AuthService(provider: provider)
+        let service = makeService(provider: provider, tokenStore: InMemoryTokenStore())
 
         // .restoring -> false
         #expect(!service.isAuthenticated)

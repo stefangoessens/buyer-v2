@@ -285,6 +285,8 @@ export const twilioProviderAdapter: ProviderAdapter<
   },
 };
 
+export const twilioAdapter = twilioProviderAdapter;
+
 export async function sendTwilioMessage(
   config: TwilioRuntimeConfig,
   input: TwilioSendMessageInput,

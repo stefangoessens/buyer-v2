@@ -50,13 +50,13 @@ export type NotificationPreferencesEnvelope = {
 };
 
 export type MessageDeliveryPreferencesRowLike = {
-  channels: {
+  channels?: {
     email: boolean;
     sms: boolean;
     push: boolean;
     inApp: boolean;
   };
-  categories: {
+  categories?: {
     transactional: boolean;
     tours: boolean;
     offers: boolean;
@@ -64,7 +64,22 @@ export type MessageDeliveryPreferencesRowLike = {
     marketing: boolean;
   };
   deliveryMatrix?: NotificationDeliveryMatrix;
-  quietHours?: NotificationQuietHours;
+  matrix?: {
+    [K in NotificationDeliveryCategory]: {
+      email: boolean;
+      sms: boolean;
+      push: boolean;
+      inApp: boolean;
+    };
+  };
+  quietHours?:
+    | NotificationQuietHours
+    | {
+        enabled: boolean;
+        startMinutes: number;
+        endMinutes: number;
+        timezone: string;
+      };
 };
 
 export type EffectiveNotificationPreferences = {
@@ -157,8 +172,8 @@ export function defaultNotificationQuietHours(
 }
 
 export function buildNotificationDeliveryMatrixFromLegacy(
-  channels: MessageDeliveryPreferencesRowLike["channels"],
-  categories: MessageDeliveryPreferencesRowLike["categories"],
+  channels: NonNullable<MessageDeliveryPreferencesRowLike["channels"]>,
+  categories: NonNullable<MessageDeliveryPreferencesRowLike["categories"]>,
 ): NotificationDeliveryMatrix {
   const channelToggle = {
     email: channels.email,
@@ -230,17 +245,141 @@ export function buildNotificationDeliveryMatrixFromLegacy(
   };
 }
 
+function coerceLegacyChannels(
+  channels: MessageDeliveryPreferencesRowLike["channels"],
+): NonNullable<MessageDeliveryPreferencesRowLike["channels"]> {
+  return (
+    channels ?? {
+      email: true,
+      sms: false,
+      push: true,
+      inApp: true,
+    }
+  );
+}
+
+function coerceLegacyCategories(
+  categories: MessageDeliveryPreferencesRowLike["categories"],
+): NonNullable<MessageDeliveryPreferencesRowLike["categories"]> {
+  return (
+    categories ?? {
+      transactional: true,
+      tours: true,
+      offers: true,
+      updates: true,
+      marketing: false,
+    }
+  );
+}
+
+function coerceMatrix(
+  row: MessageDeliveryPreferencesRowLike,
+): NotificationDeliveryMatrix | null {
+  if (row.deliveryMatrix) {
+    return row.deliveryMatrix;
+  }
+
+  if (!row.matrix) {
+    return null;
+  }
+
+  return {
+    transactional: {
+      email: row.matrix.transactional.email,
+      sms: row.matrix.transactional.sms,
+      push: row.matrix.transactional.push,
+      in_app: row.matrix.transactional.inApp,
+    },
+    tours: {
+      email: row.matrix.tours.email,
+      sms: row.matrix.tours.sms,
+      push: row.matrix.tours.push,
+      in_app: row.matrix.tours.inApp,
+    },
+    offers: {
+      email: row.matrix.offers.email,
+      sms: row.matrix.offers.sms,
+      push: row.matrix.offers.push,
+      in_app: row.matrix.offers.inApp,
+    },
+    closing: {
+      email: row.matrix.closing.email,
+      sms: row.matrix.closing.sms,
+      push: row.matrix.closing.push,
+      in_app: row.matrix.closing.inApp,
+    },
+    disclosures: {
+      email: row.matrix.disclosures.email,
+      sms: row.matrix.disclosures.sms,
+      push: row.matrix.disclosures.push,
+      in_app: row.matrix.disclosures.inApp,
+    },
+    market_updates: {
+      email: row.matrix.market_updates.email,
+      sms: row.matrix.market_updates.sms,
+      push: row.matrix.market_updates.push,
+      in_app: row.matrix.market_updates.inApp,
+    },
+    marketing: {
+      email: row.matrix.marketing.email,
+      sms: row.matrix.marketing.sms,
+      push: row.matrix.marketing.push,
+      in_app: row.matrix.marketing.inApp,
+    },
+    safety: {
+      email: row.matrix.safety.email,
+      sms: row.matrix.safety.sms,
+      push: row.matrix.safety.push,
+      in_app: row.matrix.safety.inApp,
+    },
+  };
+}
+
+function toClockString(totalMinutes: number): string {
+  const safeMinutes = ((Math.trunc(totalMinutes) % 1440) + 1440) % 1440;
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function coerceQuietHours(
+  quietHours: MessageDeliveryPreferencesRowLike["quietHours"],
+): NotificationQuietHours | null {
+  if (!quietHours) {
+    return null;
+  }
+
+  if ("timeZone" in quietHours) {
+    return quietHours;
+  }
+
+  return {
+    enabled: quietHours.enabled,
+    timeZone: quietHours.timezone,
+    start: toClockString(quietHours.startMinutes),
+    end: toClockString(quietHours.endMinutes),
+    suppressSms: true,
+    suppressPush: true,
+  };
+}
+
 export function resolveEffectiveNotificationDeliveryMatrix(
   row: MessageDeliveryPreferencesRowLike,
 ): NotificationDeliveryMatrix {
-  return row.deliveryMatrix ?? buildNotificationDeliveryMatrixFromLegacy(row.channels, row.categories);
+  return (
+    coerceMatrix(row) ??
+    buildNotificationDeliveryMatrixFromLegacy(
+      coerceLegacyChannels(row.channels),
+      coerceLegacyCategories(row.categories),
+    )
+  );
 }
 
 export function resolveEffectiveNotificationQuietHours(
   row: Pick<MessageDeliveryPreferencesRowLike, "quietHours">,
   fallback: NotificationQuietHours | null = null,
 ): NotificationQuietHours | null {
-  return row.quietHours ?? fallback;
+  return coerceQuietHours(row.quietHours) ?? fallback;
 }
 
 export function resolveEffectiveNotificationPreferences(

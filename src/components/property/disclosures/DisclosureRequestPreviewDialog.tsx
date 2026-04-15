@@ -148,11 +148,11 @@ export function DisclosureRequestPreviewDialog({
           id={TITLE_ID}
           className="font-heading text-xl font-semibold text-foreground sm:text-2xl"
         >
-          We'll ask the listing agent for the disclosure packet
+          We&apos;ll ask the listing agent for the disclosure packet
         </h2>
         <p id={DESCRIPTION_ID} className="text-sm text-muted-foreground">
-          Review exactly what we'll send on your behalf. Add a short personal
-          note if you'd like to mention something specific.
+          Review exactly what we&apos;ll send on your behalf. Add a short personal
+          note if you&apos;d like to mention something specific.
         </p>
       </div>
 
@@ -224,7 +224,7 @@ export function DisclosureRequestPreviewDialog({
 
       <div className="flex flex-col gap-2 rounded-3xl border border-border bg-card p-5">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Final preview — what the listing agent sees
+          Final preview - what the listing agent sees
         </p>
         <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
           {composedBody}
@@ -276,7 +276,7 @@ export function DisclosureRequestPreviewDialog({
           <DialogHeader className="sr-only">
             <DialogTitle>Preview disclosure request email</DialogTitle>
             <DialogDescription>
-              Review the email we'll send to the listing agent and optionally
+              Review the email we&apos;ll send to the listing agent and optionally
               add a personal note before sending.
             </DialogDescription>
           </DialogHeader>
@@ -297,7 +297,7 @@ export function DisclosureRequestPreviewDialog({
         <SheetHeader className="sr-only">
           <SheetTitle>Preview disclosure request email</SheetTitle>
           <SheetDescription>
-            Review the email we'll send to the listing agent and optionally add
+            Review the email we&apos;ll send to the listing agent and optionally add
             a personal note before sending.
           </SheetDescription>
         </SheetHeader>
