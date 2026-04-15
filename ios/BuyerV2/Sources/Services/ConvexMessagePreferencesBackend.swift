@@ -1,13 +1,10 @@
 import Foundation
 
-/// HTTP adapter that speaks to the shared Convex delivery-preference
-/// state defined in `convex/messagePreferences.ts`. Kept deliberately
-/// thin so the `MessagePreferencesService` can stay transport-agnostic.
+/// Thin authenticated HTTP adapter for the buyer preference center.
 ///
-/// The token provider is async because production wiring reads from
-/// the keychain (an actor) via `AuthService.loadAccessToken`. Tests can
-/// still pass a trivial closure like `{ "stub" }` — Swift auto-converts
-/// sync returns into the async signature.
+/// KIN-1095 moves the transport from legacy channel/category patches to a
+/// full matrix + quiet-hours snapshot so optimistic UI can coalesce rapid
+/// edits without depending on backend-side patch ordering.
 final class ConvexMessagePreferencesBackend: MessagePreferencesBackend, @unchecked Sendable {
 
     private let baseURL: URL
@@ -24,42 +21,46 @@ final class ConvexMessagePreferencesBackend: MessagePreferencesBackend, @uncheck
         self.session = session
     }
 
-    // MARK: - MessagePreferencesBackend
-
-    func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
+    func fetch() async throws -> MessagePreferencesSnapshot {
         let data = try await post(path: "/preferences/get", body: EmptyBody())
-        let decoded = try JSONDecoder().decode(PreferencesFetchResponse.self, from: data)
-        return (decoded.preferences, decoded.hasStoredPreferences)
+
+        if let decoded = try? JSONDecoder().decode(PreferencesEnvelope.self, from: data) {
+            return MessagePreferencesSnapshot(
+                preferences: decoded.preferences.normalizedForMandatoryRules(),
+                hasStored: decoded.hasStoredPreferences
+            )
+        }
+
+        if let legacy = try? JSONDecoder().decode(LegacyFetchResponse.self, from: data) {
+            return MessagePreferencesSnapshot(
+                preferences: MessagePreferences
+                    .migratingLegacy(legacy.preferences)
+                    .normalizedForMandatoryRules(),
+                hasStored: legacy.hasStoredPreferences
+            )
+        }
+
+        throw MessagePreferencesError.invalidResponse
     }
 
-    func upsert(_ patch: MessagePreferencesPatch) async throws -> MessagePreferences {
-        let body = UpsertBody(
-            channels: UpsertBody.Channels(
-                email: patch.emailEnabled,
-                sms: patch.smsEnabled,
-                push: patch.pushEnabled,
-                inApp: patch.inAppEnabled
-            ),
-            categories: UpsertBody.Categories(
-                transactional: patch.transactionalEnabled,
-                tours: patch.toursEnabled,
-                offers: patch.offersEnabled,
-                updates: patch.updatesEnabled,
-                marketing: patch.marketingEnabled
+    func upsert(_ preferences: MessagePreferences) async throws -> MessagePreferences {
+        let data = try await post(
+            path: "/preferences/upsert",
+            body: UpsertBody(
+                preferences: preferences.normalizedForMandatoryRules(),
+                source: "preference_center"
             )
         )
-        let data = try await post(path: "/preferences/upsert", body: body)
-        return try JSONDecoder().decode(MessagePreferences.self, from: data)
-    }
 
-    func optOutAll() async throws -> MessagePreferences {
-        let data = try await post(path: "/preferences/optOutAll", body: EmptyBody())
-        return try JSONDecoder().decode(MessagePreferences.self, from: data)
-    }
+        if let decoded = try? JSONDecoder().decode(PreferencesEnvelope.self, from: data) {
+            return decoded.preferences.normalizedForMandatoryRules()
+        }
 
-    func resetToDefaults() async throws -> MessagePreferences {
-        let data = try await post(path: "/preferences/reset", body: EmptyBody())
-        return try JSONDecoder().decode(MessagePreferences.self, from: data)
+        if let preferences = try? JSONDecoder().decode(MessagePreferences.self, from: data) {
+            return preferences.normalizedForMandatoryRules()
+        }
+
+        throw MessagePreferencesError.invalidResponse
     }
 
     // MARK: - Private
@@ -94,29 +95,31 @@ final class ConvexMessagePreferencesBackend: MessagePreferencesBackend, @uncheck
 private struct EmptyBody: Encodable {}
 
 private struct UpsertBody: Encodable {
-    struct Channels: Encodable {
-        let email: Bool?
-        let sms: Bool?
-        let push: Bool?
-        let inApp: Bool?
+    let matrix: MessagePreferenceMatrix
+    let quietHours: QuietHours
+    let source: String
+
+    init(preferences: MessagePreferences, source: String) {
+        self.matrix = preferences.matrix
+        self.quietHours = preferences.quietHours
+        self.source = source
     }
-    struct Categories: Encodable {
-        let transactional: Bool?
-        let tours: Bool?
-        let offers: Bool?
-        let updates: Bool?
-        let marketing: Bool?
-    }
-    let channels: Channels?
-    let categories: Categories?
 }
 
-private struct PreferencesFetchResponse: Decodable {
+private struct PreferencesEnvelope: Decodable {
     let hasStoredPreferences: Bool
-    let channels: ChannelEnablement
-    let categories: CategoryEnablement
+    let preferences: MessagePreferences
+}
 
-    var preferences: MessagePreferences {
-        MessagePreferences(channels: channels, categories: categories)
+private struct LegacyFetchResponse: Decodable {
+    let hasStoredPreferences: Bool
+    let channels: LegacyChannelEnablement
+    let categories: LegacyCategoryEnablement
+
+    var preferences: LegacyMessagePreferences {
+        LegacyMessagePreferences(
+            channels: channels,
+            categories: categories
+        )
     }
 }

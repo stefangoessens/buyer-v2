@@ -1,20 +1,4 @@
-/**
- * Shared buyer notification-preference domain model for KIN-1095.
- *
- * The durable source of truth is a per-category, per-channel matrix with a
- * single quiet-hours range. Legacy clients still speak a coarse
- * channels/categories contract, so this module also exposes deterministic
- * migration + alias helpers:
- *
- * - legacy `updates` maps to `market_updates`
- * - legacy channel enable = turn on only default-on operational rows for that
- *   channel; it never opts the buyer into `marketing` or `market_updates`
- * - legacy category/channel bulk disables fan out across the mutable cells only
- *
- * `safety` is mandatory and enforced to ON across every channel.
- */
-
-import { isValidTimezone } from "@/lib/scheduling/windows";
+import { isValidTimezone } from "./scheduling";
 
 export const MESSAGE_CATEGORIES = [
   "transactional",
@@ -35,12 +19,7 @@ export const LEGACY_MESSAGE_CATEGORIES = [
   "marketing",
 ] as const;
 
-export const MESSAGE_CHANNELS = [
-  "email",
-  "sms",
-  "push",
-  "inApp",
-] as const;
+export const MESSAGE_CHANNELS = ["email", "sms", "push", "inApp"] as const;
 
 export const QUIET_HOURS_DEFAULT_TIMEZONE = "America/New_York";
 export const QUIET_HOURS_DEFAULT_START_MINUTES = 21 * 60;
@@ -74,11 +53,7 @@ export type QuietHours = {
   timezone: string;
 };
 
-export type SmsConsentStatus =
-  | "unknown"
-  | "opted_in"
-  | "opted_out"
-  | "suppressed";
+export type SmsConsentStatus = "unknown" | "opted_in" | "opted_out" | "suppressed";
 
 export type MessagePreferenceSmsState = {
   consentStatus: SmsConsentStatus;
@@ -103,9 +78,7 @@ export type MessagePreferencesView = MessagePreferences & {
   };
 };
 
-export type MatrixPatch = Partial<
-  Record<MessageCategory, Partial<ChannelEnablement>>
->;
+export type MatrixPatch = Partial<Record<MessageCategory, Partial<ChannelEnablement>>>;
 
 export type PartialMessagePreferences = {
   matrix?: MatrixPatch;
@@ -118,6 +91,56 @@ export type LegacyMessagePreferenceRow = {
   channels?: Partial<ChannelEnablement>;
   categories?: Partial<LegacyCategoryEnablement>;
 };
+
+export type PreferenceAuditSnapshot = {
+  schemaVersion: 1;
+  before: MessagePreferences;
+  after: MessagePreferences;
+  actorUserId: string | null;
+  subjectUserId: string;
+  source: string;
+  timestamp: string;
+  tokenJti?: string;
+};
+
+export type PreferenceAuditEntryLike = {
+  details?: string | null;
+  timestamp: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+};
+
+export type MessagePreferencesResolution =
+  | { source: "audit"; hasStoredPreferences: true; preferences: MessagePreferences }
+  | { source: "legacy"; hasStoredPreferences: true; preferences: MessagePreferences }
+  | { source: "default"; hasStoredPreferences: false; preferences: MessagePreferences };
+
+export type MessagePreferencesUnsubscribeTokenClaims = {
+  iss: "buyer-v2";
+  aud: "message_preferences_unsubscribe";
+  sub: string;
+  jti: string;
+  iat: number;
+  exp: number;
+  cat: MessageCategory;
+  chn: MessageChannel;
+  src?: string;
+  ver: 1;
+};
+
+export type MessagePreferencesUnsubscribeTokenResult =
+  | { valid: true; claims: MessagePreferencesUnsubscribeTokenClaims }
+  | {
+      valid: false;
+      reason:
+        | "malformed"
+        | "invalid_signature"
+        | "expired"
+        | "future"
+        | "invalid_claims"
+        | "unsupported_channel";
+    };
 
 const TRUE_CHANNELS: ChannelEnablement = {
   email: true,
@@ -156,25 +179,11 @@ const MUTABLE_CATEGORIES: readonly MessageCategory[] = MESSAGE_CATEGORIES.filter
   (category) => category !== "safety",
 );
 
+const AUDIT_ACTION = "message_preferences.updated";
+const UNSUBSCRIBE_AUDIT_ACTION = "message_preferences.unsubscribe";
+
 function cloneChannels(channels: ChannelEnablement): ChannelEnablement {
   return { ...channels };
-}
-
-function buildLegacyEnabledRow(
-  channels?: Partial<ChannelEnablement>,
-): ChannelEnablement {
-  const defaults = {
-    email: true,
-    sms: false,
-    push: true,
-    inApp: true,
-  };
-  return {
-    email: channels?.email ?? defaults.email,
-    sms: channels?.sms ?? defaults.sms,
-    push: channels?.push ?? defaults.push,
-    inApp: channels?.inApp ?? defaults.inApp,
-  };
 }
 
 function normalizeMinutes(value: number): number {
@@ -182,6 +191,23 @@ function normalizeMinutes(value: number): number {
     throw new Error("Quiet-hours minutes must be an integer between 0 and 1439");
   }
   return value;
+}
+
+export function defaultChannelState(enabled: boolean): ChannelEnablement {
+  return enabled ? cloneChannels(TRUE_CHANNELS) : cloneChannels(FALSE_CHANNELS);
+}
+
+export function defaultQuietHours(): QuietHours {
+  return {
+    enabled: false,
+    startMinutes: QUIET_HOURS_DEFAULT_START_MINUTES,
+    endMinutes: QUIET_HOURS_DEFAULT_END_MINUTES,
+    timezone: QUIET_HOURS_DEFAULT_TIMEZONE,
+  };
+}
+
+export function isValidTimezoneValue(tz: string): boolean {
+  return isValidTimezone(tz);
 }
 
 export function validateQuietHours(input: QuietHours): QuietHours {
@@ -201,42 +227,10 @@ export function validateQuietHours(input: QuietHours): QuietHours {
   };
 }
 
-export function defaultQuietHours(): QuietHours {
-  return {
-    enabled: false,
-    startMinutes: QUIET_HOURS_DEFAULT_START_MINUTES,
-    endMinutes: QUIET_HOURS_DEFAULT_END_MINUTES,
-    timezone: QUIET_HOURS_DEFAULT_TIMEZONE,
-  };
-}
-
 function defaultCategoryChannels(category: MessageCategory): ChannelEnablement {
-  return DEFAULT_CATEGORY_ENABLED[category] ? cloneChannels(TRUE_CHANNELS) : cloneChannels(FALSE_CHANNELS);
-}
-
-export function defaultPreferences(): MessagePreferences {
-  return {
-    matrix: {
-      transactional: defaultCategoryChannels("transactional"),
-      tours: defaultCategoryChannels("tours"),
-      offers: defaultCategoryChannels("offers"),
-      closing: defaultCategoryChannels("closing"),
-      disclosures: defaultCategoryChannels("disclosures"),
-      market_updates: defaultCategoryChannels("market_updates"),
-      marketing: defaultCategoryChannels("marketing"),
-      safety: cloneChannels(TRUE_CHANNELS),
-    },
-    quietHours: defaultQuietHours(),
-  };
-}
-
-export function ensureSafetyRow(
-  matrix: MessagePreferenceMatrix,
-): MessagePreferenceMatrix {
-  return {
-    ...matrix,
-    safety: cloneChannels(TRUE_CHANNELS),
-  };
+  return DEFAULT_CATEGORY_ENABLED[category]
+    ? cloneChannels(TRUE_CHANNELS)
+    : cloneChannels(FALSE_CHANNELS);
 }
 
 function copyMatrix(matrix: MessagePreferenceMatrix): MessagePreferenceMatrix {
@@ -249,6 +243,31 @@ function copyMatrix(matrix: MessagePreferenceMatrix): MessagePreferenceMatrix {
     market_updates: cloneChannels(matrix.market_updates),
     marketing: cloneChannels(matrix.marketing),
     safety: cloneChannels(matrix.safety),
+  };
+}
+
+export function ensureSafetyRow(
+  matrix: MessagePreferenceMatrix,
+): MessagePreferenceMatrix {
+  return {
+    ...matrix,
+    safety: cloneChannels(TRUE_CHANNELS),
+  };
+}
+
+export function defaultPreferences(): MessagePreferences {
+  return {
+    matrix: ensureSafetyRow({
+      transactional: defaultCategoryChannels("transactional"),
+      tours: defaultCategoryChannels("tours"),
+      offers: defaultCategoryChannels("offers"),
+      closing: defaultCategoryChannels("closing"),
+      disclosures: defaultCategoryChannels("disclosures"),
+      market_updates: defaultCategoryChannels("market_updates"),
+      marketing: defaultCategoryChannels("marketing"),
+      safety: cloneChannels(TRUE_CHANNELS),
+    }),
+    quietHours: defaultQuietHours(),
   };
 }
 
@@ -275,7 +294,7 @@ export function migrateLegacyPreferences(
     if (rawValue === undefined) continue;
     const mapped = applyLegacyCategoryAlias(legacyCategory);
     next[mapped] = rawValue
-      ? buildLegacyEnabledRow(channels)
+      ? defaultCategoryChannels(mapped)
       : cloneChannels(FALSE_CHANNELS);
   }
 
@@ -457,9 +476,7 @@ export function isWithinQuietHours(
       minutes >= quietHours.startMinutes && minutes < quietHours.endMinutes
     );
   }
-  return (
-    minutes >= quietHours.startMinutes || minutes < quietHours.endMinutes
-  );
+  return minutes >= quietHours.startMinutes || minutes < quietHours.endMinutes;
 }
 
 export function isChannelDeferredByQuietHours(
@@ -488,16 +505,34 @@ export function shouldDeliver(
   if (!prefs.matrix[category][channel]) {
     return false;
   }
-  if (
-    channel === "sms" &&
-    options?.smsState?.isGloballySuppressed
-  ) {
+  if (channel === "sms" && options?.smsState?.isGloballySuppressed) {
     return false;
   }
   if (isChannelDeferredByQuietHours(prefs, channel, category, options?.now)) {
     return false;
   }
   return true;
+}
+
+export function buildSmsStateFromConsent(params: {
+  phoneMissing: boolean;
+  consentStatus?: SmsConsentStatus | null;
+  updatedAt?: string | null;
+}): MessagePreferenceSmsState {
+  const consentStatus = params.consentStatus ?? "unknown";
+  return {
+    consentStatus,
+    isGloballySuppressed:
+      consentStatus === "opted_out" || consentStatus === "suppressed",
+    reason:
+      consentStatus === "opted_out"
+        ? "sms_stop"
+        : consentStatus === "suppressed"
+          ? "manual_suppression"
+          : null,
+    phoneMissing: params.phoneMissing,
+    updatedAt: params.updatedAt ?? null,
+  };
 }
 
 export function deriveEffectivePreferences(
@@ -539,72 +574,80 @@ export function buildMessagePreferencesView(params: {
   };
 }
 
-export function buildSmsStateFromConsent(params: {
-  phoneMissing: boolean;
-  consentStatus?: SmsConsentStatus | null;
-  updatedAt?: string | null;
-}): MessagePreferenceSmsState {
-  const consentStatus = params.consentStatus ?? "unknown";
+export function resolveCurrentPreferences(params: {
+  legacyRow?: LegacyMessagePreferenceRow | null;
+  auditEntries?: PreferenceAuditEntryLike[];
+}): MessagePreferencesResolution {
+  const audited = (params.auditEntries ?? [])
+    .slice()
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+  for (let index = audited.length - 1; index >= 0; index -= 1) {
+    const parsed = parsePreferenceAuditDetails(audited[index].details ?? null);
+    if (parsed) {
+      return {
+        source: "audit",
+        hasStoredPreferences: true,
+        preferences: parsed.after,
+      };
+    }
+  }
+  if (params.legacyRow) {
+    return {
+      source: "legacy",
+      hasStoredPreferences: true,
+      preferences: migrateLegacyPreferences(params.legacyRow),
+    };
+  }
   return {
-    consentStatus,
-    isGloballySuppressed:
-      consentStatus === "opted_out" || consentStatus === "suppressed",
-    reason:
-      consentStatus === "opted_out"
-        ? "sms_stop"
-        : consentStatus === "suppressed"
-          ? "manual_suppression"
-          : null,
-    phoneMissing: params.phoneMissing,
-    updatedAt: params.updatedAt ?? null,
+    source: "default",
+    hasStoredPreferences: false,
+    preferences: defaultPreferences(),
   };
 }
 
-type JwtHeader = { alg?: string; typ?: string };
-
-export type MessagePreferencesUnsubscribeTokenClaims = {
-  iss: "buyer-v2";
-  aud: "message_preferences_unsubscribe";
-  sub: string;
-  jti: string;
-  iat: number;
-  exp: number;
-  cat: MessageCategory;
-  chn: MessageChannel;
-  src?: string;
-  ver: 1;
-};
-
-export type MessagePreferencesUnsubscribeTokenResult =
-  | { valid: true; claims: MessagePreferencesUnsubscribeTokenClaims }
-  | {
-      valid: false;
-      reason:
-        | "malformed"
-        | "invalid_signature"
-        | "expired"
-        | "future"
-        | "invalid_claims"
-        | "unsupported_channel";
-    };
-
-function encodeBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+export function buildPreferenceChangeAuditDetails(params: {
+  actorUserId: string | null;
+  subjectUserId: string;
+  source: string;
+  before: MessagePreferences;
+  after: MessagePreferences;
+  timestamp: string;
+  tokenJti?: string;
+}): string {
+  const payload: PreferenceAuditSnapshot = {
+    schemaVersion: 1,
+    before: params.before,
+    after: params.after,
+    actorUserId: params.actorUserId,
+    subjectUserId: params.subjectUserId,
+    source: params.source,
+    timestamp: params.timestamp,
+    ...(params.tokenJti ? { tokenJti: params.tokenJti } : {}),
+  };
+  return JSON.stringify(payload);
 }
 
-function decodeBase64Url(value: string): Uint8Array {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
+export function parsePreferenceAuditDetails(
+  details: string | null | undefined,
+): PreferenceAuditSnapshot | null {
+  if (!details) return null;
+  try {
+    const parsed = JSON.parse(details) as Partial<PreferenceAuditSnapshot>;
+    if (
+      parsed?.schemaVersion !== 1 ||
+      typeof parsed.timestamp !== "string" ||
+      typeof parsed.source !== "string" ||
+      typeof parsed.subjectUserId !== "string" ||
+      typeof parsed.actorUserId !== "string" ||
+      !parsed.before ||
+      !parsed.after
+    ) {
+      return null;
+    }
+    return parsed as PreferenceAuditSnapshot;
+  } catch {
+    return null;
   }
-  return bytes;
 }
 
 async function hmacSha256(secret: string, message: string): Promise<string> {
@@ -616,17 +659,32 @@ async function hmacSha256(secret: string, message: string): Promise<string> {
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign(
-    "HMAC",
-    cryptoKey,
-    encoder.encode(message),
-  );
-  return encodeBase64Url(new Uint8Array(sig));
+  const sig = await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(message));
+  return bytesToBase64Url(new Uint8Array(sig));
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBytes(input: string): Uint8Array {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
-  const a = decodeBase64Url(left);
-  const b = decodeBase64Url(right);
+  const a = base64UrlToBytes(left);
+  const b = base64UrlToBytes(right);
   if (a.length !== b.length) return false;
   let mismatch = 0;
   for (let i = 0; i < a.length; i += 1) {
@@ -635,24 +693,24 @@ function constantTimeEqual(left: string, right: string): boolean {
   return mismatch === 0;
 }
 
-function base64UrlJson<T>(value: string): T | null {
-  try {
-    const bytes = decodeBase64Url(value);
-    return JSON.parse(new TextDecoder().decode(bytes)) as T;
-  } catch {
-    return null;
-  }
-}
-
-function jsonBase64Url(value: unknown): string {
-  return encodeBase64Url(new TextEncoder().encode(JSON.stringify(value)));
-}
-
 function uuidLike(): string {
   if (typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function encodeJsonBase64Url(value: unknown): string {
+  return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(value)));
+}
+
+function decodeJsonBase64Url<T>(value: string): T | null {
+  try {
+    const bytes = base64UrlToBytes(value);
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  } catch {
+    return null;
+  }
 }
 
 export async function signMessagePreferencesUnsubscribeToken(params: {
@@ -680,8 +738,9 @@ export async function signMessagePreferencesUnsubscribeToken(params: {
     src: params.source,
     ver: 1,
   };
-  const encodedHeader = jsonBase64Url({ alg: "HS256", typ: "JWT" });
-  const encodedClaims = jsonBase64Url(claims);
+  const header = { alg: "HS256", typ: "JWT" };
+  const encodedHeader = encodeJsonBase64Url(header);
+  const encodedClaims = encodeJsonBase64Url(claims);
   const signature = await hmacSha256(
     params.secret,
     `${encodedHeader}.${encodedClaims}`,
@@ -698,9 +757,12 @@ export async function verifyMessagePreferencesUnsubscribeToken(params: {
   if (parts.length !== 3) {
     return { valid: false, reason: "malformed" };
   }
+
   const [encodedHeader, encodedClaims, signature] = parts;
-  const header = base64UrlJson<JwtHeader>(encodedHeader);
-  const claims = base64UrlJson<MessagePreferencesUnsubscribeTokenClaims>(
+  const header = decodeJsonBase64Url<{ alg?: string; typ?: string }>(
+    encodedHeader,
+  );
+  const claims = decodeJsonBase64Url<MessagePreferencesUnsubscribeTokenClaims>(
     encodedClaims,
   );
   if (!header || !claims) {
@@ -744,3 +806,4 @@ export async function verifyMessagePreferencesUnsubscribeToken(params: {
 
   return { valid: true, claims };
 }
+

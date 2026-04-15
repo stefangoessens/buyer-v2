@@ -1,15 +1,16 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
-/// SwiftUI surface for buyer-facing message preferences. Reads the
-/// typed `MessagePreferences` state from `MessagePreferencesService`,
-/// writes updates through the service, and renders an explicit screen
-/// for each display branch (`loading`, `content`, `error`, `signedOut`)
-/// produced by `PreferencesViewModel`.
 struct PreferencesView: View {
 
     @Environment(MessagePreferencesService.self) private var service
     @Environment(AuthService.self) private var authService
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    private static let timezones = TimeZone.knownTimeZoneIdentifiers.sorted()
 
     var body: some View {
         NavigationStack {
@@ -37,6 +38,9 @@ struct PreferencesView: View {
         .task {
             await service.load()
         }
+        .task {
+            await service.refreshPushPermissionState()
+        }
     }
 
     // MARK: - View-model glue
@@ -50,202 +54,20 @@ struct PreferencesView: View {
         return vm.display()
     }
 
-    // MARK: - Loading
+    // MARK: - Loading / error / signed out
 
     private var loadingView: some View {
         VStack(spacing: 16) {
             ProgressView()
                 .controlSize(.large)
                 .tint(Color(hex: 0x1B2B65))
-            Text("Loading preferences…")
+            Text("Loading preferences...")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
     }
-
-    // MARK: - Content
-
-    private func contentView(
-        preferences: MessagePreferences,
-        hasStored: Bool,
-        saveState: MessagePreferencesSaveState
-    ) -> some View {
-        Form {
-            if case .saving = saveState {
-                Section {
-                    savingBanner
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        .listRowBackground(Color(hex: 0xF4F6FB))
-                }
-            } else if case .error(let message) = saveState {
-                Section {
-                    saveErrorBanner(message: message)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        .listRowBackground(Color(hex: 0xFFF4F0))
-                }
-            }
-
-            if !hasStored {
-                Section {
-                    firstTimeNudge
-                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
-                        .listRowBackground(Color(hex: 0xF4F6FB))
-                }
-            }
-
-            Section {
-                channelToggle(
-                    title: "Email",
-                    subtitle: "Deal updates, receipts, and previews",
-                    icon: "envelope.fill",
-                    isOn: preferences.channels.email,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(emailEnabled: value))
-                    }
-                )
-                channelToggle(
-                    title: "SMS",
-                    subtitle: "Urgent tour and offer reminders",
-                    icon: "message.fill",
-                    isOn: preferences.channels.sms,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(smsEnabled: value))
-                    }
-                )
-                channelToggle(
-                    title: "Push",
-                    subtitle: "Notifications to this device",
-                    icon: "bell.badge.fill",
-                    isOn: preferences.channels.push,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(pushEnabled: value))
-                    }
-                )
-                channelToggle(
-                    title: "In-App",
-                    subtitle: "Messages visible inside the app",
-                    icon: "tray.fill",
-                    isOn: preferences.channels.inApp,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(inAppEnabled: value))
-                    }
-                )
-            } header: {
-                sectionHeader("Delivery channels")
-            } footer: {
-                Text("A message is delivered only when both its channel and its category are turned on.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                categoryToggle(
-                    title: "Transactional",
-                    subtitle: "Receipts, signed documents, closing updates",
-                    isOn: preferences.categories.transactional,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(transactionalEnabled: value))
-                    }
-                )
-                categoryToggle(
-                    title: "Tours",
-                    subtitle: "Tour confirmations, reminders, follow-ups",
-                    isOn: preferences.categories.tours,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(toursEnabled: value))
-                    }
-                )
-                categoryToggle(
-                    title: "Offers",
-                    subtitle: "Offer status, counteroffers, negotiation",
-                    isOn: preferences.categories.offers,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(offersEnabled: value))
-                    }
-                )
-                categoryToggle(
-                    title: "Updates",
-                    subtitle: "General product and deal room updates",
-                    isOn: preferences.categories.updates,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(updatesEnabled: value))
-                    }
-                )
-                categoryToggle(
-                    title: "Marketing",
-                    subtitle: "Market insights, community launches",
-                    isOn: preferences.categories.marketing,
-                    set: { value in
-                        await service.update(MessagePreferencesPatch(marketingEnabled: value))
-                    }
-                )
-            } header: {
-                sectionHeader("Categories")
-            }
-
-            Section {
-                Button {
-                    Task { await service.optOutAll() }
-                } label: {
-                    Label("Turn off all notifications", systemImage: "bell.slash.fill")
-                        .foregroundStyle(Color(hex: 0xFF6B4A))
-                }
-                .accessibilityIdentifier("preferences.optOutAll")
-
-                Button {
-                    Task { await service.resetToDefaults() }
-                } label: {
-                    Label("Reset to defaults", systemImage: "arrow.counterclockwise")
-                        .foregroundStyle(Color(hex: 0x1B2B65))
-                }
-                .accessibilityIdentifier("preferences.reset")
-            } header: {
-                sectionHeader("Bulk actions")
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(Color(.systemGroupedBackground))
-        .disabled(isSaving(saveState))
-    }
-
-    // MARK: - Error
-
-    private func errorView(message: String) -> some View {
-        VStack(spacing: 20) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(Color(hex: 0xFF6B4A))
-
-            VStack(spacing: 8) {
-                Text("Couldn't load preferences")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(Color(hex: 0x1B2B65))
-                Text(message)
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-            }
-
-            Button {
-                Task { await service.load() }
-            } label: {
-                Text("Try again")
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: 220)
-                    .padding(.vertical, 12)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Color(hex: 0x1B2B65))
-            .accessibilityIdentifier("preferences.retry")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
-    }
-
-    // MARK: - Signed out
 
     private var signedOutView: some View {
         VStack(spacing: 20) {
@@ -281,25 +103,245 @@ struct PreferencesView: View {
         .background(Color(.systemBackground))
     }
 
-    // MARK: - Cells
+    private func errorView(message: String) -> some View {
+        VStack(spacing: 20) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 48))
+                .foregroundStyle(Color(hex: 0xFF6B4A))
 
-    private func channelToggle(
-        title: String,
-        subtitle: String,
-        icon: String,
+            VStack(spacing: 8) {
+                Text("Couldn't load preferences")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Color(hex: 0x1B2B65))
+                Text(message)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Button {
+                Task { await service.load() }
+            } label: {
+                Text("Try again")
+                    .fontWeight(.semibold)
+                    .frame(maxWidth: 220)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color(hex: 0x1B2B65))
+            .accessibilityIdentifier("preferences.retry")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
+    }
+
+    // MARK: - Content
+
+    private func contentView(
+        preferences: MessagePreferences,
+        hasStored: Bool,
+        saveState: MessagePreferencesSaveState
+    ) -> some View {
+        Form {
+            if case .saving = saveState {
+                Section {
+                    savingBanner
+                }
+            } else if case .error(let message) = saveState {
+                Section {
+                    saveErrorBanner(message: message)
+                }
+            }
+
+            if !hasStored {
+                Section {
+                    firstTimeNudge
+                }
+            }
+
+            Section {
+                headerCard
+            }
+
+            if service.pushPermissionState == .denied {
+                Section {
+                    pushPermissionDeniedCard
+                } header: {
+                    sectionHeader("Push access")
+                }
+            }
+
+            quietHoursSection(preferences: preferences)
+
+            ForEach(MessageCategory.allCases, id: \.rawValue) { category in
+                categorySection(category: category, preferences: preferences)
+            }
+
+            Section {
+                Button {
+                    Task { await service.disableAllOptionalNotifications() }
+                } label: {
+                    Label("Turn off optional notifications", systemImage: "bell.slash.fill")
+                        .foregroundStyle(Color(hex: 0xFF6B4A))
+                }
+                .accessibilityIdentifier("preferences.disableOptional")
+
+                Button {
+                    Task { await service.resetToDefaults() }
+                } label: {
+                    Label("Reset to defaults", systemImage: "arrow.counterclockwise")
+                        .foregroundStyle(Color(hex: 0x1B2B65))
+                }
+                .accessibilityIdentifier("preferences.reset")
+            } header: {
+                sectionHeader("Bulk actions")
+            } footer: {
+                Text("Safety alerts stay on even when you turn optional notifications off.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color(.systemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private func quietHoursSection(preferences: MessagePreferences) -> some View {
+        Section {
+            Toggle(
+                "Hold push and SMS overnight",
+                isOn: Binding(
+                    get: { preferences.quietHours.enabled },
+                    set: { enabled in
+                        Task { await service.setQuietHoursEnabled(enabled) }
+                    }
+                )
+            )
+            .tint(Color(hex: 0x1B2B65))
+
+            if preferences.quietHours.enabled {
+                DatePicker(
+                    "Start",
+                    selection: Binding(
+                        get: { timeDate(from: preferences.quietHours.startMinutes) },
+                        set: { date in
+                            Task { await service.setQuietHours(startMinutes: minutes(from: date)) }
+                        }
+                    ),
+                    displayedComponents: .hourAndMinute
+                )
+
+                DatePicker(
+                    "End",
+                    selection: Binding(
+                        get: { timeDate(from: preferences.quietHours.endMinutes) },
+                        set: { date in
+                            Task { await service.setQuietHours(endMinutes: minutes(from: date)) }
+                        }
+                    ),
+                    displayedComponents: .hourAndMinute
+                )
+
+                Picker(
+                    "Timezone",
+                    selection: Binding(
+                        get: { preferences.quietHours.timezone },
+                        set: { timezone in
+                            Task { await service.setQuietHours(timezone: timezone) }
+                        }
+                    )
+                ) {
+                    ForEach(Self.timezones, id: \.self) { timezone in
+                        Text(timezone).tag(timezone)
+                    }
+                }
+
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: preferences.quietHours.crossesMidnight ? "moon.stars.fill" : "clock.fill")
+                        .foregroundStyle(Color(hex: 0x1B2B65))
+                    Text(
+                        preferences.quietHours.crossesMidnight
+                            ? "This quiet-hours window crosses midnight."
+                            : "This quiet-hours window stays within the same day."
+                    )
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.top, 4)
+            }
+        } header: {
+            sectionHeader("Quiet hours")
+        } footer: {
+            Text("Push and SMS are held until quiet hours end. Email, in-app, and safety alerts still deliver.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func categorySection(
+        category: MessageCategory,
+        preferences: MessagePreferences
+    ) -> some View {
+        Section {
+            ForEach(MessageChannel.allCases, id: \.rawValue) { channel in
+                let row = preferences.matrix[category]
+                preferenceRow(
+                    category: category,
+                    channel: channel,
+                    isOn: row.isEnabled(channel),
+                    isDisabled: category.isMandatory || pushToggleBlocked(channel: channel),
+                    subtitle: toggleSubtitle(category: category, channel: channel)
+                )
+            }
+        } header: {
+            VStack(alignment: .leading, spacing: 6) {
+                sectionHeader(category.title)
+                Text(category.subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        } footer: {
+            if category == .safety {
+                Text("Wire-fraud warnings and time-critical closing alerts cannot be disabled by preference. This is a legal and safety requirement.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else if category == .marketing {
+                Text("Marketing stays explicit opt-in. It does not inherit transactional defaults.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else if category == .marketUpdates {
+                Text("Legacy \"updates\" preferences migrate here as market updates.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else if category == .tours {
+                Text("You can also text STOP to any message to stop all SMS.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func preferenceRow(
+        category: MessageCategory,
+        channel: MessageChannel,
         isOn: Bool,
-        set: @escaping (Bool) async -> Void
+        isDisabled: Bool,
+        subtitle: String
     ) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
+            Image(systemName: category.isMandatory ? "lock.fill" : channel.icon)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color(hex: 0x1B2B65))
+                .foregroundStyle(category.isMandatory ? Color(hex: 0xFF6B4A) : Color(hex: 0x1B2B65))
                 .frame(width: 26, height: 26)
-                .background(Color(hex: 0xF4F6FB))
+                .background(
+                    (category.isMandatory ? Color(hex: 0xFFF4F0) : Color(hex: 0xF4F6FB))
+                )
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(channel.title)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Color(hex: 0x1B2B65))
                 Text(subtitle)
@@ -309,112 +351,166 @@ struct PreferencesView: View {
 
             Spacer(minLength: 8)
 
-            Toggle("", isOn: Binding(
-                get: { isOn },
-                set: { newValue in Task { await set(newValue) } }
-            ))
+            Toggle(
+                "",
+                isOn: Binding(
+                    get: { category.isMandatory ? true : isOn },
+                    set: { value in
+                        Task {
+                            await service.setPreference(
+                                category: category,
+                                channel: channel,
+                                isEnabled: value
+                            )
+                        }
+                    }
+                )
+            )
             .labelsHidden()
             .tint(Color(hex: 0x1B2B65))
-            .accessibilityLabel(title)
+            .disabled(isDisabled)
+            .accessibilityLabel("\(category.title) \(channel.title)")
         }
         .padding(.vertical, 2)
     }
 
-    private func categoryToggle(
-        title: String,
-        subtitle: String,
-        isOn: Bool,
-        set: @escaping (Bool) async -> Void
-    ) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+    // MARK: - Cards
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Choose how buyer-v2 reaches you.")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color(hex: 0x1B2B65))
+            Text("Each category has its own delivery matrix. Safety alerts stay on so you still get wire-fraud warnings and closing-day alerts.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var pushPermissionDeniedCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "bell.slash.fill")
+                    .foregroundStyle(Color(hex: 0xFF6B4A))
+                Text("Push disabled in iOS Settings")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Color(hex: 0x1B2B65))
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
             }
 
-            Spacer(minLength: 8)
+            Text("Your buyer-v2 push preferences can stay enabled, but iOS will still block delivery until notifications are turned back on for this app.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
 
-            Toggle("", isOn: Binding(
-                get: { isOn },
-                set: { newValue in Task { await set(newValue) } }
-            ))
-            .labelsHidden()
+            Button("Open Settings") {
+                openAppSettings()
+            }
+            .buttonStyle(.borderedProminent)
             .tint(Color(hex: 0x1B2B65))
-            .accessibilityLabel(title)
+            .accessibilityIdentifier("preferences.openSettings")
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
-
-    // MARK: - Decorations
 
     private var firstTimeNudge: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 14, weight: .semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Review your defaults")
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color(hex: 0x1B2B65))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("You're using the defaults")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color(hex: 0x1B2B65))
-                Text("Adjust any toggle to save your preferences.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
+            Text("Operational alerts start on. Marketing and market updates stay off until you opt in.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
         }
     }
 
     private var savingBanner: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(spacing: 10) {
             ProgressView()
                 .controlSize(.small)
                 .tint(Color(hex: 0x1B2B65))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Saving your changes")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color(hex: 0x1B2B65))
-                Text("We’ll re-enable controls when the backend confirms the update.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
+            Text("Saving your latest changes...")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(hex: 0x1B2B65))
         }
-        .accessibilityIdentifier("preferences.saveInFlightBanner")
+        .padding(.vertical, 4)
     }
 
     private func saveErrorBanner(message: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.circle.fill")
+        VStack(alignment: .leading, spacing: 6) {
+            Text("We couldn't save that change.")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color(hex: 0xFF6B4A))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Couldn't save — we reverted the change")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color(hex: 0xFF6B4A))
-                Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
+                .foregroundStyle(Color(hex: 0x9C3A1C))
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(Color(hex: 0x9C3A1C))
         }
-        .accessibilityIdentifier("preferences.saveErrorBanner")
+        .padding(.vertical, 4)
     }
+
+    // MARK: - Helpers
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Color(hex: 0x1B2B65).opacity(0.75))
             .textCase(.uppercase)
+            .foregroundStyle(.secondary)
     }
 
-    private func isSaving(_ saveState: MessagePreferencesSaveState) -> Bool {
-        if case .saving = saveState {
-            return true
+    private func toggleSubtitle(
+        category: MessageCategory,
+        channel: MessageChannel
+    ) -> String {
+        if category.isMandatory {
+            if channel == .push, service.pushPermissionState == .denied {
+                return "Enabled in buyer-v2, but iOS Settings are blocking delivery."
+            }
+            return "Always on for wire-fraud warnings and time-critical closing alerts."
         }
-        return false
+
+        if channel == .push {
+            switch service.pushPermissionState {
+            case .denied:
+                return "Blocked by iOS Settings on this device."
+            case .unknown:
+                return "App-level setting. iOS permission is still undecided."
+            case .allowed:
+                return channel.subtitle
+            }
+        }
+
+        return channel.subtitle
+    }
+
+    private func pushToggleBlocked(channel: MessageChannel) -> Bool {
+        channel == .push && service.pushPermissionState == .denied
+    }
+
+    private func timeDate(from minutes: Int) -> Date {
+        let calendar = Calendar(identifier: .gregorian)
+        return calendar.date(
+            bySettingHour: minutes / 60,
+            minute: minutes % 60,
+            second: 0,
+            of: Date()
+        ) ?? Date()
+    }
+
+    private func minutes(from date: Date) -> Int {
+        let components = Calendar(identifier: .gregorian).dateComponents(
+            [.hour, .minute],
+            from: date
+        )
+        let hour = components.hour ?? 0
+        let minute = components.minute ?? 0
+        return hour * 60 + minute
+    }
+
+    private func openAppSettings() {
+        #if canImport(UIKit)
+        guard let url = URL(string: UIApplication.openSettingsURLString) else {
+            return
+        }
+        openURL(url)
+        #endif
     }
 }

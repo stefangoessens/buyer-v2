@@ -10,7 +10,7 @@ export interface RetentionPolicy {
 export const RETENTION_POLICIES: Record<string, RetentionPolicy> = {
   buyer_data: {
     category: "Buyer Data",
-    description: "Profiles, preferences, tour records",
+    description: "Profiles, mutable preference state, tour records",
     retentionDays: 1095, // 3 years
     softDeleteFirst: true,
     legalBasis: "Business relationship + CCPA compliance",
@@ -52,7 +52,8 @@ export const RETENTION_POLICIES: Record<string, RetentionPolicy> = {
   },
   audit: {
     category: "Audit Trail",
-    description: "Regulated action audit log",
+    description:
+      "Regulated action audit log, including preference-change before/after history",
     retentionDays: "permanent",
     softDeleteFirst: false,
     legalBasis: "Compliance audit trail — never delete",

@@ -6,6 +6,13 @@ import {
   smsConsentSource,
   smsConsentState,
 } from "./validators";
+import {
+  buildMessagePreferencesView as buildSharedMessagePreferencesView,
+  defaultPreferences as defaultSharedPreferences,
+  migrateLegacyPreferences,
+  type MessagePreferenceSmsState,
+  type MessagePreferences,
+} from "../../src/lib/messagePreferences";
 
 export const buyerMoveTimeline = v.union(
   v.literal("asap"),
@@ -22,7 +29,7 @@ export const communicationChannelsValidator = v.object({
   inApp: v.boolean(),
 });
 
-export const communicationCategoriesValidator = v.object({
+export const legacyCommunicationCategoriesValidator = v.object({
   transactional: v.boolean(),
   tours: v.boolean(),
   offers: v.boolean(),
@@ -30,10 +37,51 @@ export const communicationCategoriesValidator = v.object({
   marketing: v.boolean(),
 });
 
+export const communicationMatrixValidator = v.object({
+  transactional: communicationChannelsValidator,
+  tours: communicationChannelsValidator,
+  offers: communicationChannelsValidator,
+  closing: communicationChannelsValidator,
+  disclosures: communicationChannelsValidator,
+  market_updates: communicationChannelsValidator,
+  marketing: communicationChannelsValidator,
+  safety: communicationChannelsValidator,
+});
+
+export const communicationQuietHoursValidator = v.object({
+  enabled: v.boolean(),
+  startMinutes: v.number(),
+  endMinutes: v.number(),
+  timezone: v.string(),
+});
+
+export const communicationSmsStateValidator = v.object({
+  consentStatus: v.union(
+    v.literal("unknown"),
+    v.literal("opted_in"),
+    v.literal("opted_out"),
+    v.literal("suppressed"),
+  ),
+  isGloballySuppressed: v.boolean(),
+  reason: v.union(
+    v.literal("sms_stop"),
+    v.literal("manual_suppression"),
+    v.null(),
+  ),
+  phoneMissing: v.boolean(),
+  updatedAt: v.union(v.string(), v.null()),
+});
+
 export const communicationPreferencesViewValidator = v.object({
   hasStoredPreferences: v.boolean(),
+  matrix: communicationMatrixValidator,
+  quietHours: communicationQuietHoursValidator,
   channels: communicationChannelsValidator,
-  categories: communicationCategoriesValidator,
+  categories: legacyCommunicationCategoriesValidator,
+  effective: v.object({
+    matrix: communicationMatrixValidator,
+    sms: communicationSmsStateValidator,
+  }),
 });
 
 export const buyerProfileFinancingValidator = v.object({
@@ -219,6 +267,62 @@ export type BuyerProfileView = {
   };
   communicationPreferences: {
     hasStoredPreferences: boolean;
+    matrix: {
+      transactional: {
+        email: boolean;
+        sms: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+      tours: {
+        email: boolean;
+        sms: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+      offers: {
+        email: boolean;
+        sms: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+      closing: {
+        email: boolean;
+        sms: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+      disclosures: {
+        email: boolean;
+        sms: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+      market_updates: {
+        email: boolean;
+        sms: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+      marketing: {
+        email: boolean;
+        sms: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+      safety: {
+        email: boolean;
+        sms: boolean;
+        push: boolean;
+        inApp: boolean;
+      };
+    };
+    quietHours: {
+      enabled: boolean;
+      startMinutes: number;
+      endMinutes: number;
+      timezone: string;
+    };
     channels: {
       email: boolean;
       sms: boolean;
@@ -231,6 +335,65 @@ export type BuyerProfileView = {
       offers: boolean;
       updates: boolean;
       marketing: boolean;
+    };
+    effective: {
+      matrix: {
+        transactional: {
+          email: boolean;
+          sms: boolean;
+          push: boolean;
+          inApp: boolean;
+        };
+        tours: {
+          email: boolean;
+          sms: boolean;
+          push: boolean;
+          inApp: boolean;
+        };
+        offers: {
+          email: boolean;
+          sms: boolean;
+          push: boolean;
+          inApp: boolean;
+        };
+        closing: {
+          email: boolean;
+          sms: boolean;
+          push: boolean;
+          inApp: boolean;
+        };
+        disclosures: {
+          email: boolean;
+          sms: boolean;
+          push: boolean;
+          inApp: boolean;
+        };
+        market_updates: {
+          email: boolean;
+          sms: boolean;
+          push: boolean;
+          inApp: boolean;
+        };
+        marketing: {
+          email: boolean;
+          sms: boolean;
+          push: boolean;
+          inApp: boolean;
+        };
+        safety: {
+          email: boolean;
+          sms: boolean;
+          push: boolean;
+          inApp: boolean;
+        };
+      };
+      sms: {
+        consentStatus: "unknown" | "opted_in" | "opted_out" | "suppressed";
+        isGloballySuppressed: boolean;
+        reason: "sms_stop" | "manual_suppression" | null;
+        phoneMissing: boolean;
+        updatedAt: string | null;
+      };
     };
   };
   sms: {
@@ -352,25 +515,6 @@ type BuyerProfileSectionPatch = {
 type MessagePreferenceRow = Doc<"messageDeliveryPreferences"> | null;
 type SessionCtx = QueryCtx | MutationCtx;
 
-function defaultChannels() {
-  return {
-    email: true,
-    sms: false,
-    push: true,
-    inApp: true,
-  };
-}
-
-function defaultCategories() {
-  return {
-    transactional: true,
-    tours: true,
-    offers: true,
-    updates: true,
-    marketing: false,
-  };
-}
-
 export function buildBuyerProfileSmsView(
   row: BuyerProfileRow | null,
 ): BuyerProfileView["sms"] {
@@ -428,7 +572,6 @@ export function mergeBuyerProfileSmsRecord(
         : existing?.smsConsentLog,
   };
 }
-
 export function defaultBuyerProfileSections(): BuyerProfileSections {
   return {
     financing: {
@@ -496,20 +639,35 @@ export function normalizeBuyerProfileSections(
   });
 }
 
+function coerceStoredPreferences(row: MessagePreferenceRow): MessagePreferences {
+  if (row?.matrix && row?.quietHours) {
+    return {
+      matrix: row.matrix,
+      quietHours: row.quietHours,
+    };
+  }
+  return migrateLegacyPreferences({
+    channels: row?.channels,
+    categories: row?.categories,
+  });
+}
+
 export function buildCommunicationPreferences(
   row: MessagePreferenceRow,
+  smsState?: MessagePreferenceSmsState,
 ): BuyerProfileView["communicationPreferences"] {
-  return {
+  return buildSharedMessagePreferencesView({
     hasStoredPreferences: row !== null,
-    channels: row?.channels ?? defaultChannels(),
-    categories: row?.categories ?? defaultCategories(),
-  };
+    preferences: row ? coerceStoredPreferences(row) : defaultSharedPreferences(),
+    smsState,
+  });
 }
 
 export function buildBuyerProfileView(params: {
   user: Doc<"users">;
   profile: BuyerProfileRow | null;
   messagePreferences: MessagePreferenceRow;
+  smsState?: MessagePreferenceSmsState;
   includeInternal: boolean;
 }): BuyerProfileView {
   const sections = normalizeBuyerProfileSections(params.profile);
@@ -527,6 +685,7 @@ export function buildBuyerProfileView(params: {
     searchPreferences: sections.searchPreferences,
     communicationPreferences: buildCommunicationPreferences(
       params.messagePreferences,
+      params.smsState,
     ),
     sms: buildBuyerProfileSmsView(params.profile),
     household: sections.household,

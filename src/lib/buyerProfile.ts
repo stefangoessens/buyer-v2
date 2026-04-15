@@ -1,7 +1,11 @@
 import {
+  buildMessagePreferencesView,
   defaultPreferences,
-  type CategoryEnablement,
+  type LegacyCategoryEnablement,
   type ChannelEnablement,
+  type MessagePreferenceMatrix,
+  type MessagePreferenceSmsState,
+  type QuietHours,
 } from "@/lib/messagePreferences";
 
 export const BUYER_MOVE_TIMELINES = [
@@ -58,8 +62,14 @@ export interface BuyerProfileInternal {
 
 export interface BuyerProfileCommunicationPreferences {
   hasStoredPreferences: boolean;
+  matrix: MessagePreferenceMatrix;
+  quietHours: QuietHours;
   channels: ChannelEnablement;
-  categories: CategoryEnablement;
+  categories: LegacyCategoryEnablement;
+  effective: {
+    matrix: MessagePreferenceMatrix;
+    sms: MessagePreferenceSmsState;
+  };
 }
 
 export type BuyerProfileSmsConsentSource =
@@ -185,11 +195,14 @@ export function buildCommunicationPreferences(
   overrides?: Partial<BuyerProfileCommunicationPreferences>,
 ): BuyerProfileCommunicationPreferences {
   const defaults = defaultPreferences();
-  return {
+  return buildMessagePreferencesView({
     hasStoredPreferences: overrides?.hasStoredPreferences ?? false,
-    channels: overrides?.channels ?? defaults.channels,
-    categories: overrides?.categories ?? defaults.categories,
-  };
+    preferences: {
+      matrix: overrides?.matrix ?? defaults.matrix,
+      quietHours: overrides?.quietHours ?? defaults.quietHours,
+    },
+    smsState: overrides?.effective?.sms,
+  });
 }
 
 export function buildSmsState(
