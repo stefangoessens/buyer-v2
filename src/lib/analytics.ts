@@ -127,6 +127,24 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   /** Fired when a recipient clicks a link in a message. */
   message_clicked: { messageId: string; channel: string; link: string };
 
+  // ─── Disclosure request rail (KIN-1079) ─────────────────────────────
+  /** Fired once when the Request Disclosures CTA card mounts. */
+  disclosure_request_card_viewed: { dealRoomId: string };
+  /** Fired when the buyer opens the preview-the-email dialog. */
+  disclosure_request_preview_opened: { dealRoomId: string };
+  /** Fired when the buyer successfully sends a disclosure request. */
+  disclosure_request_sent: { dealRoomId: string; hasPersonalNote: boolean };
+  /** Fired when a listing-agent reply is ingested for the request. */
+  disclosure_request_reply_received: {
+    dealRoomId: string;
+    ingestedAttachmentCount: number;
+  };
+  /** Fired when the follow-up sweep schedules another nudge. */
+  disclosure_request_follow_up_scheduled: {
+    dealRoomId: string;
+    followUpCount: number;
+  };
+
   // ─── Agent ops ──────────────────────────────────────────────────────
   /** Fired when a new agent coverage record is created. */
   agent_coverage_created: { agentId: string; areaCount: number };
@@ -611,6 +629,37 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "communication",
     owner: "platform",
     whenFired: "Link click tracked via redirect",
+    piiSafe: true,
+  },
+
+  disclosure_request_card_viewed: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Request Disclosures card first mounts in a deal room",
+    piiSafe: true,
+  },
+  disclosure_request_preview_opened: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Buyer opens the preview-the-email dialog",
+    piiSafe: true,
+  },
+  disclosure_request_sent: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Disclosure request mutation succeeds",
+    piiSafe: true,
+  },
+  disclosure_request_reply_received: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Listing-agent reply ingested by the mail rail",
+    piiSafe: true,
+  },
+  disclosure_request_follow_up_scheduled: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Follow-up sweep flips a sent request to follow_up_needed",
     piiSafe: true,
   },
 

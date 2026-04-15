@@ -36,6 +36,8 @@ import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { requireAuth } from "./lib/session";
+// KIN-1079 — Request Disclosures mail rail abstraction.
+import { selectDriver, type MailMessage } from "./mailRail";
 
 // ═══ Constants ═══════════════════════════════════════════════════════════
 
@@ -773,6 +775,454 @@ export const markPacketStatus = internalMutation({
       status: args.status,
       updatedAt: new Date().toISOString(),
     });
+    return null;
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KIN-1079 — Request Disclosures rail
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Buyer-facing "Request Disclosures" CTA. When the buyer clicks send, we
+// compose a broker-authored email (plus their optional personal note),
+// persist the composed body verbatim for audit, and ship it through the
+// mailRail driver to the listing agent on file.
+//
+// v1 runs against the `noop` driver — nothing leaves the server; we only
+// log + write the audit trail. The Resend wiring lives behind KIN-1092.
+// Sender identity is hard-coded to a placeholder brokerage alias so we
+// never leak a buyer's personal email into the outbound From header
+// before a compliance review lands.
+
+const disclosureRequestStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("sent"),
+  v.literal("opened"),
+  v.literal("replied"),
+  v.literal("follow_up_needed"),
+  v.literal("cancelled"),
+);
+
+const disclosureRequestProviderValidator = v.union(
+  v.literal("noop"),
+  v.literal("resend"),
+);
+
+const disclosureRequestRowValidator = v.object({
+  _id: v.id("disclosureRequests"),
+  _creationTime: v.number(),
+  dealRoomId: v.id("dealRooms"),
+  buyerId: v.id("users"),
+  propertyId: v.id("properties"),
+  listingAgentEmail: v.string(),
+  listingAgentName: v.optional(v.string()),
+  subject: v.string(),
+  bodyText: v.string(),
+  personalNote: v.optional(v.string()),
+  status: disclosureRequestStatusValidator,
+  providerMessageId: v.optional(v.string()),
+  provider: disclosureRequestProviderValidator,
+  sentAt: v.optional(v.string()),
+  openedAt: v.optional(v.string()),
+  repliedAt: v.optional(v.string()),
+  lastFollowUpAt: v.optional(v.string()),
+  followUpCount: v.number(),
+  nextFollowUpDueAt: v.optional(v.string()),
+  replyPacketId: v.optional(v.id("disclosurePackets")),
+  replyBodySnippetText: v.optional(v.string()),
+  createdAt: v.string(),
+  updatedAt: v.string(),
+});
+
+const FOLLOW_UP_WINDOW_MS = 48 * 60 * 60 * 1000;
+const REPLY_SNIPPET_MAX_CHARS = 500;
+
+// v1 sender identity. The `from` header is a brokerage alias so the buyer's
+// personal email is never leaked outbound before compliance review. The
+// `replyTo` is a placeholder alias for the same reason — once KIN-1092
+// wires real Resend + compliance review lands, this is replaced with a
+// per-deal-room alias that threads back into the buyer's inbox.
+const BROKER_FROM_ADDRESS = "broker@buyer-v2.app";
+const BROKER_FROM_NAME = "buyer-v2 Brokerage";
+const BROKER_REPLY_TO = "reply@buyer-v2.app";
+
+/**
+ * Compose the full email body from the broker-authored template plus the
+ * buyer's optional personal note. The resulting string is persisted
+ * verbatim so the audit trail contains exactly what was "sent".
+ */
+function composeDisclosureRequestBody(params: {
+  listingAgentName?: string;
+  buyerDisplayName: string;
+  propertyAddress: string;
+  personalNote?: string;
+}): { subject: string; bodyText: string } {
+  const greetingName = params.listingAgentName?.trim().length
+    ? params.listingAgentName.trim()
+    : "there";
+  const subject = `Disclosure request — ${params.propertyAddress}`;
+  const lines: Array<string> = [
+    `Hi ${greetingName},`,
+    "",
+    `I'm reaching out on behalf of ${params.buyerDisplayName}, who is preparing to make an offer on ${params.propertyAddress}. Before we finalize terms, we're asking for the seller's disclosures package — typically this includes the Seller's Property Disclosure, any HOA / condo docs, recent inspection reports, permit history, and any known material defects.`,
+    "",
+    "You can reply directly to this email with attachments (PDF preferred). If a formal request letter or signed acknowledgment is needed on our side, let me know and I'll send it over the same day.",
+    "",
+    "Thanks for your help — we'll keep the turnaround tight on our end.",
+  ];
+
+  const personal = params.personalNote?.trim();
+  if (personal && personal.length > 0) {
+    lines.push("", "A personal note from the buyer:", personal);
+  }
+
+  lines.push(
+    "",
+    "Best,",
+    "buyer-v2 Brokerage",
+    "(Sent on behalf of the buyer — please reply all.)",
+  );
+
+  return { subject, bodyText: lines.join("\n") };
+}
+
+/**
+ * Resolve the listing-agent row linked to a property via the
+ * `propertyAgentLinks.by_propertyId_and_role` index. Throws if no listing
+ * agent is on file, or if the linked row has no email (we cannot send
+ * without a destination).
+ */
+async function resolveListingAgentForProperty(
+  ctx: QueryCtx,
+  propertyId: Id<"properties">,
+): Promise<{
+  agent: Doc<"listingAgents">;
+  email: string;
+}> {
+  const link = await ctx.db
+    .query("propertyAgentLinks")
+    .withIndex("by_propertyId_and_role", (q) =>
+      q.eq("propertyId", propertyId).eq("role", "listing"),
+    )
+    .first();
+  if (!link) {
+    throw new Error("No listing agent on file for this property");
+  }
+  const agent = await ctx.db.get(link.agentId);
+  if (!agent) {
+    throw new Error("No listing agent on file for this property");
+  }
+  const email = agent.email?.trim();
+  if (!email || email.length === 0) {
+    throw new Error("No listing agent on file for this property");
+  }
+  return { agent, email };
+}
+
+/**
+ * Send a disclosure-request email to the listing agent on file.
+ *
+ * Flow:
+ *   1. Verify the caller owns the deal room (buyer-only).
+ *   2. Feature-flag gate: `KIN_1079_REQUEST_DISCLOSURES_ENABLED`.
+ *   3. Resolve the listing agent + the property address off the deal room.
+ *   4. Compose the email body (broker template + optional personal note)
+ *      and persist it verbatim.
+ *   5. Hand off to the mailRail driver (noop in v1).
+ *   6. Insert `disclosureRequests` row with status `sent`, set the 48h
+ *      follow-up due-at, and write an audit row.
+ *
+ * Auth: buyer only (owner of the deal room).
+ */
+export const requestFromListingAgent = mutation({
+  args: {
+    dealRoomId: v.id("dealRooms"),
+    personalNote: v.optional(v.string()),
+  },
+  returns: v.object({ requestId: v.id("disclosureRequests") }),
+  handler: async (ctx, args) => {
+    if (process.env.KIN_1079_REQUEST_DISCLOSURES_ENABLED !== "true") {
+      throw new Error("Request Disclosures rail disabled");
+    }
+
+    const { user, role } = await requirePacketAccess(ctx, args.dealRoomId);
+    if (role !== "buyer") {
+      throw new Error("Only the deal room owner can request disclosures");
+    }
+
+    const dealRoom = await ctx.db.get(args.dealRoomId);
+    if (!dealRoom) throw new Error("Deal room not found");
+
+    const property = await ctx.db.get(dealRoom.propertyId);
+    if (!property) throw new Error("Property not found");
+
+    const { agent, email: listingAgentEmail } =
+      await resolveListingAgentForProperty(ctx, dealRoom.propertyId);
+
+    // `property.address` is a structured object (street/unit/city/...).
+    // Prefer the canonical `formatted` string if set; otherwise fall back
+    // to a hand-composed `street, city ST zip` form so the email subject
+    // and body are never missing the address.
+    const addr = property.address;
+    const formattedAddress =
+      addr.formatted?.trim().length
+        ? addr.formatted.trim()
+        : `${addr.street}${addr.unit ? ` ${addr.unit}` : ""}, ${addr.city} ${addr.state} ${addr.zip}`;
+    const propertyAddress = formattedAddress.length > 0
+      ? formattedAddress
+      : "the subject property";
+
+    const { subject, bodyText } = composeDisclosureRequestBody({
+      listingAgentName: agent.name,
+      buyerDisplayName: user.name,
+      propertyAddress,
+      personalNote: args.personalNote,
+    });
+
+    const driver = selectDriver();
+    const mailMessage: MailMessage = {
+      to: listingAgentEmail,
+      toName: agent.name,
+      from: BROKER_FROM_ADDRESS,
+      fromName: BROKER_FROM_NAME,
+      subject,
+      bodyText,
+      replyTo: BROKER_REPLY_TO,
+      metadata: {
+        dealRoomId: args.dealRoomId,
+        buyerId: user._id,
+        propertyId: dealRoom.propertyId,
+        feature: "kin-1079-request-disclosures",
+      },
+    };
+
+    const { providerMessageId } = await driver.send(mailMessage);
+
+    const now = new Date().toISOString();
+    const nextFollowUpDueAt = new Date(
+      Date.now() + FOLLOW_UP_WINDOW_MS,
+    ).toISOString();
+
+    const requestId = await ctx.db.insert("disclosureRequests", {
+      dealRoomId: args.dealRoomId,
+      buyerId: user._id,
+      propertyId: dealRoom.propertyId,
+      listingAgentEmail,
+      listingAgentName: agent.name,
+      subject,
+      bodyText,
+      personalNote: args.personalNote,
+      status: "sent",
+      providerMessageId,
+      provider: driver.name,
+      sentAt: now,
+      followUpCount: 0,
+      nextFollowUpDueAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "disclosure_request_sent",
+      entityType: "disclosureRequests",
+      entityId: requestId,
+      details: JSON.stringify({
+        dealRoomId: args.dealRoomId,
+        propertyId: dealRoom.propertyId,
+        listingAgentEmail,
+        provider: driver.name,
+        providerMessageId,
+        subject,
+        nextFollowUpDueAt,
+      }),
+      timestamp: now,
+    });
+
+    return { requestId };
+  },
+});
+
+/**
+ * Return the most recent non-cancelled disclosure request for a deal room
+ * (or null if none exist). Drives the CTA card status on the deal room UI.
+ *
+ * Auth: buyer owner OR broker/admin.
+ */
+export const getLatestDisclosureRequest = query({
+  args: { dealRoomId: v.id("dealRooms") },
+  returns: v.union(v.null(), disclosureRequestRowValidator),
+  handler: async (ctx, args) => {
+    await requirePacketAccess(ctx, args.dealRoomId);
+
+    const rows = await ctx.db
+      .query("disclosureRequests")
+      .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
+      .order("desc")
+      .collect();
+
+    for (const row of rows) {
+      if (row.status !== "cancelled") return row;
+    }
+    return null;
+  },
+});
+
+/**
+ * Full history of disclosure requests for a deal room, newest first.
+ * Powers the status-timeline view in the UI.
+ *
+ * Auth: buyer owner OR broker/admin.
+ */
+export const listDisclosureRequestsForDealRoom = query({
+  args: { dealRoomId: v.id("dealRooms") },
+  returns: v.array(disclosureRequestRowValidator),
+  handler: async (ctx, args) => {
+    await requirePacketAccess(ctx, args.dealRoomId);
+
+    return await ctx.db
+      .query("disclosureRequests")
+      .withIndex("by_dealRoomId", (q) => q.eq("dealRoomId", args.dealRoomId))
+      .order("desc")
+      .collect();
+  },
+});
+
+/**
+ * Soft-cancel a disclosure request. Only the deal room owner (buyer) can
+ * cancel, and only while the row is still in `draft`, `sent`, or
+ * `follow_up_needed` — replies and prior cancellations are terminal.
+ */
+export const cancelDisclosureRequest = mutation({
+  args: { requestId: v.id("disclosureRequests") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Disclosure request not found");
+
+    const { role } = await requirePacketAccess(ctx, request.dealRoomId);
+    if (role !== "buyer") {
+      throw new Error("Only the deal room owner can cancel a disclosure request");
+    }
+
+    if (
+      request.status !== "draft" &&
+      request.status !== "sent" &&
+      request.status !== "follow_up_needed"
+    ) {
+      throw new Error(
+        `Cannot cancel a disclosure request in status "${request.status}"`,
+      );
+    }
+
+    await ctx.db.patch(args.requestId, {
+      status: "cancelled",
+      nextFollowUpDueAt: undefined,
+      updatedAt: new Date().toISOString(),
+    });
+    return null;
+  },
+});
+
+/**
+ * Webhook seam for future provider open-tracking (Resend). Marks the
+ * request as `opened` idempotently — subsequent calls are no-ops so the
+ * handler is safe to retry. Only advances status forward from `sent`.
+ */
+export const markDisclosureRequestOpened = internalMutation({
+  args: { requestId: v.id("disclosureRequests") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.requestId);
+    if (!request) return null;
+    if (request.openedAt !== undefined) return null;
+    if (request.status !== "sent") return null;
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.requestId, {
+      status: "opened",
+      openedAt: now,
+      updatedAt: now,
+    });
+    return null;
+  },
+});
+
+/**
+ * Ingest a reply to a disclosure request. v1 never runs through this path
+ * (the noop driver produces no replies); KIN-1092 Resend wiring will call
+ * it with the reply body + from-address. Attachments are out of scope for
+ * v1 — a future revision will pass storage ids alongside.
+ *
+ * Sets status → `replied`, nulls the follow-up clock, stores the first
+ * ~500 chars of the reply body for audit.
+ */
+export const ingestDisclosureRequestReply = internalMutation({
+  args: {
+    requestId: v.id("disclosureRequests"),
+    fromAddress: v.string(),
+    subject: v.string(),
+    bodyTextSnippet: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.requestId);
+    if (!request) throw new Error("Disclosure request not found");
+    if (request.status === "cancelled") {
+      throw new Error("Cannot ingest a reply for a cancelled request");
+    }
+
+    const snippet = args.bodyTextSnippet.slice(0, REPLY_SNIPPET_MAX_CHARS);
+    const now = new Date().toISOString();
+
+    await ctx.db.patch(args.requestId, {
+      status: "replied",
+      repliedAt: now,
+      nextFollowUpDueAt: undefined,
+      replyBodySnippetText: snippet,
+      updatedAt: now,
+    });
+    return null;
+  },
+});
+
+/**
+ * Hourly sweep (registered in `convex/crons.ts`). Finds every `sent`
+ * request whose `nextFollowUpDueAt` is in the past, flips status to
+ * `follow_up_needed`, increments `followUpCount`, and clears the clock.
+ *
+ * The UI reads `follow_up_needed` to surface a nudge; actual outbound
+ * follow-up mail is a separate (future) mutation gated on broker review.
+ */
+export const runDisclosureRequestFollowUpSweep = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const nowIso = new Date().toISOString();
+
+    // Scan the `status="sent"` prefix of the
+    // (status, nextFollowUpDueAt) index and filter overdue rows in
+    // memory. The index keeps the prefix cheap, and ISO-8601 strings
+    // compare lexicographically the same way they sort chronologically,
+    // so `row.nextFollowUpDueAt <= nowIso` is the correct overdue test.
+    const sentRows = await ctx.db
+      .query("disclosureRequests")
+      .withIndex("by_status_and_nextFollowUpDueAt", (q) =>
+        q.eq("status", "sent"),
+      )
+      .collect();
+
+    for (const row of sentRows) {
+      if (row.nextFollowUpDueAt === undefined) continue;
+      if (row.nextFollowUpDueAt > nowIso) continue;
+      await ctx.db.patch(row._id, {
+        status: "follow_up_needed",
+        followUpCount: row.followUpCount + 1,
+        lastFollowUpAt: nowIso,
+        nextFollowUpDueAt: undefined,
+        updatedAt: nowIso,
+      });
+    }
     return null;
   },
 });

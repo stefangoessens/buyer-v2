@@ -23,4 +23,14 @@ crons.cron(
   {},
 );
 
+// KIN-1079 — hourly follow-up sweep for the Request Disclosures rail.
+// Flips `sent` rows past their 48h follow-up window into
+// `follow_up_needed` so the deal room UI can surface a nudge.
+crons.interval(
+  "disclosureRequestFollowUpSweep",
+  { hours: 1 },
+  internal.disclosures.runDisclosureRequestFollowUpSweep,
+  {},
+);
+
 export default crons;
