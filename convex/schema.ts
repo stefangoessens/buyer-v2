@@ -1252,6 +1252,52 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_status", ["status"]),
 
+  // waitlistSignups (KIN-1088) — non-Florida demand capture for the public
+  // marketing site. Distinct from `leadAttribution`: that table tracks
+  // *attribution* for visitors who eventually register, while this one
+  // captures *demand* from buyers we cannot serve today (out-of-state).
+  // Keeping them separate lets attribution stay anchored to in-app users
+  // and lets ops query waitlist demand by state without touching the
+  // attribution lifecycle.
+  //
+  // Dedupe semantics: rows are unique on `(email, stateCode)` after
+  // normalization (lowercase email, uppercase 2-letter state). Repeat
+  // submits patch the existing row; the upsert mutation also enforces a
+  // 60-second rate limit on the same (email, state) pair.
+  //
+  // PII: stores `email` and optional `zip`. Analytics events MUST never
+  // surface either — see `waitlist_submitted` in `src/lib/analytics.ts`
+  // for the PII-safe shape that goes to PostHog. `userAgent` is captured
+  // for ops abuse-detection only and is not surfaced in product UI.
+  //
+  // Retention: standard table rules — no special legal hold today. If a
+  // signup is later linked to a registered user, ops can join via email.
+  waitlistSignups: defineTable({
+    // Normalized lowercased email. All lookups use this exact form.
+    email: v.string(),
+    // 2-letter US state code (matches values() of US_STATES from
+    // src/lib/intake/address.ts). Captured as buyer self-reported
+    // location, not geolocated.
+    stateCode: v.string(),
+    // Optional 5-digit US zip. Validated at the mutation boundary.
+    zip: v.optional(v.string()),
+    // Marketing route that captured the submission (e.g. "/", "/pricing").
+    // Helps attribution analytics see which page converts non-FL demand.
+    sourcePath: v.string(),
+    // Link to leadAttribution row when the visitor already had one —
+    // optional because capture can happen before attribution hydrates.
+    attributionSessionId: v.optional(v.string()),
+    // User agent string at capture time. Used only for abuse detection
+    // by ops — do NOT surface to analytics.
+    userAgent: v.optional(v.string()),
+    // ISO timestamps.
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_email", ["email"])
+    .index("by_stateCode", ["stateCode"])
+    .index("by_email_and_stateCode", ["email", "stateCode"]),
+
   // ═══════════════════════════════════════════════════════════════════════════
   // INTERNAL CONSOLE (KIN-797 Admin Shell + downstream ops tools)
   // ═══════════════════════════════════════════════════════════════════════════
