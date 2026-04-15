@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  WAITLIST_ALLOWED_STATE_CODES,
   WAITLIST_RATE_LIMIT_WINDOW_MS,
   isValidWaitlistEmail,
   isValidWaitlistStateCode,
@@ -9,6 +10,7 @@ import {
   normalizeWaitlistEmail,
   normalizeWaitlistStateCode,
 } from "../../../convex/lib/waitlistValidation";
+import { US_STATES } from "@/lib/intake/address";
 
 // ─── Notes ─────────────────────────────────────────────────────────────
 // `convex-test` is not wired up in this repo, so we exercise the pure
@@ -109,6 +111,22 @@ describe("isValidWaitlistStateCode", () => {
 
   it("rejects digits", () => {
     expect(isValidWaitlistStateCode("12")).toBe(false);
+  });
+
+  // Codex KIN-1088 review: allowlist against canonical US state codes
+  // so junk like ZZ can't pollute state-level demand reporting.
+  it("rejects 2-letter uppercase codes that aren't real US states", () => {
+    expect(isValidWaitlistStateCode("ZZ")).toBe(false);
+    expect(isValidWaitlistStateCode("XX")).toBe(false);
+    expect(isValidWaitlistStateCode("QQ")).toBe(false);
+  });
+
+  it("allowlist is in parity with src/lib/intake/address.ts US_STATES values", () => {
+    const addressValues = new Set(Object.values(US_STATES));
+    expect(WAITLIST_ALLOWED_STATE_CODES.size).toBe(addressValues.size);
+    for (const code of addressValues) {
+      expect(WAITLIST_ALLOWED_STATE_CODES.has(code)).toBe(true);
+    }
   });
 });
 

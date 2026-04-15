@@ -38,6 +38,16 @@ export function FloridaAvailabilityStrip({
     }
   }, []);
 
+  // Strip lives in the shared marketing layout, so client-side
+  // navigation reuses the same component instance. Reset the
+  // impression guard on every route change so each marketing route
+  // can emit `fl_strip_viewed` once — without this, route-level
+  // funnel analytics are severely undercounted after the first
+  // page. (Codex KIN-1088 review.)
+  useEffect(() => {
+    viewedFiredRef.current = false;
+  }, [pathname]);
+
   useEffect(() => {
     if (!enabled || !mounted || dismissed || viewedFiredRef.current) return;
     const node = stripRef.current;
