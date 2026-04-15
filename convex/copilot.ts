@@ -185,6 +185,74 @@ export const listLatestEngineOutputInternal = internalQuery({
 });
 
 /**
+ * KIN-1081 — return the latest doc_parser row for each workflow
+ * (disclosure vs. inspection) on a property. Both engines write to
+ * `engineType: "doc_parser"`, so the existing
+ * `listLatestEngineOutputInternal` would return whichever one ran most
+ * recently. The chat + copilot need BOTH, partitioned by the JSON
+ * payload's `engineVersion` prefix.
+ *
+ * Walks the index newest-first and stops as soon as one of each kind
+ * has been found, so this stays cheap on properties with long parse
+ * histories.
+ */
+export const listLatestDocParserOutputsInternal = internalQuery({
+  args: {
+    propertyId: v.id("properties"),
+  },
+  returns: v.object({
+    disclosure: v.union(v.any(), v.null()),
+    inspection: v.union(v.any(), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    let disclosure: Record<string, unknown> | null = null;
+    let inspection: Record<string, unknown> | null = null;
+
+    for await (const row of ctx.db
+      .query("aiEngineOutputs")
+      .withIndex("by_propertyId_and_engineType", (q) =>
+        q.eq("propertyId", args.propertyId).eq("engineType", "doc_parser"),
+      )
+      .order("desc")) {
+      let parsed: unknown = null;
+      try {
+        parsed = JSON.parse(row.output);
+      } catch {
+        parsed = null;
+      }
+      const engineVersion =
+        parsed &&
+        typeof parsed === "object" &&
+        "engineVersion" in parsed &&
+        typeof (parsed as { engineVersion?: unknown }).engineVersion === "string"
+          ? (parsed as { engineVersion: string }).engineVersion
+          : "";
+
+      const summary = {
+        _id: row._id,
+        confidence: row.confidence,
+        modelId: row.modelId,
+        generatedAt: row.generatedAt,
+        citations: row.citations,
+        reviewState: row.reviewState,
+        output: parsed,
+        snippet: row.output.slice(0, 400),
+      };
+
+      if (engineVersion.startsWith("inspectionParser") && !inspection) {
+        inspection = summary;
+      } else if (engineVersion.startsWith("disclosureParser") && !disclosure) {
+        disclosure = summary;
+      }
+
+      if (disclosure && inspection) break;
+    }
+
+    return { disclosure, inspection };
+  },
+});
+
+/**
  * Entry-point action — runs the orchestrator against injected deps and
  * persists the round trip. This is the ONE place that both reads from
  * the engines and writes copilot messages.
@@ -238,6 +306,46 @@ export const ask = action({
       };
       const engineType = engineTypeByIntent[intent];
       if (!engineType) return null;
+
+      // KIN-1081 — `documents` intent must surface BOTH the latest
+      // disclosure parser row AND the latest inspection parser row,
+      // since they share `engineType: "doc_parser"`. The chat snippet
+      // gets both summaries concatenated so the model can answer
+      // questions about either packet without us having to pre-route
+      // by sub-intent. Other intents still go through the original
+      // single-row resolver.
+      if (intent === "documents") {
+        const both: { disclosure: any; inspection: any } = await ctx.runQuery(
+          internal.copilot.listLatestDocParserOutputsInternal,
+          { propertyId: propertyId as Id<"properties"> },
+        );
+        const { disclosure, inspection } = both;
+        if (!disclosure && !inspection) return null;
+
+        const parts: string[] = [];
+        if (disclosure) {
+          parts.push(`[disclosure] ${disclosure.snippet}`);
+        }
+        if (inspection) {
+          parts.push(`[inspection] ${inspection.snippet}`);
+        }
+        const newest =
+          inspection && disclosure
+            ? inspection.generatedAt > disclosure.generatedAt
+              ? inspection
+              : disclosure
+            : (inspection ?? disclosure);
+
+        return {
+          engine: engineType as any,
+          engineOutputId: newest._id,
+          modelId: newest.modelId,
+          generatedAt: newest.generatedAt,
+          confidence: newest.confidence,
+          snippet: parts.join("\n\n").slice(0, 800),
+        };
+      }
+
       const row: any = await ctx.runQuery(
         internal.copilot.listLatestEngineOutputInternal,
         {

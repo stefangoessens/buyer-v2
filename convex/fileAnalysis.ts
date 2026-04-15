@@ -267,6 +267,8 @@ export const recordAnalysisResult = internalMutation({
         requiresReview: v.boolean(),
         // KIN-1078 — optional disclosure-packet-aware fields. Pre-existing
         // docParser callers omit these; disclosureParser populates them.
+        // KIN-1081 extends the union with the four inspection categories
+        // (`safety`, `major_repair`, `monitor`, `cosmetic`).
         category: v.optional(
           v.union(
             v.literal("structural"),
@@ -277,6 +279,10 @@ export const recordAnalysisResult = internalMutation({
             v.literal("environmental"),
             v.literal("title"),
             v.literal("not_disclosed"),
+            v.literal("safety"),
+            v.literal("major_repair"),
+            v.literal("monitor"),
+            v.literal("cosmetic"),
           ),
         ),
         pageReference: v.optional(v.string()),
@@ -287,6 +293,43 @@ export const recordAnalysisResult = internalMutation({
         packetVersion: v.optional(v.number()),
         packetId: v.optional(v.id("disclosurePackets")),
         findingKey: v.optional(v.string()),
+        // KIN-1081 — inspection-only fields. The inspection parser
+        // populates them; disclosure parsers and legacy callers leave
+        // them undefined. `acknowledgedAt`/`acknowledgedByUserId` are
+        // intentionally NOT accepted here — those flow through the
+        // separate `acknowledgeLifeSafetyFinding` mutation.
+        buyerSeverity: v.optional(
+          v.union(
+            v.literal("life_safety"),
+            v.literal("major_repair"),
+            v.literal("monitor"),
+            v.literal("cosmetic"),
+          ),
+        ),
+        system: v.optional(
+          v.union(
+            v.literal("roof"),
+            v.literal("hvac"),
+            v.literal("electrical"),
+            v.literal("plumbing"),
+            v.literal("structural"),
+            v.literal("exterior"),
+            v.literal("interior"),
+            v.literal("grounds"),
+            v.literal("appliances"),
+            v.literal("pest"),
+          ),
+        ),
+        estimatedCostLowUsd: v.optional(v.number()),
+        estimatedCostHighUsd: v.optional(v.number()),
+        costEstimateConfidence: v.optional(v.number()),
+        costEstimateBasis: v.optional(
+          v.union(
+            v.literal("llm_only"),
+            v.literal("llm_plus_rule"),
+            v.literal("broker_override"),
+          ),
+        ),
       }),
     ),
   },
@@ -350,6 +393,13 @@ export const recordAnalysisResult = internalMutation({
         packetVersion: finding.packetVersion,
         packetId: finding.packetId,
         findingKey: finding.findingKey,
+        // KIN-1081 — inspection-only fields; undefined for disclosure rows.
+        buyerSeverity: finding.buyerSeverity,
+        system: finding.system,
+        estimatedCostLowUsd: finding.estimatedCostLowUsd,
+        estimatedCostHighUsd: finding.estimatedCostHighUsd,
+        costEstimateConfidence: finding.costEstimateConfidence,
+        costEstimateBasis: finding.costEstimateBasis,
       };
 
       let existingId: Id<"fileAnalysisFindings"> | null = null;
@@ -531,5 +581,96 @@ export const resolveJob = mutation({
     });
 
     return null;
+  },
+});
+
+// ═══ KIN-1081: inspection finding surfaces ═══
+
+/**
+ * Buyer acknowledgment for a life-safety inspection finding. The
+ * inspection UI requires every life_safety finding to be explicitly
+ * acknowledged by the buyer before the negotiation summary can be
+ * published. Only the packet's owning buyer can acknowledge their own
+ * findings.
+ */
+export const acknowledgeLifeSafetyFinding = mutation({
+  args: { findingId: v.id("fileAnalysisFindings") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    const finding = await ctx.db.get(args.findingId);
+    if (!finding) throw new Error("Finding not found");
+
+    if (!finding.packetId) {
+      throw new Error("Finding is not attached to a packet");
+    }
+    const packet = await ctx.db.get(finding.packetId);
+    if (!packet) throw new Error("Packet not found");
+    if (packet.buyerId !== user._id) {
+      throw new Error("Only the packet's buyer can acknowledge this finding");
+    }
+    if (finding.buyerSeverity !== "life_safety") {
+      throw new Error("Only life_safety findings can be acknowledged");
+    }
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(args.findingId, {
+      acknowledgedAt: now,
+      acknowledgedByUserId: user._id,
+    });
+
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "inspection_life_safety_acknowledged",
+      entityType: "fileAnalysisFindings",
+      entityId: args.findingId,
+      timestamp: now,
+    });
+
+    return null;
+  },
+});
+
+/**
+ * Fetch all findings for an inspection packet. Used by the inspection
+ * tab + negotiation summary surfaces. Access is gated through the
+ * deal room (buyer + broker + admin); rejects packets whose workflow
+ * is not "inspection" so disclosure callers don't accidentally route
+ * through this query.
+ */
+export const getInspectionFindingsByPacket = query({
+  args: { packetId: v.id("disclosurePackets") },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    const packet = await ctx.db.get(args.packetId);
+    if (!packet) return [];
+    if (packet.workflow !== "inspection") return [];
+
+    const access = await canReadDealRoom(ctx, packet.dealRoomId);
+    if (!access) return [];
+
+    const findings = await ctx.db
+      .query("fileAnalysisFindings")
+      .withIndex("by_packetId", (q) => q.eq("packetId", args.packetId))
+      .collect();
+
+    const sorted = [...findings].sort((a, b) => {
+      const severityOrder: Record<string, number> = {
+        life_safety: 0,
+        major_repair: 1,
+        monitor: 2,
+        cosmetic: 3,
+      };
+      const aSeverity =
+        a.buyerSeverity !== undefined ? severityOrder[a.buyerSeverity] : 99;
+      const bSeverity =
+        b.buyerSeverity !== undefined ? severityOrder[b.buyerSeverity] : 99;
+      if (aSeverity !== bSeverity) return aSeverity - bSeverity;
+      const aSystem = a.system ?? "";
+      const bSystem = b.system ?? "";
+      return aSystem.localeCompare(bSystem);
+    });
+
+    return access === "buyer" ? sorted.map(stripFindingForBuyer) : sorted;
   },
 });

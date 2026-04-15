@@ -78,6 +78,29 @@ type DisclosurePacketBlock = {
   }>;
 } | null;
 
+type InspectionFindingBlock = {
+  title: string;
+  buyerSeverity: "life_safety" | "major_repair" | "monitor" | "cosmetic";
+  system?: string;
+  buyerFriendlyExplanation: string;
+  recommendedAction: string;
+  pageReference?: string;
+  sourceFileName?: string;
+};
+
+type InspectionPacketBlock = {
+  version: number;
+  status: string;
+  fileNames: string[];
+  reportTypes: string[];
+  inspectorName?: string;
+  inspectorLicenseNumber?: string;
+  inspectionDate?: string;
+  negotiationSummaryReviewState?: "pending" | "approved" | "rejected";
+  negotiationSummaryBuyer?: string;
+  findings: Array<InspectionFindingBlock>;
+} | null;
+
 /**
  * Render the active disclosure packet into a grounding block for the
  * chat model. Returns null when there's no packet so callers can skip
@@ -113,6 +136,100 @@ function buildDisclosurePacketBlock(packet: DisclosurePacketBlock): string | nul
       );
     }
   }
+  return lines.join("\n");
+}
+
+/**
+ * Render the active inspection packet (KIN-1081) into a grounding block.
+ * Findings are bucketed by `buyerSeverity` so the model can prioritize
+ * life-safety items first when a buyer asks about repairs or
+ * negotiation. The negotiation summary is only included when broker-
+ * approved — pending summaries surface as a "broker is reviewing" note.
+ */
+function buildInspectionPacketBlock(
+  packet: InspectionPacketBlock,
+): string | null {
+  if (!packet) return null;
+  const lines: string[] = [];
+  lines.push(
+    `Inspection packet v${packet.version} (status: ${packet.status}) — files: ${packet.fileNames.join(", ") || "none"}.`,
+  );
+  if (packet.reportTypes.length > 0) {
+    lines.push(`Report types: ${packet.reportTypes.join(", ")}.`);
+  }
+  if (packet.inspectorName || packet.inspectionDate) {
+    const inspectorParts: string[] = [];
+    if (packet.inspectorName) {
+      inspectorParts.push(
+        packet.inspectorLicenseNumber
+          ? `${packet.inspectorName} (DBPR ${packet.inspectorLicenseNumber})`
+          : packet.inspectorName,
+      );
+    }
+    if (packet.inspectionDate) {
+      inspectorParts.push(`inspection date ${packet.inspectionDate}`);
+    }
+    lines.push(`Inspector: ${inspectorParts.join(", ")}.`);
+  }
+  lines.push(
+    "When the buyer asks about an inspection finding, cite the specific finding and its source using the format 'Source: <fileName>, <pageReference>'. Prioritize life-safety findings first, then major repairs.",
+  );
+
+  const buckets: Record<
+    "life_safety" | "major_repair" | "monitor" | "cosmetic",
+    Array<InspectionFindingBlock>
+  > = {
+    life_safety: [],
+    major_repair: [],
+    monitor: [],
+    cosmetic: [],
+  };
+  for (const f of packet.findings) {
+    buckets[f.buyerSeverity].push(f);
+  }
+
+  const renderBucket = (
+    label: string,
+    rows: Array<InspectionFindingBlock>,
+  ) => {
+    if (rows.length === 0) return;
+    lines.push("");
+    lines.push(`${label} (${rows.length}):`);
+    for (const f of rows) {
+      const src = f.sourceFileName
+        ? `Source: ${f.sourceFileName}${f.pageReference ? `, ${f.pageReference}` : ""}`
+        : "";
+      const sys = f.system ? `[${f.system}] ` : "";
+      lines.push(
+        `- ${sys}${f.title} — ${f.buyerFriendlyExplanation} Next step: ${f.recommendedAction}. ${src}`.trim(),
+      );
+    }
+  };
+
+  renderBucket("Life-safety findings", buckets.life_safety);
+  renderBucket("Major repair findings", buckets.major_repair);
+  renderBucket("Monitor findings", buckets.monitor);
+  renderBucket("Cosmetic findings", buckets.cosmetic);
+
+  if (packet.negotiationSummaryReviewState) {
+    lines.push("");
+    if (
+      packet.negotiationSummaryReviewState === "approved" &&
+      packet.negotiationSummaryBuyer
+    ) {
+      lines.push("Negotiation summary (broker-approved):");
+      lines.push(packet.negotiationSummaryBuyer);
+    } else if (packet.negotiationSummaryReviewState === "pending") {
+      lines.push(
+        "Negotiation summary: Broker is reviewing this summary — do not paraphrase or guess at its contents.",
+      );
+    } else if (packet.negotiationSummaryReviewState === "rejected") {
+      lines.push(
+        "Negotiation summary: Broker rejected the prior summary — do not cite it.",
+      );
+    }
+  }
+
   return lines.join("\n");
 }
 
@@ -254,6 +371,43 @@ const disclosurePacketContextValidator = v.union(
   }),
 );
 
+const inspectionFindingContextValidator = v.object({
+  title: v.string(),
+  buyerSeverity: v.union(
+    v.literal("life_safety"),
+    v.literal("major_repair"),
+    v.literal("monitor"),
+    v.literal("cosmetic"),
+  ),
+  system: v.optional(v.string()),
+  buyerFriendlyExplanation: v.string(),
+  recommendedAction: v.string(),
+  pageReference: v.optional(v.string()),
+  sourceFileName: v.optional(v.string()),
+});
+
+const inspectionPacketContextValidator = v.union(
+  v.null(),
+  v.object({
+    version: v.number(),
+    status: v.string(),
+    fileNames: v.array(v.string()),
+    reportTypes: v.array(v.string()),
+    inspectorName: v.optional(v.string()),
+    inspectorLicenseNumber: v.optional(v.string()),
+    inspectionDate: v.optional(v.string()),
+    negotiationSummaryReviewState: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("approved"),
+        v.literal("rejected"),
+      ),
+    ),
+    negotiationSummaryBuyer: v.optional(v.string()),
+    findings: v.array(inspectionFindingContextValidator),
+  }),
+);
+
 const assistantContextValidator = v.union(
   v.null(),
   v.object({
@@ -272,6 +426,7 @@ const assistantContextValidator = v.union(
       propertyType: v.union(v.string(), v.null()),
     }),
     disclosurePacket: disclosurePacketContextValidator,
+    inspectionPacket: inspectionPacketContextValidator,
     history: v.array(
       v.object({
         role: v.union(v.literal("user"), v.literal("assistant")),
@@ -319,6 +474,11 @@ export const loadAssistantContext = internalQuery({
     // packet. When present, the chat gets a summary of the findings
     // (including "not disclosed" gaps) so the model can cite specific
     // items rather than speculate.
+    //
+    // KIN-1081 extends the same path to ALSO pull the latest inspection
+    // packet (workflow === "inspection") so the chat can cite inspection
+    // findings + the broker-approved negotiation summary on the close
+    // step.
     const buyerDealRooms = await ctx.db
       .query("dealRooms")
       .withIndex("by_buyerId", (q) => q.eq("buyerId", userMessage.userId))
@@ -351,19 +511,58 @@ export const loadAssistantContext = internalQuery({
       }>;
     } | null = null;
 
+    let inspectionPacket: {
+      version: number;
+      status: string;
+      fileNames: string[];
+      reportTypes: string[];
+      inspectorName?: string;
+      inspectorLicenseNumber?: string;
+      inspectionDate?: string;
+      negotiationSummaryReviewState?: "pending" | "approved" | "rejected";
+      negotiationSummaryBuyer?: string;
+      findings: Array<{
+        title: string;
+        buyerSeverity: "life_safety" | "major_repair" | "monitor" | "cosmetic";
+        system?: string;
+        buyerFriendlyExplanation: string;
+        recommendedAction: string;
+        pageReference?: string;
+        sourceFileName?: string;
+      }>;
+    } | null = null;
+
     if (activeDealRoom) {
-      const latestPacket = await ctx.db
+      // Walk by_dealRoomId_and_version desc and partition by workflow.
+      // Disclosure and inspection packets share this table but have
+      // independent version sequences, so we can't rely on a single
+      // .first() — we collect, then pick the newest active row in each
+      // workflow. Rows shipped by KIN-1078 have workflow === undefined,
+      // which is treated as "disclosure".
+      const candidates = await ctx.db
         .query("disclosurePackets")
         .withIndex("by_dealRoomId_and_version", (q) =>
           q.eq("dealRoomId", activeDealRoom._id),
         )
         .order("desc")
-        .first();
+        .collect();
 
-      if (latestPacket && latestPacket.status !== "superseded") {
+      const latestDisclosurePacket = candidates.find(
+        (p) => (p.workflow ?? "disclosure") === "disclosure",
+      );
+      const latestInspectionPacket = candidates.find(
+        (p) => p.workflow === "inspection",
+      );
+
+      if (
+        latestDisclosurePacket &&
+        latestDisclosurePacket.status !== "superseded"
+      ) {
         const rawFindings = await ctx.db
           .query("fileAnalysisFindings")
-          .withIndex("by_packetId", (q) => q.eq("packetId", latestPacket._id))
+          .withIndex("by_packetId", (q) =>
+            q.eq("packetId", latestDisclosurePacket._id),
+          )
           .collect();
 
         const findings: Array<{
@@ -410,11 +609,100 @@ export const loadAssistantContext = internalQuery({
         }
 
         disclosurePacket = {
-          version: latestPacket.version,
-          status: latestPacket.status,
-          fileNames: latestPacket.files.map((fl) => fl.fileName),
+          version: latestDisclosurePacket.version,
+          status: latestDisclosurePacket.status,
+          fileNames: latestDisclosurePacket.files.map((fl) => fl.fileName),
           findings,
           notMentioned,
+        };
+      }
+
+      if (
+        latestInspectionPacket &&
+        latestInspectionPacket.status !== "superseded"
+      ) {
+        const rawInspectionFindings = await ctx.db
+          .query("fileAnalysisFindings")
+          .withIndex("by_packetId", (q) =>
+            q.eq("packetId", latestInspectionPacket._id),
+          )
+          .collect();
+
+        const inspectionFindings: Array<{
+          title: string;
+          buyerSeverity:
+            | "life_safety"
+            | "major_repair"
+            | "monitor"
+            | "cosmetic";
+          system?: string;
+          buyerFriendlyExplanation: string;
+          recommendedAction: string;
+          pageReference?: string;
+          sourceFileName?: string;
+        }> = [];
+
+        for (const f of rawInspectionFindings) {
+          // Inspection findings always carry buyerSeverity from the
+          // inspection parser. Disclosure findings (which never reach
+          // this branch — packetId is workflow-scoped) leave it
+          // undefined, so we skip rows missing the field defensively.
+          if (!f.buyerSeverity) continue;
+          inspectionFindings.push({
+            title: f.label,
+            buyerSeverity: f.buyerSeverity,
+            system: f.system,
+            buyerFriendlyExplanation:
+              f.buyerFriendlyExplanation ?? f.summary,
+            recommendedAction:
+              f.recommendedAction ?? "Review with your broker",
+            pageReference: f.pageReference,
+            sourceFileName: f.sourceFileName,
+          });
+        }
+
+        // Aggregate per-file metadata across the packet's files.
+        // reportTypes is a deduped, ordered list; inspector fields take
+        // the first non-empty value (the parser writes the same data
+        // to each file row when the inspector signed off on the bundle).
+        const reportTypeSet = new Set<string>();
+        let inspectorName: string | undefined;
+        let inspectorLicenseNumber: string | undefined;
+        let inspectionDate: string | undefined;
+        for (const fl of latestInspectionPacket.files) {
+          if (fl.reportType) reportTypeSet.add(fl.reportType);
+          if (!inspectorName && fl.inspectorName) {
+            inspectorName = fl.inspectorName;
+          }
+          if (!inspectorLicenseNumber && fl.inspectorLicenseNumber) {
+            inspectorLicenseNumber = fl.inspectorLicenseNumber;
+          }
+          if (!inspectionDate && fl.inspectionDate) {
+            inspectionDate = fl.inspectionDate;
+          }
+        }
+
+        // Negotiation summary is only piped through when the broker has
+        // approved it — pending summaries become a "broker is reviewing"
+        // sentinel in the grounding block (see buildInspectionPacketBlock).
+        const reviewState =
+          latestInspectionPacket.negotiationSummaryReviewState;
+        const summaryBuyer =
+          reviewState === "approved"
+            ? latestInspectionPacket.negotiationSummaryBuyer
+            : undefined;
+
+        inspectionPacket = {
+          version: latestInspectionPacket.version,
+          status: latestInspectionPacket.status,
+          fileNames: latestInspectionPacket.files.map((fl) => fl.fileName),
+          reportTypes: Array.from(reportTypeSet),
+          inspectorName,
+          inspectorLicenseNumber,
+          inspectionDate,
+          negotiationSummaryReviewState: reviewState,
+          negotiationSummaryBuyer: summaryBuyer,
+          findings: inspectionFindings,
         };
       }
     }
@@ -437,6 +725,7 @@ export const loadAssistantContext = internalQuery({
         propertyType: property.propertyType ?? null,
       },
       disclosurePacket,
+      inspectionPacket,
       history,
     };
   },
@@ -500,17 +789,29 @@ export const runAssistantReply = internalAction({
       history: context.history,
     });
 
-    const packetBlock = buildDisclosurePacketBlock(context.disclosurePacket);
-    const request = packetBlock
-      ? {
-          ...baseRequest,
-          messages: [
-            baseRequest.messages[0],
-            { role: "system" as const, content: packetBlock },
-            ...baseRequest.messages.slice(1),
-          ],
-        }
-      : baseRequest;
+    const disclosureBlock = buildDisclosurePacketBlock(context.disclosurePacket);
+    const inspectionBlock = buildInspectionPacketBlock(context.inspectionPacket);
+    const packetSystemMessages: Array<{
+      role: "system";
+      content: string;
+    }> = [];
+    if (disclosureBlock) {
+      packetSystemMessages.push({ role: "system", content: disclosureBlock });
+    }
+    if (inspectionBlock) {
+      packetSystemMessages.push({ role: "system", content: inspectionBlock });
+    }
+    const request =
+      packetSystemMessages.length > 0
+        ? {
+            ...baseRequest,
+            messages: [
+              baseRequest.messages[0],
+              ...packetSystemMessages,
+              ...baseRequest.messages.slice(1),
+            ],
+          }
+        : baseRequest;
 
     const result = await gateway({
       ...request,

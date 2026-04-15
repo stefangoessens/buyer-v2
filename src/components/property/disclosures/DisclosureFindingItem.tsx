@@ -29,7 +29,18 @@ interface DisclosureFindingItemProps {
 }
 
 type Severity = FindingDoc["severity"];
-type Category = NonNullable<FindingDoc["category"]>;
+// KIN-1081: the schema-level `category` union now includes inspection
+// categories too, but this component only renders disclosure findings.
+// Narrow locally so the label table stays disclosure-only.
+type Category =
+  | "structural"
+  | "water"
+  | "hoa"
+  | "legal"
+  | "insurance"
+  | "environmental"
+  | "title"
+  | "not_disclosed";
 
 const CATEGORY_LABELS: Record<Category, string> = {
   structural: "Structural",
@@ -117,8 +128,12 @@ export function DisclosureFindingItem({
   ]);
 
   const isNotDisclosed = finding.category === "not_disclosed";
-  const categoryLabel = finding.category
-    ? CATEGORY_LABELS[finding.category]
+  const disclosureCategory =
+    finding.category && finding.category in CATEGORY_LABELS
+      ? (finding.category as Category)
+      : null;
+  const categoryLabel = disclosureCategory
+    ? CATEGORY_LABELS[disclosureCategory]
     : null;
 
   const handleAskClick = () => {
