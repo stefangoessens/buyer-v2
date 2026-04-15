@@ -632,6 +632,9 @@ export const createOrUpdate = mutation({
   returns: v.id("buyerProfiles"),
   handler: async (ctx, args) => {
     const actor = await requireAuth(ctx);
+    if (actor.role === "buyer" && args.sms !== undefined) {
+      throw new Error("SMS consent state is managed by verification flows only");
+    }
     const { user, profile, messagePreferences } = await loadProfileDependencies(
       ctx,
       actor._id,

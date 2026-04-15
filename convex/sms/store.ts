@@ -1,6 +1,5 @@
 // @ts-nocheck
 import { internalMutation, internalQuery } from "../_generated/server";
-import { api } from "../_generated/api";
 import { v } from "convex/values";
 import {
   notificationSuppressionReason,
@@ -28,6 +27,34 @@ const parsedUrlValidator = v.object({
   listingId: v.optional(v.string()),
   addressHint: v.optional(v.string()),
 });
+
+async function lookupBuyerByPhone(
+  ctx: { db: any },
+  phone: string,
+) {
+  const normalizedPhone = normalizePhone(phone);
+  if (!normalizedPhone) return null;
+
+  const user = await ctx.db
+    .query("users")
+    .withIndex("phone", (q: any) => q.eq("phone", normalizedPhone))
+    .unique();
+  if (!user || user.role !== "buyer") return null;
+
+  const profile = await ctx.db
+    .query("buyerProfiles")
+    .withIndex("by_userId", (q: any) => q.eq("userId", user._id))
+    .unique();
+
+  return {
+    userId: user._id,
+    name: user.name,
+    phone: normalizedPhone,
+    profileId: profile?._id ?? null,
+    smsConsentState: profile?.smsConsentState ?? "unknown",
+    phoneVerifiedAt: profile?.phoneVerifiedAt ?? null,
+  };
+}
 
 export const findMessageBySid = internalQuery({
   args: { twilioMessageSid: v.string() },
@@ -191,54 +218,45 @@ export const patchMessage = internalMutation({
   },
 });
 
+const buyerByPhoneResultValidator = v.union(
+  v.object({
+    userId: v.id("users"),
+    name: v.string(),
+    phone: v.string(),
+    profileId: v.union(v.id("buyerProfiles"), v.null()),
+    smsConsentState: v.union(
+      v.literal("unknown"),
+      v.literal("pending"),
+      v.literal("verified"),
+      v.literal("opted_out"),
+      v.literal("suppressed"),
+    ),
+    phoneVerifiedAt: v.union(v.string(), v.null()),
+  }),
+  v.null(),
+);
+
+export const findBuyerByPhone = internalQuery({
+  args: { phone: v.string() },
+  returns: buyerByPhoneResultValidator,
+  handler: async (ctx, args) => {
+    return await lookupBuyerByPhone(ctx, args.phone);
+  },
+});
+
 export const findVerifiedBuyerByPhone = internalQuery({
   args: { phone: v.string() },
-  returns: v.union(
-    v.object({
-      userId: v.id("users"),
-      name: v.string(),
-      phone: v.string(),
-      profileId: v.union(v.id("buyerProfiles"), v.null()),
-      smsConsentState: v.union(
-        v.literal("unknown"),
-        v.literal("pending"),
-        v.literal("verified"),
-        v.literal("opted_out"),
-        v.literal("suppressed"),
-      ),
-      phoneVerifiedAt: v.union(v.string(), v.null()),
-    }),
-    v.null(),
-  ),
+  returns: buyerByPhoneResultValidator,
   handler: async (ctx, args) => {
-    const normalizedPhone = normalizePhone(args.phone);
-    if (!normalizedPhone) return null;
-
-    const user = await ctx.db
-      .query("users")
-      .withIndex("phone", (q) => q.eq("phone", normalizedPhone))
-      .unique();
-    if (!user || user.role !== "buyer") return null;
-
-    const profile = await ctx.db
-      .query("buyerProfiles")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .unique();
-
-    const smsConsentState = profile?.smsConsentState ?? "unknown";
-    const phoneVerifiedAt = profile?.phoneVerifiedAt ?? null;
-    if (smsConsentState !== "verified" || !phoneVerifiedAt) {
+    const buyer = await lookupBuyerByPhone(ctx, args.phone);
+    if (
+      !buyer ||
+      buyer.smsConsentState !== "verified" ||
+      !buyer.phoneVerifiedAt
+    ) {
       return null;
     }
-
-    return {
-      userId: user._id,
-      name: user.name,
-      phone: normalizedPhone,
-      profileId: profile?._id ?? null,
-      smsConsentState,
-      phoneVerifiedAt,
-    };
+    return buyer;
   },
 });
 

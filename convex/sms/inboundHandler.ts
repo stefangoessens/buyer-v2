@@ -255,6 +255,13 @@ function localMessageSid(prefix: "outbound" | "suppressed" | "failed") {
   return `local-${prefix}-${crypto.randomUUID()}`;
 }
 
+function assertTrustedTwilioWebhook(sharedSecret: string) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN?.trim();
+  if (!authToken || !sharedSecret.trim() || authToken !== sharedSecret.trim()) {
+    throw new Error("Invalid webhook credentials");
+  }
+}
+
 async function recordBuyerConsentTouch(
   ctx: ActionCtx,
   params: {
@@ -358,6 +365,9 @@ async function processInboundMessage(
   }
 
   const intent = classifyInboundSms(params.body);
+  const knownBuyer = await ctx.runQuery(internal.sms.store.findBuyerByPhone, {
+    phone: normalizedFrom,
+  });
   const matchedBuyer = await ctx.runQuery(internal.sms.store.findVerifiedBuyerByPhone, {
     phone: normalizedFrom,
   });
@@ -370,9 +380,9 @@ async function processInboundMessage(
       source: "twilio_stop_keyword",
       note: "STOP keyword received via Twilio inbound webhook",
     });
-    if (matchedBuyer) {
+    if (knownBuyer) {
       await recordBuyerConsentTouch(ctx, {
-        userId: matchedBuyer.userId,
+        userId: knownBuyer.userId,
         phone: normalizedFrom,
         state: "opted_out",
         note: "STOP keyword received via inbound SMS",
@@ -383,7 +393,7 @@ async function processInboundMessage(
       messageId: params.messageId,
       status: "suppressed",
       errorReason: "stop_keyword",
-      buyerId: matchedBuyer?.userId,
+      buyerId: knownBuyer?.userId,
       processedAt: now,
       statusUpdatedAt: now,
     });
@@ -407,7 +417,7 @@ async function processInboundMessage(
       messageId: params.messageId,
       status: "completed",
       errorReason: "help_keyword",
-      buyerId: matchedBuyer?.userId,
+      buyerId: knownBuyer?.userId,
       processedAt: now,
       statusUpdatedAt: now,
     });
@@ -430,9 +440,9 @@ async function processInboundMessage(
       phone: normalizedFrom,
       scope: "all",
     });
-    if (matchedBuyer) {
+    if (knownBuyer) {
       await recordBuyerConsentTouch(ctx, {
-        userId: matchedBuyer.userId,
+        userId: knownBuyer.userId,
         phone: normalizedFrom,
         state: "verified",
         note: "START keyword received via inbound SMS",
@@ -443,7 +453,7 @@ async function processInboundMessage(
       messageId: params.messageId,
       status: "completed",
       errorReason: "start_keyword",
-      buyerId: matchedBuyer?.userId,
+      buyerId: knownBuyer?.userId,
       processedAt: now,
       statusUpdatedAt: now,
     });
@@ -467,7 +477,7 @@ async function processInboundMessage(
       messageId: params.messageId,
       status: "failed",
       errorReason: "no_url_found",
-      buyerId: matchedBuyer?.userId,
+      buyerId: knownBuyer?.userId,
       processedAt: now,
       statusUpdatedAt: now,
     });
@@ -709,9 +719,7 @@ export const handleInboundWebhook = action({
   },
   returns: inboundResultValidator,
   handler: async (ctx, args) => {
-    if ((process.env.TWILIO_AUTH_TOKEN?.trim() ?? "") !== args.sharedSecret.trim()) {
-      throw new Error("Invalid webhook credentials");
-    }
+    assertTrustedTwilioWebhook(args.sharedSecret);
     const now = new Date().toISOString();
     const inbound = await ctx.runMutation(internal.sms.store.upsertInboundMessage, {
       twilioMessageSid: args.messageSid,
@@ -772,9 +780,7 @@ export const handleStatusWebhook = action({
     providerState: v.optional(smsMessageProviderState),
   }),
   handler: async (ctx, args) => {
-    if ((process.env.TWILIO_AUTH_TOKEN?.trim() ?? "") !== args.sharedSecret.trim()) {
-      throw new Error("Invalid webhook credentials");
-    }
+    assertTrustedTwilioWebhook(args.sharedSecret);
     const row = await ctx.runQuery(internal.sms.store.findMessageBySid, {
       twilioMessageSid: args.messageSid,
     });
