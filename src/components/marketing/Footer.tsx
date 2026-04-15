@@ -13,6 +13,12 @@ const footerSections = {
     { label: "Blog", href: "/blog" },
     { label: "Contact", href: "/contact" },
   ],
+  guides: [
+    { label: "Our Process", href: "/our-process" },
+    { label: "All Guides", href: "/guides" },
+    { label: "Homestead Exemption", href: "/guides/florida-homestead-exemption" },
+    { label: "Buyer Rebate Explained", href: "/guides/florida-buyer-rebate-explained" },
+  ],
   legal: [
     { label: "Privacy Policy", href: "/privacy" },
     { label: "Terms of Service", href: "/terms" },
@@ -40,13 +46,14 @@ export function Footer() {
   return (
     <footer className="w-full bg-primary-800">
       <div className="mx-auto max-w-[1248px] px-6 py-16 lg:px-8 lg:py-20">
-        <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr]">
-          <div className="max-w-xs">
+        <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr]">
+          <div className="max-w-xs sm:col-span-2 md:col-span-4 lg:col-span-1">
             <Link href="/" className="text-xl font-bold text-white">buyer-v2</Link>
             <p className="mt-4 text-sm leading-relaxed text-neutral-400">AI-native buyer brokerage for Florida homebuyers. Expert representation, instant property analysis, real savings.</p>
             <div className="mt-6"><span className="text-xs font-medium text-neutral-500">Florida licensed brokerage</span></div>
           </div>
           <FooterColumn title="Product" links={footerSections.product} />
+          <FooterColumn title="Guides" links={footerSections.guides} />
           <FooterColumn title="Company" links={footerSections.company} />
           <FooterColumn title="Legal" links={footerSections.legal} />
         </div>

@@ -325,6 +325,15 @@ export function buildStructuredData(
         ...(input.lastModified ? { dateModified: input.lastModified } : {}),
       };
     }
+    case "guide": {
+      return buildGuideArticleSchema({
+        title: input.title,
+        summary: input.description,
+        slug: input.path.replace(/^\/guides\//, "").replace(/^\/+/, ""),
+        datePublished: input.publishedAt ?? input.lastModified ?? "",
+        dateModified: input.lastModified,
+      });
+    }
     case "story":
     case "marketing":
     case "product":
@@ -339,6 +348,83 @@ export function buildStructuredData(
       };
     }
   }
+}
+
+// MARK: - Guide article schema (KIN-1090)
+
+/**
+ * Options for the Florida buyer-guide Article JSON-LD payload.
+ *
+ * Guides are long-form, evergreen educational pages (homestead
+ * exemption, rebate mechanics, etc.). They emit a plain `Article`
+ * schema — NOT `HowTo`, even though some contain step-by-step
+ * sections — because Google's rich-result requirements for HowTo
+ * have tightened and require a lot more structure than our guides
+ * currently provide. An `Article` schema still lets Google surface
+ * the title, summary, and author in the SERP.
+ */
+export interface BuildGuideArticleSchemaOpts {
+  title: string;
+  summary: string;
+  /**
+   * Slug-only (no leading/trailing slashes). The helper builds the
+   * canonical URL as `${siteOrigin}/guides/${slug}` so callers don't
+   * have to know the origin.
+   */
+  slug: string;
+  /** ISO-8601 date the guide was first published. */
+  datePublished: string;
+  /** ISO-8601 date of the last edit. Defaults to `datePublished`. */
+  dateModified?: string;
+  /** Optional "X min read" hint — emitted as ISO-8601 duration. */
+  readingTimeMinutes?: number;
+  /** Optional `articleSection` (homestead, rebate, etc.). */
+  category?: string;
+}
+
+/**
+ * Schema.org `Article` markup for a Florida buyer guide (KIN-1090).
+ *
+ * Kept separate from the generic `article` branch in
+ * `buildStructuredData` so the router can call a strongly-typed
+ * helper — same pattern as `buildBuyerStoryReviewSchema`. Pages
+ * without a `publishedAt` pass an empty string; in that case the
+ * helper omits the dates rather than emitting `"datePublished": ""`
+ * which Google treats as a validation error.
+ */
+export function buildGuideArticleSchema(
+  opts: BuildGuideArticleSchemaOpts
+): Record<string, unknown> {
+  const origin = getSiteOrigin();
+  const url = `${origin}/guides/${opts.slug}`;
+  const hasPublished = opts.datePublished.trim().length > 0;
+  const dateModified = opts.dateModified ?? opts.datePublished;
+
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: opts.title,
+    description: opts.summary,
+    url,
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": url,
+    },
+    ...(hasPublished ? { datePublished: opts.datePublished } : {}),
+    ...(hasPublished && dateModified ? { dateModified } : {}),
+    author: {
+      "@type": "Organization",
+      name: DEFAULT_SITE_NAME,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: DEFAULT_SITE_NAME,
+    },
+    ...(opts.category ? { articleSection: opts.category } : {}),
+    ...(opts.readingTimeMinutes
+      ? { timeRequired: `PT${opts.readingTimeMinutes}M` }
+      : {}),
+  };
 }
 
 // MARK: - Buyer story schemas (KIN-1087)
