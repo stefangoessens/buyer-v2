@@ -44,12 +44,6 @@ export function FaqAccordionSection({
 
   // Track when each question was opened so we can compute dwell on close.
   const openedAtRef = useRef<Map<string, number>>(new Map());
-  // Stable open-source for the next openEntry call so the analytics event
-  // can distinguish "deep_link" from "direct" without leaking that state
-  // to other handlers. Mutated synchronously, read once.
-  const nextOpenSourceRef = useRef<"direct" | "deep_link" | "jump_nav">(
-    "direct",
-  );
   // Per-theme engagement counter so the 2+ engagement event fires once
   // per theme instance.
   const engagedQuestionsRef = useRef<Set<string>>(new Set());
@@ -97,9 +91,9 @@ export function FaqAccordionSection({
       const hash = window.location.hash.replace(/^#/, "");
       if (!hash) return;
       if (!validSlugs.has(hash)) return;
-      // Mark the next openEntry as deep-link so the open analytics
-      // event reports the right source.
-      nextOpenSourceRef.current = "deep_link";
+      // Track the deep-link open directly and keep the source ref out
+      // of it — the ref is only consumed by `toggle`, and setting it
+      // here would leak "deep_link" into the next manual click.
       openEntry(hash);
       // Record opened-at for dwell tracking.
       openedAtRef.current.set(hash, Date.now());
@@ -147,12 +141,13 @@ export function FaqAccordionSection({
           }
         } else {
           next.add(id);
-          // Opening → emit opened, with source=direct unless openEntry
-          // has flagged this as a deep-link/jump-nav driven open.
-          const source = nextOpenSourceRef.current;
-          nextOpenSourceRef.current = "direct";
+          // Opening → emit opened with source=direct. Hash-driven opens
+          // bypass `toggle` (they go through `openEntry` directly and
+          // fire their own `faq_question_opened` with source=deep_link
+          // inside the hash effect), so this branch only sees manual
+          // user clicks.
           openedAtRef.current.set(id, Date.now());
-          track("faq_question_opened", { questionId: id, theme, source });
+          track("faq_question_opened", { questionId: id, theme, source: "direct" });
           engagedQuestionsRef.current.add(id);
           maybeFireEngagement();
           // Keep the URL in sync without polluting history. Use

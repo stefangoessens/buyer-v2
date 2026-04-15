@@ -64,9 +64,9 @@ export const NEW_CONSTRUCTION_CATALOG: NewConstructionCatalog = {
           kind: "faq_ref",
           heading: "Common questions about new-construction purchases",
           entryIds: [
-            "how_much_does_it_cost",
-            "who_shows_me_homes",
-            "how_is_the_rebate_calculated",
+            "how-does-buyer-v2-save-me-money",
+            "can-i-tour-homes-with-buyer-v2",
+            "how-does-the-buyer-credit-work-at-closing",
           ],
         },
         {
@@ -105,7 +105,7 @@ export const NEW_CONSTRUCTION_CATALOG: NewConstructionCatalog = {
         {
           kind: "faq_ref",
           heading: "D.R. Horton + buyer-v2 FAQs",
-          entryIds: ["what_is_buyer_v2", "how_is_the_rebate_calculated"],
+          entryIds: ["what-is-buyer-v2", "how-does-the-buyer-credit-work-at-closing"],
         },
         {
           kind: "cta",
@@ -214,7 +214,7 @@ export const NEW_CONSTRUCTION_CATALOG: NewConstructionCatalog = {
         {
           kind: "faq_ref",
           heading: "Questions from Villages at Tradition buyers",
-          entryIds: ["how_much_does_it_cost", "what_happens_at_closing"],
+          entryIds: ["how-does-buyer-v2-save-me-money", "is-the-rebate-taxable"],
         },
         {
           kind: "cta",
@@ -259,7 +259,7 @@ export const NEW_CONSTRUCTION_CATALOG: NewConstructionCatalog = {
         {
           kind: "faq_ref",
           heading: "Heron Preserve buyer questions",
-          entryIds: ["paste_link_flow", "how_is_the_rebate_calculated"],
+          entryIds: ["how-does-buyer-v2-work", "how-does-the-buyer-credit-work-at-closing"],
         },
         {
           kind: "cta",
@@ -308,7 +308,7 @@ export const NEW_CONSTRUCTION_CATALOG: NewConstructionCatalog = {
         {
           kind: "faq_ref",
           heading: "Silver Oak Reserve buyer questions",
-          entryIds: ["what_about_ai_decisions", "what_happens_at_closing"],
+          entryIds: ["can-i-still-talk-to-a-real-person", "is-the-rebate-taxable"],
         },
         {
           kind: "cta",
