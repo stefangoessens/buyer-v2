@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { NavHeader } from "@/components/marketing/NavHeader";
 import { Footer } from "@/components/marketing/Footer";
+import { FloridaAvailabilityStrip } from "@/components/marketing/FloridaAvailabilityStrip";
 import { appSurfaceDefinitions } from "@/lib/app-shell";
 
 export const dynamic = "force-static";
@@ -14,6 +15,7 @@ export default function MarketingLayout({
   return (
     <div className="min-h-screen">
       <NavHeader />
+      <FloridaAvailabilityStrip />
       <main>{children}</main>
       <Footer />
     </div>

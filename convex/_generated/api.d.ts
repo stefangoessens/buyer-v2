@@ -143,6 +143,7 @@ import type * as tourRequests from "../tourRequests.js";
 import type * as tours from "../tours.js";
 import type * as users from "../users.js";
 import type * as visitorPreregistrations from "../visitorPreregistrations.js";
+import type * as waitlistSignups from "../waitlistSignups.js";
 import type * as watchlist from "../watchlist.js";
 
 import type {
@@ -287,6 +288,7 @@ declare const fullApi: ApiFromModules<{
   tours: typeof tours;
   users: typeof users;
   visitorPreregistrations: typeof visitorPreregistrations;
+  waitlistSignups: typeof waitlistSignups;
   watchlist: typeof watchlist;
 }>;
 

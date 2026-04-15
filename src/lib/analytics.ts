@@ -183,6 +183,36 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   /** Fired when the "Paste a Zillow, Redfin, or Realtor link" CTA in the comparison section is clicked. */
   home_comparison_intake_cta_clicked: Record<string, never>;
 
+  // ─── FL availability strip (KIN-1088) ───────────────────────────────
+  /** Strip enters viewport for the first time (IntersectionObserver). */
+  fl_strip_viewed: { route: string };
+  /** Buyer clicks the strip CTA to open the waitlist dialog. */
+  fl_strip_cta_clicked: { route: string };
+  /** Buyer dismisses the strip via the close button. */
+  fl_strip_dismissed: { route: string };
+  /** Waitlist dialog has opened (any entry path). */
+  waitlist_dialog_opened: { source: "strip" | "deep_link"; route: string };
+  /** Waitlist mutation succeeded. PII-safe — never send raw email or zip. */
+  waitlist_submitted: {
+    route: string;
+    surface: "desktop" | "mobile";
+    /** 2-letter US state code — not PII. */
+    stateCode: string;
+    /** Boolean flag only — never the raw value. */
+    zipPresent: boolean;
+  };
+  /** Waitlist mutation failed. `errorKind` matches the mutation's `reason` union. */
+  waitlist_submit_error: {
+    route: string;
+    errorKind:
+      | "honeypot"
+      | "rate_limited"
+      | "invalid_email"
+      | "invalid_state"
+      | "invalid_zip"
+      | "network";
+  };
+
   // ─── My Journeys (KIN-1082) ─────────────────────────────────────────
   /** Fired when the /dashboard/journeys index page mounts. */
   journeys_index_viewed: { view: "active" | "archived"; count: number };
@@ -656,6 +686,47 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     owner: "growth",
     whenFired:
       "\"Paste a Zillow, Redfin, or Realtor link\" CTA clicked in the home comparison section",
+    piiSafe: true,
+  },
+  fl_strip_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "FL availability strip enters the viewport for the first time on a marketing route",
+    piiSafe: true,
+  },
+  fl_strip_cta_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "FL availability strip CTA clicked to open the waitlist dialog",
+    piiSafe: true,
+  },
+  fl_strip_dismissed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "FL availability strip closed via the dismiss control",
+    piiSafe: true,
+  },
+  waitlist_dialog_opened: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "Non-FL waitlist dialog opened from the strip CTA or a deep link",
+    piiSafe: true,
+  },
+  waitlist_submitted: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "waitlistSignups.upsert mutation returns ok: true",
+    // Only the 2-letter state code and a boolean flag are sent — no raw
+    // email or zip — so the event is safe to emit without scrubbing.
+    piiSafe: true,
+  },
+  waitlist_submit_error: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "waitlistSignups.upsert mutation returns ok: false, or the network call fails",
     piiSafe: true,
   },
 

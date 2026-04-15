@@ -103,6 +103,16 @@ export const SETTINGS_CATALOG: SettingsCatalog = {
       writeRole: "broker",
       defaultValue: { kind: "boolean", value: true },
     },
+    {
+      key: "rollout.fl_availability_strip_enabled",
+      label: "FL availability strip enabled",
+      description:
+        "Controls whether the sitewide Florida-only availability strip renders on public marketing routes. Does not affect the waitlist mutation itself — only the strip + dialog UI.",
+      category: "rollout",
+      kind: "boolean",
+      writeRole: "broker",
+      defaultValue: { kind: "boolean", value: true },
+    },
 
     // ─── Operational defaults ───────────────────────────────────
     {

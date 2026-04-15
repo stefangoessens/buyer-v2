@@ -470,7 +470,22 @@ describe("listEventsByCategory()", () => {
     expect(events).toContain("faq_contact_cta_clicked");
     expect(events).toContain("faq_deep_link_landed");
     expect(events).toContain("faq_teaser_clicked");
-    expect(events).toHaveLength(18);
+    // KIN-1088: FL availability strip + waitlist added 6 engagement events.
+    expect(events).toContain("fl_strip_viewed");
+    expect(events).toContain("fl_strip_cta_clicked");
+    expect(events).toContain("fl_strip_dismissed");
+    expect(events).toContain("waitlist_dialog_opened");
+    expect(events).toContain("waitlist_submitted");
+    expect(events).toContain("waitlist_submit_error");
+    // KIN-1087: verified buyer stories added 7 engagement events.
+    expect(events).toContain("testimonial_card_viewed");
+    expect(events).toContain("testimonial_card_clicked");
+    expect(events).toContain("story_page_viewed");
+    expect(events).toContain("story_read_time_ms");
+    expect(events).toContain("story_cta_clicked");
+    expect(events).toContain("story_related_clicked");
+    expect(events).toContain("aggregate_savings_counter_viewed");
+    expect(events).toHaveLength(31);
   });
 });
 
