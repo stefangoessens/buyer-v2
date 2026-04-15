@@ -11,6 +11,7 @@ import type {
   CommunicationTemplateRecord,
 } from "../packages/shared/src/communication-templates";
 import {
+  EMAIL_TEMPLATE_METADATA,
   compareCommunicationTemplateVersions,
   isValidCommunicationTemplateVersion,
 } from "../packages/shared/src/communication-templates";
@@ -73,6 +74,16 @@ type CommunicationTemplateRenderResult = {
   body: string;
   version: string;
 };
+
+const builtInEmailTemplateValidator = v.object({
+  key: v.string(),
+  channel: v.literal("email"),
+  stream: v.union(v.literal("transactional"), v.literal("relationship")),
+  description: v.string(),
+  defaultSubject: v.string(),
+  sourceFile: v.string(),
+  variables: v.array(v.string()),
+});
 
 /**
  * Guard that every public function uses: returns the current user if
@@ -166,6 +177,29 @@ export const listActive = query({
       .query("communicationTemplates")
       .withIndex("by_isActive", (q) => q.eq("isActive", true))
       .collect();
+  },
+});
+
+/**
+ * Built-in React Email registry metadata for the provider-backed templates
+ * introduced by KIN-1092. This does not replace the editable Convex string
+ * registry yet; it links canonical template keys to the code-rendered source
+ * files so downstream tooling can converge on one template namespace.
+ */
+export const listBuiltInEmailTemplates = query({
+  args: {},
+  returns: v.array(builtInEmailTemplateValidator),
+  handler: async (ctx) => {
+    await requireBrokerOrAdmin(ctx);
+    return EMAIL_TEMPLATE_METADATA.map((template) => ({
+      key: template.key,
+      channel: template.channel,
+      stream: template.stream,
+      description: template.description,
+      defaultSubject: template.defaultSubject,
+      sourceFile: template.sourceFile,
+      variables: [...template.variables],
+    }));
   },
 });
 

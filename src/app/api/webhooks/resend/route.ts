@@ -104,11 +104,22 @@ function extractClickedLink(raw: Record<string, unknown>): string | undefined {
 async function callResendWebhookMutation(args: {
   providerEventId: string;
   providerMessageId?: string;
-  transition: "sent" | "delivered" | "opened" | "clicked" | "bounced" | "complained" | "failed" | "suppressed" | "inbound_received";
+  transition:
+    | "sent"
+    | "delivered"
+    | "opened"
+    | "clicked"
+    | "bounced"
+    | "complained"
+    | "failed"
+    | "suppressed"
+    | "received"
+    | "inbound_received";
   occurredAt: string;
   recipientKeys: string[];
   eventId?: string;
   failureReason?: string;
+  suppressedType?: string;
   rawPayload: string;
   signatureVerified: boolean;
 }) {
