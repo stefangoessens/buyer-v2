@@ -22,6 +22,9 @@ export const sessionUserValidator = v.object({
   authTokenIdentifier: v.optional(v.string()),
   sessionVersion: v.optional(v.number()),
   lastAuthenticatedAt: v.optional(v.string()),
+  welcomeEmailQueuedAt: v.optional(v.string()),
+  welcomeEmailProviderMessageId: v.optional(v.string()),
+  welcomeEmailTemplateKey: v.optional(v.string()),
 });
 
 export const sessionPermissionsValidator = v.object({

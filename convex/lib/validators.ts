@@ -281,7 +281,9 @@ export const rateLimitChannel = v.union(
   v.literal("sms"), // text-a-link intake
   v.literal("extension"), // chrome extension intake
   v.literal("share_import"), // iOS share sheet
-  v.literal("manual_entry") // manual address entry
+  v.literal("manual_entry"), // manual address entry
+  v.literal("contact_public"), // public `/contact` form
+  v.literal("waitlist_public"), // public waitlist capture
 );
 
 // ─── Buyer Update Events (KIN-837) ─────────────────────────────────────────

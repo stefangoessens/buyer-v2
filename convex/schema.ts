@@ -80,6 +80,9 @@ export default defineSchema({
     authTokenIdentifier: v.optional(v.string()),
     sessionVersion: v.optional(v.number()),
     lastAuthenticatedAt: v.optional(v.string()),
+    welcomeEmailQueuedAt: v.optional(v.string()),
+    welcomeEmailProviderMessageId: v.optional(v.string()),
+    welcomeEmailTemplateKey: v.optional(v.string()),
   })
     // Indexes required by @convex-dev/auth. The "email" / "phone" names are
     // load-bearing — the auth runtime looks them up by literal name.
@@ -1290,6 +1293,13 @@ export default defineSchema({
     // User agent string at capture time. Used only for abuse detection
     // by ops — do NOT surface to analytics.
     userAgent: v.optional(v.string()),
+    // Shared mail-rail delivery markers for the waitlist confirmation.
+    confirmationEmailProvider: v.optional(
+      v.union(v.literal("noop"), v.literal("resend"))
+    ),
+    confirmationEmailProviderMessageId: v.optional(v.string()),
+    confirmationEmailQueuedAt: v.optional(v.string()),
+    confirmationEmailTemplateKey: v.optional(v.string()),
     // ISO timestamps.
     createdAt: v.string(),
     updatedAt: v.string(),
@@ -1297,6 +1307,42 @@ export default defineSchema({
     .index("by_email", ["email"])
     .index("by_stateCode", ["stateCode"])
     .index("by_email_and_stateCode", ["email", "stateCode"]),
+
+  // contactRequests (KIN-1096) — durable broker-triage inquiries captured
+  // from the public `/contact` route. Unlike waitlist signups, these are
+  // actionable broker conversations tied to a free-form buyer message and
+  // an optional listing URL.
+  //
+  // Writes are durable first; the shared mail rail patches provider
+  // metadata back onto the row so support can answer "did we queue the
+  // broker inbox email / buyer auto-reply?" without reading provider logs.
+  contactRequests: defineTable({
+    name: v.string(),
+    email: v.string(),
+    message: v.string(),
+    listingLink: v.optional(v.string()),
+    sourcePath: v.string(),
+    attributionSessionId: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    triageEmail: v.string(),
+    brokerInboxProvider: v.optional(
+      v.union(v.literal("noop"), v.literal("resend"))
+    ),
+    brokerInboxProviderMessageId: v.optional(v.string()),
+    brokerInboxQueuedAt: v.optional(v.string()),
+    brokerInboxTemplateKey: v.optional(v.string()),
+    buyerAutoReplyProvider: v.optional(
+      v.union(v.literal("noop"), v.literal("resend"))
+    ),
+    buyerAutoReplyProviderMessageId: v.optional(v.string()),
+    buyerAutoReplyQueuedAt: v.optional(v.string()),
+    buyerAutoReplyTemplateKey: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_email", ["email"])
+    .index("by_createdAt", ["createdAt"])
+    .index("by_sourcePath", ["sourcePath"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // INTERNAL CONSOLE (KIN-797 Admin Shell + downstream ops tools)

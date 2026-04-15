@@ -30,7 +30,9 @@ export type Channel =
   | "sms"
   | "extension"
   | "share_import"
-  | "manual_entry";
+  | "manual_entry"
+  | "contact_public"
+  | "waitlist_public";
 
 /** Per-channel rate limit configuration. */
 export interface ChannelConfig {
@@ -79,6 +81,18 @@ export const CHANNEL_CONFIGS: Record<Channel, ChannelConfig> = {
     maxRequests: 15,
     windowMs: 60_000,
     baseBlockMs: 180_000,
+    maxBlockMs: 3_600_000,
+  },
+  contact_public: {
+    maxRequests: 1,
+    windowMs: 60_000,
+    baseBlockMs: 120_000,
+    maxBlockMs: 3_600_000,
+  },
+  waitlist_public: {
+    maxRequests: 1,
+    windowMs: 60_000,
+    baseBlockMs: 60_000,
     maxBlockMs: 3_600_000,
   },
 };

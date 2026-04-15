@@ -16,16 +16,95 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { mutation, type MutationCtx } from "./_generated/server";
+import { selectDriver } from "./mailRail";
+import {
+  WAITLIST_CONFIRMATION_TEMPLATE_KEY,
+  buildWaitlistThrottleIdentifier,
+  composeWaitlistConfirmationEmail,
+} from "./lib/contactValidation";
+import {
+  checkAndPersistRateLimit,
+  recordRateLimitOutcome,
+} from "./lib/rateLimitBuckets";
 import {
   isValidWaitlistEmail,
   isValidWaitlistStateCode,
   isValidWaitlistZip,
   isWaitlistHoneypotTripped,
-  isWithinWaitlistRateLimitWindow,
   normalizeWaitlistEmail,
   normalizeWaitlistStateCode,
 } from "./lib/waitlistValidation";
+
+const DEFAULT_SUPPORT_EMAIL = "support@buyerv2.com";
+const WAITLIST_FROM_NAME = "buyer-v2 Brokerage";
+
+async function resolveSupportEmail(ctx: MutationCtx): Promise<string> {
+  const row = await ctx.db
+    .query("settingsEntries")
+    .withIndex("by_key", (q) => q.eq("key", "ops.support_email"))
+    .unique();
+
+  if (
+    row &&
+    row.kind === "string" &&
+    typeof row.stringValue === "string" &&
+    row.stringValue.trim().length > 0
+  ) {
+    return row.stringValue.trim();
+  }
+
+  return DEFAULT_SUPPORT_EMAIL;
+}
+
+async function queueWaitlistConfirmation(args: {
+  email: string;
+  stateCode: string;
+  zip?: string;
+  sourcePath: string;
+  signupId: string;
+  supportEmail: string;
+}): Promise<{
+  provider: "noop" | "resend";
+  providerMessageId?: string;
+  queuedAt?: string;
+}> {
+  const driver = selectDriver();
+  const message = composeWaitlistConfirmationEmail({
+    stateCode: args.stateCode,
+    zip: args.zip,
+  });
+
+  try {
+    const { providerMessageId } = await driver.send({
+      to: args.email,
+      from: args.supportEmail,
+      fromName: WAITLIST_FROM_NAME,
+      subject: message.subject,
+      bodyText: message.bodyText,
+      replyTo: args.supportEmail,
+      metadata: {
+        feature: "kin-1096-waitlist",
+        templateKey: WAITLIST_CONFIRMATION_TEMPLATE_KEY,
+        waitlistSignupId: args.signupId,
+        sourcePath: args.sourcePath,
+      },
+    });
+
+    return {
+      provider: driver.name,
+      providerMessageId,
+      queuedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error("[waitlistSignups] confirmation email failed", {
+      waitlistSignupId: args.signupId,
+      provider: driver.name,
+      errorName: error instanceof Error ? error.name : typeof error,
+    });
+    return { provider: driver.name };
+  }
+}
 
 /**
  * Public upsert. Returns a structured result instead of throwing so the
@@ -76,41 +155,121 @@ export const upsert = mutation({
       return { ok: false, reason: "invalid_zip" as const };
     }
 
-    const existing = await ctx.db
-      .query("waitlistSignups")
-      .withIndex("by_email_and_stateCode", (q) =>
-        q.eq("email", normalizedEmail).eq("stateCode", upperState),
-      )
-      .unique();
-
-    const now = new Date().toISOString();
-
-    if (existing) {
-      if (isWithinWaitlistRateLimitWindow(existing.updatedAt, Date.now())) {
-        return { ok: false, reason: "rate_limited" as const };
-      }
-      await ctx.db.patch(existing._id, {
-        zip: args.zip ?? existing.zip,
-        sourcePath: args.sourcePath,
-        attributionSessionId:
-          args.attributionSessionId ?? existing.attributionSessionId,
-        userAgent: args.userAgent ?? existing.userAgent,
-        updatedAt: now,
-      });
-      return { ok: true };
-    }
-
-    await ctx.db.insert("waitlistSignups", {
+    const identifier = await buildWaitlistThrottleIdentifier({
       email: normalizedEmail,
       stateCode: upperState,
-      zip: args.zip ?? undefined,
-      sourcePath: args.sourcePath,
-      attributionSessionId: args.attributionSessionId,
-      userAgent: args.userAgent,
-      createdAt: now,
-      updatedAt: now,
+    });
+    const rateLimit = await checkAndPersistRateLimit(ctx, {
+      channel: "waitlist_public",
+      identifier,
     });
 
-    return { ok: true };
+    if (!rateLimit.state.allowed) {
+      return { ok: false, reason: "rate_limited" as const };
+    }
+
+    try {
+      const existing = await ctx.db
+        .query("waitlistSignups")
+        .withIndex("by_email_and_stateCode", (q) =>
+          q.eq("email", normalizedEmail).eq("stateCode", upperState),
+        )
+        .unique();
+
+      const now = new Date().toISOString();
+      const normalizedSourcePath = args.sourcePath.trim() || "/";
+      const supportEmail = await resolveSupportEmail(ctx);
+
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          zip: args.zip ?? existing.zip,
+          sourcePath: normalizedSourcePath,
+          attributionSessionId:
+            args.attributionSessionId ?? existing.attributionSessionId,
+          userAgent: args.userAgent ?? existing.userAgent,
+          updatedAt: now,
+        });
+
+        const alreadyConfirmed =
+          (typeof existing.confirmationEmailQueuedAt === "string" &&
+            existing.confirmationEmailQueuedAt.length > 0) ||
+          (typeof existing.confirmationEmailProviderMessageId === "string" &&
+            existing.confirmationEmailProviderMessageId.length > 0) ||
+          (typeof existing.confirmationEmailTemplateKey === "string" &&
+            existing.confirmationEmailTemplateKey.length > 0);
+
+        if (!alreadyConfirmed) {
+          const delivery = await queueWaitlistConfirmation({
+            email: normalizedEmail,
+            stateCode: upperState,
+            zip: args.zip ?? existing.zip,
+            sourcePath: normalizedSourcePath,
+            signupId: existing._id,
+            supportEmail,
+          });
+          if (delivery.providerMessageId && delivery.queuedAt) {
+            await ctx.db.patch(existing._id, {
+              confirmationEmailProvider: delivery.provider,
+              confirmationEmailProviderMessageId:
+                delivery.providerMessageId,
+              confirmationEmailQueuedAt: delivery.queuedAt,
+              confirmationEmailTemplateKey:
+                WAITLIST_CONFIRMATION_TEMPLATE_KEY,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+
+        await recordRateLimitOutcome(ctx, {
+          channel: "waitlist_public",
+          identifier,
+          outcome: "success",
+        });
+        return { ok: true };
+      }
+
+      const signupId = await ctx.db.insert("waitlistSignups", {
+        email: normalizedEmail,
+        stateCode: upperState,
+        zip: args.zip ?? undefined,
+        sourcePath: normalizedSourcePath,
+        attributionSessionId: args.attributionSessionId,
+        userAgent: args.userAgent,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      const delivery = await queueWaitlistConfirmation({
+        email: normalizedEmail,
+        stateCode: upperState,
+        zip: args.zip ?? undefined,
+        sourcePath: normalizedSourcePath,
+        signupId,
+        supportEmail,
+      });
+      if (delivery.providerMessageId && delivery.queuedAt) {
+        await ctx.db.patch(signupId, {
+          confirmationEmailProvider: delivery.provider,
+          confirmationEmailProviderMessageId: delivery.providerMessageId,
+          confirmationEmailQueuedAt: delivery.queuedAt,
+          confirmationEmailTemplateKey: WAITLIST_CONFIRMATION_TEMPLATE_KEY,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      await recordRateLimitOutcome(ctx, {
+        channel: "waitlist_public",
+        identifier,
+        outcome: "success",
+      });
+      return { ok: true };
+    } catch (error) {
+      await recordRateLimitOutcome(ctx, {
+        channel: "waitlist_public",
+        identifier,
+        outcome: "failure",
+      });
+      throw error;
+    }
   },
 });

@@ -126,6 +126,8 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   message_opened: { messageId: string; channel: string };
   /** Fired when a recipient clicks a link in a message. */
   message_clicked: { messageId: string; channel: string; link: string };
+  /** Fired when the first-account welcome email is durably queued. */
+  welcome_email_sent: { userId: string; templateKey: string };
 
   // ─── Disclosure request rail (KIN-1079) ─────────────────────────────
   /** Fired once when the Request Disclosures CTA card mounts. */
@@ -279,6 +281,12 @@ export interface AnalyticsEventMap extends LaunchEventMap {
       | "invalid_state"
       | "invalid_zip"
       | "network";
+  };
+  /** Fired when the public contact form submits successfully. */
+  contact_form_submitted: {
+    sourcePath: string;
+    listingLinkPresent: boolean;
+    messageLengthBucket: "short" | "medium" | "long" | "very_long";
   };
 
   // ─── My Journeys (KIN-1082) ─────────────────────────────────────────
@@ -670,6 +678,12 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     whenFired: "Follow-up sweep flips a sent request to follow_up_needed",
     piiSafe: true,
   },
+  welcome_email_sent: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Welcome email queue marker is persisted for a new buyer account",
+    piiSafe: true,
+  },
 
   agent_coverage_created: {
     category: "agent_ops",
@@ -852,6 +866,12 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     owner: "growth",
     whenFired:
       "waitlistSignups.upsert mutation returns ok: false, or the network call fails",
+    piiSafe: true,
+  },
+  contact_form_submitted: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Contact form mutation returns ok: true",
     piiSafe: true,
   },
   home_rebate_slider_viewed: {
