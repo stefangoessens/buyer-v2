@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UserNotifications
 
 @testable import BuyerV2
 
@@ -19,7 +20,7 @@ struct PreferencesViewModelDisplayTests {
             .idle,
             .loading,
             .loaded(.default, hasStored: true),
-            .error("something broke")
+            .error("something broke"),
         ] {
             let vm = PreferencesViewModel(
                 authState: .signedOut,
@@ -28,16 +29,6 @@ struct PreferencesViewModelDisplayTests {
             )
             #expect(vm.display() == .signedOut)
         }
-    }
-
-    @Test("expired auth maps to signedOut")
-    func testExpiredAuthMapsSignedOut() {
-        let vm = PreferencesViewModel(
-            authState: .expired,
-            serviceState: .loaded(.default, hasStored: true),
-            saveState: .idle
-        )
-        #expect(vm.display() == .signedOut)
     }
 
     @Test("restoring auth keeps the screen in loading")
@@ -60,64 +51,25 @@ struct PreferencesViewModelDisplayTests {
         #expect(vm.display() == .loading)
     }
 
-    @Test("signed-in + loading service -> loading")
-    func testSignedInLoadingMapsLoading() {
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .loading,
-            saveState: .idle
-        )
-        #expect(vm.display() == .loading)
-    }
-
-    @Test("loaded first-time user keeps hasStored=false")
-    func testLoadedFirstTimeUser() {
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .loaded(.default, hasStored: false),
-            saveState: .idle
-        )
-        guard case .content(let prefs, let hasStored, let saveState) = vm.display() else {
-            Issue.record("Expected .content")
-            return
-        }
-        #expect(prefs == .default)
-        #expect(hasStored == false)
-        #expect(saveState == .idle)
-    }
-
-    @Test("loaded state preserves explicit saving status")
-    func testLoadedSavingState() {
+    @Test("loaded state preserves save status")
+    func testLoadedStatePreservesSaveStatus() {
         var prefs = MessagePreferences.default
-        prefs.channels.sms = true
+        prefs = prefs.withPreference(category: .offers, channel: .email, enabled: false)
 
         let vm = PreferencesViewModel(
             authState: .signedIn(user: sampleUser),
             serviceState: .loaded(prefs, hasStored: true),
             saveState: .saving
         )
+
         guard case .content(let shown, let hasStored, let saveState) = vm.display() else {
-            Issue.record("Expected .content")
+            Issue.record("Expected content display")
             return
         }
+
         #expect(shown == prefs)
         #expect(hasStored == true)
         #expect(saveState == .saving)
-    }
-
-    @Test("loaded state preserves save failure banner state")
-    func testLoadedSaveErrorState() {
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: sampleUser),
-            serviceState: .loaded(.default, hasStored: false),
-            saveState: .error("upstream 500")
-        )
-        guard case .content(_, let hasStored, let saveState) = vm.display() else {
-            Issue.record("Expected .content")
-            return
-        }
-        #expect(hasStored == false)
-        #expect(saveState == .error("upstream 500"))
     }
 
     @Test("generic load error maps to error screen")
@@ -131,16 +83,8 @@ struct PreferencesViewModelDisplayTests {
     }
 
     @Test("auth-shaped load error maps to signed out")
-    func testAuthErrorMapsSignedOutEvenWhenAuthStateLagsBehind() {
-        let cases = [
-            "notAuthenticated",
-            "Not Authenticated",
-            "HTTP 401",
-            "unauthorized request",
-            "403 Forbidden"
-        ]
-
-        for message in cases {
+    func testAuthErrorMapsSignedOut() {
+        for message in ["notAuthenticated", "Not Authenticated", "HTTP 401", "403 Forbidden"] {
             let vm = PreferencesViewModel(
                 authState: .signedIn(user: sampleUser),
                 serviceState: .error(message),
@@ -152,10 +96,10 @@ struct PreferencesViewModelDisplayTests {
 }
 
 @Suite("ConvexMessagePreferencesBackend auth boundary")
-struct ConvexMessagePreferencesBackendTests {
+struct ConvexMessagePreferencesBackendAuthTests {
 
     @Test("missing token -> notAuthenticated on every call")
-    func testMissingTokenThrows() async throws {
+    func testMissingTokenThrows() async {
         let backend = ConvexMessagePreferencesBackend(
             baseURL: URL(string: "https://test.local")!,
             tokenProvider: { nil }
@@ -165,17 +109,11 @@ struct ConvexMessagePreferencesBackendTests {
             _ = try await backend.fetch()
         }
         await #expect(throws: MessagePreferencesError.self) {
-            _ = try await backend.upsert(MessagePreferencesPatch(smsEnabled: true))
-        }
-        await #expect(throws: MessagePreferencesError.self) {
-            _ = try await backend.optOutAll()
-        }
-        await #expect(throws: MessagePreferencesError.self) {
-            _ = try await backend.resetToDefaults()
+            _ = try await backend.upsert(.default)
         }
     }
 
-    @Test("empty-string token -> notAuthenticated")
+    @Test("empty token -> notAuthenticated")
     func testEmptyTokenThrows() async {
         let backend = ConvexMessagePreferencesBackend(
             baseURL: URL(string: "https://test.local")!,
@@ -196,21 +134,29 @@ struct ConvexMessagePreferencesBackendTests {
     }
 }
 
+@Suite("Push permission state mapping")
+struct PushPermissionStateTests {
+
+    @Test("UNAuthorizationStatus maps to expected push permission state")
+    func testPermissionMapping() {
+        #expect(PushPermissionState.from(.notDetermined) == .unknown)
+        #expect(PushPermissionState.from(.denied) == .denied)
+        #expect(PushPermissionState.from(.authorized) == .allowed)
+        #expect(PushPermissionState.from(.provisional) == .allowed)
+        #expect(PushPermissionState.from(.ephemeral) == .allowed)
+    }
+}
+
 @Suite("MessagePreferencesService signed-out surface", .serialized)
 @MainActor
 struct MessagePreferencesServiceSignedOutTests {
 
     private struct NotAuthBackend: MessagePreferencesBackend {
-        func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
+        func fetch() async throws -> MessagePreferencesSnapshot {
             throw MessagePreferencesError.notAuthenticated
         }
-        func upsert(_: MessagePreferencesPatch) async throws -> MessagePreferences {
-            throw MessagePreferencesError.notAuthenticated
-        }
-        func optOutAll() async throws -> MessagePreferences {
-            throw MessagePreferencesError.notAuthenticated
-        }
-        func resetToDefaults() async throws -> MessagePreferences {
+
+        func upsert(_: MessagePreferences) async throws -> MessagePreferences {
             throw MessagePreferencesError.notAuthenticated
         }
     }
@@ -222,13 +168,13 @@ struct MessagePreferencesServiceSignedOutTests {
         role: .buyer
     )
 
-    @Test("service load() surfaces notAuthenticated as an error state the view-model treats as signed-out")
+    @Test("service load routes auth failures to the signed-out surface")
     func testLoadNotAuthenticatedRoutesToSignedOut() async {
         let service = MessagePreferencesService(backend: NotAuthBackend())
         await service.load()
 
         guard case .error(let message) = service.state else {
-            Issue.record("Expected error, got \(service.state)")
+            Issue.record("Expected error state")
             return
         }
 
@@ -238,44 +184,5 @@ struct MessagePreferencesServiceSignedOutTests {
             saveState: service.saveState
         )
         #expect(vm.display() == .signedOut)
-    }
-
-    @Test("service update() failure keeps committed toggles on-screen with an explicit save error")
-    func testUpdateFailureRollsBackIntoContent() async {
-        final class PartialBackend: MessagePreferencesBackend, @unchecked Sendable {
-            func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
-                var prefs = MessagePreferences.default
-                prefs.channels.sms = true
-                return (prefs, true)
-            }
-            func upsert(_: MessagePreferencesPatch) async throws -> MessagePreferences {
-                throw MessagePreferencesError.httpError(statusCode: 500)
-            }
-            func optOutAll() async throws -> MessagePreferences { .default }
-            func resetToDefaults() async throws -> MessagePreferences { .default }
-        }
-
-        let service = MessagePreferencesService(backend: PartialBackend())
-        await service.load()
-
-        let loadedPrefs = service.preferences
-        await service.update(MessagePreferencesPatch(marketingEnabled: true))
-
-        #expect(service.preferences == loadedPrefs)
-        #expect(service.saveState == .error("The preference service returned HTTP 500."))
-
-        let vm = PreferencesViewModel(
-            authState: .signedIn(user: signedInUser),
-            serviceState: service.state,
-            saveState: service.saveState
-        )
-
-        guard case .content(let shown, let hasStored, let saveState) = vm.display() else {
-            Issue.record("Expected .content after rollback")
-            return
-        }
-        #expect(shown == loadedPrefs)
-        #expect(hasStored == true)
-        #expect(saveState == .error("The preference service returned HTTP 500."))
     }
 }

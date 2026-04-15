@@ -126,6 +126,29 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   message_opened: { messageId: string; channel: string };
   /** Fired when a recipient clicks a link in a message. */
   message_clicked: { messageId: string; channel: string; link: string };
+  /** Fired when a buyer changes a notification preference successfully. */
+  notification_preference_changed: {
+    category:
+      | "transactional"
+      | "tours"
+      | "offers"
+      | "closing"
+      | "disclosures"
+      | "market_updates"
+      | "marketing"
+      | "safety";
+    channel: "email" | "sms" | "push" | "in_app";
+    direction: "on" | "off";
+    source:
+      | "preference_center"
+      | "one_click_unsubscribe"
+      | "email_footer"
+      | "sms_stop";
+  };
+  /** Fired when the email footer's manage-notifications link lands on profile. */
+  notification_manage_link_clicked: {
+    source: "email_footer";
+  };
 
   // ─── Disclosure request rail (KIN-1079) ─────────────────────────────
   /** Fired once when the Request Disclosures CTA card mounts. */
@@ -637,6 +660,18 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "communication",
     owner: "platform",
     whenFired: "Link click tracked via redirect",
+    piiSafe: true,
+  },
+  notification_preference_changed: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "A notification preference mutation succeeds",
+    piiSafe: true,
+  },
+  notification_manage_link_clicked: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Profile notifications opens from an email footer link",
     piiSafe: true,
   },
 

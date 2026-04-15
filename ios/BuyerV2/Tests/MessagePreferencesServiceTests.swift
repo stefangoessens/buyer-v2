@@ -3,47 +3,31 @@ import Testing
 
 @testable import BuyerV2
 
-// MARK: - MockMessagePreferencesBackend
-
 final class MockMessagePreferencesBackend: MessagePreferencesBackend, @unchecked Sendable {
 
-    // Configurable responses
-    var fetchResult: Result<(preferences: MessagePreferences, hasStored: Bool), Error> =
-        .success((MessagePreferences.default, false))
+    var fetchResult: Result<MessagePreferencesSnapshot, Error> =
+        .success(MessagePreferencesSnapshot(preferences: .default, hasStored: false))
     var upsertResult: Result<MessagePreferences, Error> = .success(.default)
-    var optOutAllResult: Result<MessagePreferences, Error> = .success(.default)
-    var resetResult: Result<MessagePreferences, Error> = .success(.default)
+    var upsertResults: [Result<MessagePreferences, Error>] = []
 
-    // Call tracking
     var fetchCallCount = 0
     var upsertCallCount = 0
-    var optOutCallCount = 0
-    var resetCallCount = 0
-    var lastUpsertPatch: MessagePreferencesPatch?
+    var lastUpsertPreferences: MessagePreferences?
 
-    func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
+    func fetch() async throws -> MessagePreferencesSnapshot {
         fetchCallCount += 1
         return try fetchResult.get()
     }
 
-    func upsert(_ patch: MessagePreferencesPatch) async throws -> MessagePreferences {
+    func upsert(_ preferences: MessagePreferences) async throws -> MessagePreferences {
         upsertCallCount += 1
-        lastUpsertPatch = patch
+        lastUpsertPreferences = preferences
+        if !upsertResults.isEmpty {
+            return try upsertResults.removeFirst().get()
+        }
         return try upsertResult.get()
     }
-
-    func optOutAll() async throws -> MessagePreferences {
-        optOutCallCount += 1
-        return try optOutAllResult.get()
-    }
-
-    func resetToDefaults() async throws -> MessagePreferences {
-        resetCallCount += 1
-        return try resetResult.get()
-    }
 }
-
-// MARK: - Test fixtures
 
 private struct StubError: Error, Equatable {
     let message: String
@@ -62,239 +46,196 @@ private actor ContinuationStore {
     }
 }
 
-// MARK: - Pure model tests
+private struct FixedPushPermissionProvider: PushPermissionProviding {
+    let status: PushPermissionState
+    func currentStatus() async -> PushPermissionState { status }
+}
 
 @Suite("MessagePreferences pure helpers")
 struct MessagePreferencesPureTests {
 
-    @Test("default preferences match the web helper defaults")
-    func testDefaultMatchesWebHelper() {
+    @Test("default matrix matches KIN-1095 expectations")
+    func testDefaultMatrix() {
         let prefs = MessagePreferences.default
-        #expect(prefs.channels.email == true)
-        #expect(prefs.channels.sms == false)
-        #expect(prefs.channels.push == true)
-        #expect(prefs.channels.inApp == true)
-        #expect(prefs.categories.transactional == true)
-        #expect(prefs.categories.tours == true)
-        #expect(prefs.categories.offers == true)
-        #expect(prefs.categories.updates == true)
-        #expect(prefs.categories.marketing == false)
+
+        for category in [
+            MessageCategory.transactional,
+            .tours,
+            .offers,
+            .closing,
+            .disclosures,
+            .safety,
+        ] {
+            for channel in MessageChannel.allCases {
+                #expect(prefs.isEnabled(channel: channel, category: category))
+            }
+        }
+
+        for category in [MessageCategory.marketUpdates, .marketing] {
+            for channel in MessageChannel.allCases {
+                #expect(!prefs.isEnabled(channel: channel, category: category))
+            }
+        }
     }
 
-    @Test("shouldDeliver requires BOTH channel and category enabled")
-    func testShouldDeliverStrict() {
-        let prefs = MessagePreferences.default
-        #expect(prefs.shouldDeliver(channel: .email, category: .transactional))
-        #expect(prefs.shouldDeliver(channel: .push, category: .tours))
-        // SMS channel off → blocked
-        #expect(!prefs.shouldDeliver(channel: .sms, category: .transactional))
-        // Marketing category off → blocked
-        #expect(!prefs.shouldDeliver(channel: .email, category: .marketing))
-    }
-
-    @Test("isGloballyOptedOut reflects channel state")
-    func testIsGloballyOptedOut() {
-        #expect(!MessagePreferences.default.isGloballyOptedOut)
-        let opted = MessagePreferences(channels: .optedOut, categories: .default)
-        #expect(opted.isGloballyOptedOut)
-        // One channel still on → not globally opted out
-        var mixed = MessagePreferences(channels: .optedOut, categories: .default)
-        mixed.channels.inApp = true
-        #expect(!mixed.isGloballyOptedOut)
-    }
-
-    @Test("applyPatch merges only specified fields")
-    func testApplyPatchPartial() {
-        let base = MessagePreferences.default
-        let patch = MessagePreferencesPatch(
-            smsEnabled: true,
-            marketingEnabled: true
+    @Test("legacy updates migrate deterministically to market updates")
+    func testLegacyMigration() {
+        let legacy = LegacyMessagePreferences(
+            channels: LegacyChannelEnablement(email: true, sms: false, push: true, inApp: true),
+            categories: LegacyCategoryEnablement(
+                transactional: true,
+                tours: true,
+                offers: false,
+                updates: true,
+                marketing: false
+            )
         )
-        let result = applyPatch(patch, to: base)
-        #expect(result.channels.sms == true)
-        #expect(result.categories.marketing == true)
-        // Unchanged fields preserved
-        #expect(result.channels.email == true)
-        #expect(result.categories.transactional == true)
+
+        let migrated = MessagePreferences.migratingLegacy(legacy)
+
+        #expect(migrated.matrix.marketUpdates.email == true)
+        #expect(migrated.matrix.marketUpdates.sms == false)
+        #expect(migrated.matrix.offers.email == false)
+        #expect(migrated.matrix.safety == .allEnabled)
     }
 
-    @Test("applyPatch is a no-op for an empty patch")
-    func testApplyPatchEmpty() {
-        let base = MessagePreferences.default
-        let result = applyPatch(MessagePreferencesPatch(), to: base)
-        #expect(result == base)
+    @Test("safety stays on even if a caller tries to disable it")
+    func testSafetyNormalization() {
+        let updated = MessagePreferences.default.withPreference(
+            category: .safety,
+            channel: .email,
+            enabled: false
+        )
+
+        #expect(updated.matrix.safety == .allEnabled)
     }
 
-    @Test("ChannelEnablement.isEnabled returns the right flag")
-    func testChannelEnablement() {
-        let ch = ChannelEnablement.default
-        #expect(ch.isEnabled(.email))
-        #expect(!ch.isEnabled(.sms))
-        #expect(ch.isEnabled(.push))
-        #expect(ch.isEnabled(.inApp))
-    }
-
-    @Test("CategoryEnablement.isEnabled returns the right flag")
-    func testCategoryEnablement() {
-        let cat = CategoryEnablement.default
-        #expect(cat.isEnabled(.transactional))
-        #expect(cat.isEnabled(.tours))
-        #expect(!cat.isEnabled(.marketing))
+    @Test("quiet hours validates timezone and overnight windows")
+    func testQuietHoursValidation() {
+        let overnight = QuietHours(start: "21:00", end: "08:00", timezone: "America/New_York")
+        #expect(overnight?.crossesMidnight == true)
+        #expect(QuietHours(start: "09:00", end: "17:00", timezone: "America/New_York")?.crossesMidnight == false)
+        #expect(QuietHours(start: "99:00", end: "08:00", timezone: "America/New_York") == nil)
+        #expect(QuietHours(start: "21:00", end: "08:00", timezone: "Mars/Phobos") == nil)
     }
 }
-
-// MARK: - Service tests
 
 @Suite("MessagePreferencesService state transitions", .serialized)
 @MainActor
 struct MessagePreferencesServiceTests {
 
-    // MARK: - Initial / Load
-
-    @Test("initial state is .idle")
+    @Test("initial state is idle with unknown push permission")
     func testInitialState() {
-        let backend = MockMessagePreferencesBackend()
-        let service = MessagePreferencesService(backend: backend)
+        let service = MessagePreferencesService(
+            backend: MockMessagePreferencesBackend(),
+            pushPermissionProvider: FixedPushPermissionProvider(status: .unknown)
+        )
+
         guard case .idle = service.state else {
-            Issue.record("Expected .idle, got \(service.state)")
+            Issue.record("Expected idle state")
             return
         }
-        guard case .idle = service.saveState else {
-            Issue.record("Expected saveState .idle, got \(service.saveState)")
-            return
-        }
+        #expect(service.saveState == .idle)
         #expect(service.preferences == .default)
         #expect(service.hasStoredPreferences == false)
+        #expect(service.pushPermissionState == .unknown)
     }
 
-    @Test("load() with no stored prefs → loaded with hasStored=false")
-    func testLoadNoStoredPrefs() async {
-        let backend = MockMessagePreferencesBackend()
-        backend.fetchResult = .success((MessagePreferences.default, false))
-        let service = MessagePreferencesService(backend: backend)
-
-        await service.load()
-
-        guard case .loaded(_, let hasStored) = service.state else {
-            Issue.record("Expected .loaded, got \(service.state)")
-            return
-        }
-        #expect(hasStored == false)
-        #expect(service.hasStoredPreferences == false)
-        #expect(service.preferences == .default)
-        #expect(backend.fetchCallCount == 1)
-    }
-
-    @Test("load() with stored prefs → loaded with hasStored=true")
-    func testLoadWithStoredPrefs() async {
+    @Test("load fetches matrix preferences and push permission state")
+    func testLoadSuccess() async {
         let backend = MockMessagePreferencesBackend()
         var stored = MessagePreferences.default
-        stored.channels.sms = true
-        stored.categories.marketing = true
-        backend.fetchResult = .success((stored, true))
-        let service = MessagePreferencesService(backend: backend)
+        stored = stored.withPreference(category: .marketUpdates, channel: .email, enabled: true)
+        stored = stored.withQuietHours(QuietHours(start: "22:00", end: "07:00", timezone: "America/New_York"))
+        backend.fetchResult = .success(
+            MessagePreferencesSnapshot(preferences: stored, hasStored: true)
+        )
+
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .allowed)
+        )
 
         await service.load()
 
         guard case .loaded(let prefs, let hasStored) = service.state else {
-            Issue.record("Expected .loaded")
+            Issue.record("Expected loaded state")
             return
         }
         #expect(hasStored == true)
-        #expect(prefs.channels.sms == true)
-        #expect(prefs.categories.marketing == true)
+        #expect(prefs == stored)
+        #expect(service.pushPermissionState == .allowed)
     }
 
-    @Test("load() failure → state is .error, preferences unchanged")
-    func testLoadError() async {
+    @Test("load failure surfaces an error and still refreshes permission state")
+    func testLoadFailure() async {
         let backend = MockMessagePreferencesBackend()
         backend.fetchResult = .failure(StubError(message: "offline"))
-        let service = MessagePreferencesService(backend: backend)
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .denied)
+        )
 
         await service.load()
 
-        guard case .error = service.state else {
-            Issue.record("Expected .error")
+        guard case .error("offline") = service.state else {
+            Issue.record("Expected offline error")
             return
         }
-        #expect(service.preferences == .default)
-        #expect(service.saveState == .idle)
+        #expect(service.pushPermissionState == .denied)
     }
 
-    // MARK: - Update (create, partial, opt-out)
-
-    @Test("update() with create path applies patch and marks hasStored")
-    func testUpdateCreatesFromDefaults() async {
+    @Test("setPreference applies optimistic matrix update and persists")
+    func testSetPreferencePersists() async {
         let backend = MockMessagePreferencesBackend()
-        // Backend echoes back what the client sent (simulating the merge)
-        var persisted = MessagePreferences.default
-        persisted.channels.sms = true
-        backend.upsertResult = .success(persisted)
-        let service = MessagePreferencesService(backend: backend)
-
-        await service.update(MessagePreferencesPatch(smsEnabled: true))
-
-        #expect(service.preferences.channels.sms == true)
-        #expect(service.hasStoredPreferences == true)
-        #expect(service.saveState == .idle)
-        #expect(backend.upsertCallCount == 1)
-        #expect(backend.lastUpsertPatch?.smsEnabled == true)
-    }
-
-    @Test("update() with partial patch preserves unset fields")
-    func testUpdatePartial() async {
-        let backend = MockMessagePreferencesBackend()
-        var loaded = MessagePreferences.default
-        loaded.categories.marketing = true
-        backend.fetchResult = .success((loaded, true))
-        let service = MessagePreferencesService(backend: backend)
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .allowed)
+        )
         await service.load()
 
-        // Backend echoes back merged result
-        var afterUpdate = loaded
-        afterUpdate.channels.sms = true
-        backend.upsertResult = .success(afterUpdate)
+        var persisted = MessagePreferences.default
+        persisted = persisted.withPreference(category: .offers, channel: .sms, enabled: false)
+        backend.upsertResult = .success(persisted)
 
-        await service.update(MessagePreferencesPatch(smsEnabled: true))
+        await service.setPreference(category: .offers, channel: .sms, isEnabled: false)
+        await Task.yield()
 
-        // Marketing should still be true (preserved from load)
-        #expect(service.preferences.categories.marketing == true)
-        #expect(service.preferences.channels.sms == true)
-        #expect(service.saveState == .idle)
+        #expect(service.preferences.matrix.offers.sms == false)
+        #expect(backend.lastUpsertPreferences?.matrix.offers.sms == false)
     }
 
-    @Test("update() exposes an explicit saving state while the optimistic write is in flight")
-    func testUpdateSavingStateIsExplicit() async {
+    @Test("update exposes an explicit saving state while the write is in flight")
+    func testSavingStateIsExplicit() async {
         final class DeferredBackend: MessagePreferencesBackend, @unchecked Sendable {
             let continuationStore = ContinuationStore()
 
-            func fetch() async throws -> (preferences: MessagePreferences, hasStored: Bool) {
-                (MessagePreferences.default, false)
+            func fetch() async throws -> MessagePreferencesSnapshot {
+                MessagePreferencesSnapshot(preferences: .default, hasStored: false)
             }
 
-            func upsert(_ patch: MessagePreferencesPatch) async throws -> MessagePreferences {
+            func upsert(_ preferences: MessagePreferences) async throws -> MessagePreferences {
                 await withCheckedContinuation { continuation in
                     Task { await continuationStore.store(continuation) }
                 }
             }
-
-            func optOutAll() async throws -> MessagePreferences { .default }
-            func resetToDefaults() async throws -> MessagePreferences { .default }
         }
 
         let backend = DeferredBackend()
-        let service = MessagePreferencesService(backend: backend)
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .allowed)
+        )
         await service.load()
 
         let task = Task {
-            await service.update(MessagePreferencesPatch(smsEnabled: true))
+            await service.setPreference(category: .offers, channel: .sms, isEnabled: false)
         }
 
         await Task.yield()
 
-        #expect(service.preferences.channels.sms == true)
-        #expect(service.hasStoredPreferences == true)
         #expect(service.saveState == .saving)
+        #expect(service.preferences.matrix.offers.sms == false)
 
         await backend.continuationStore.resume(returning: service.preferences)
         await task.value
@@ -302,168 +243,122 @@ struct MessagePreferencesServiceTests {
         #expect(service.saveState == .idle)
     }
 
-    @Test("update() with opt-out toggle flips specific channels")
-    func testUpdateOptOutChannel() async {
+    @Test("failed save rolls back optimistic state and first-time stored flag")
+    func testRollbackOnFailure() async {
         let backend = MockMessagePreferencesBackend()
-        var withoutEmail = MessagePreferences.default
-        withoutEmail.channels.email = false
-        backend.upsertResult = .success(withoutEmail)
-        let service = MessagePreferencesService(backend: backend)
-
-        await service.update(MessagePreferencesPatch(emailEnabled: false))
-
-        #expect(service.preferences.channels.email == false)
-        #expect(service.preferences.channels.push == true)
-        #expect(service.saveState == .idle)
-    }
-
-    @Test("update() failure rolls back optimistic changes")
-    func testUpdateRollbackOnFailure() async {
-        let backend = MockMessagePreferencesBackend()
-        let baseline = MessagePreferences.default
-        backend.fetchResult = .success((baseline, true))
-        let service = MessagePreferencesService(backend: backend)
-        await service.load()
-
-        // Upsert fails — optimistic change should be rolled back
         backend.upsertResult = .failure(StubError(message: "network down"))
 
-        await service.update(MessagePreferencesPatch(marketingEnabled: true))
-
-        #expect(service.preferences == baseline)
-        #expect(service.saveState == .error("network down"))
-        guard case .loaded(let prefs, let hasStored) = service.state else {
-            Issue.record("Expected .loaded after failed update")
-            return
-        }
-        #expect(prefs == baseline)
-        #expect(hasStored == true)
-    }
-
-    @Test("update() failure for first-time user restores hasStoredPreferences=false")
-    func testUpdateRollbackFirstTimeUser() async {
-        // Regression: codex P2 on PR #40. A first-time user (no stored
-        // row) optimistically flipped hasStoredPreferences=true before
-        // the backend call. If the call failed, the flag was left true,
-        // suppressing onboarding nudges even though nothing was saved.
-        let backend = MockMessagePreferencesBackend()
-        backend.fetchResult = .success((MessagePreferences.default, false))
-        let service = MessagePreferencesService(backend: backend)
-        await service.load()
-        #expect(service.hasStoredPreferences == false)
-
-        backend.upsertResult = .failure(StubError(message: "boom"))
-
-        await service.update(MessagePreferencesPatch(smsEnabled: true))
-
-        #expect(service.hasStoredPreferences == false)
-        #expect(service.preferences == .default)
-        #expect(service.saveState == .error("boom"))
-        guard case .loaded(let prefs, let hasStored) = service.state else {
-            Issue.record("Expected .loaded")
-            return
-        }
-        #expect(prefs == .default)
-        #expect(hasStored == false)
-    }
-
-    @Test("optOutAll() failure for first-time user also rolls back hasStoredPreferences")
-    func testOptOutAllRollbackFirstTimeUser() async {
-        let backend = MockMessagePreferencesBackend()
-        backend.fetchResult = .success((MessagePreferences.default, false))
-        let service = MessagePreferencesService(backend: backend)
-        await service.load()
-        #expect(service.hasStoredPreferences == false)
-
-        backend.optOutAllResult = .failure(StubError(message: "boom"))
-
-        await service.optOutAll()
-
-        #expect(service.hasStoredPreferences == false)
-        #expect(service.preferences == .default)
-        #expect(service.saveState == .error("boom"))
-    }
-
-    @Test("resetToDefaults() failure for first-time user also rolls back hasStoredPreferences")
-    func testResetRollbackFirstTimeUser() async {
-        let backend = MockMessagePreferencesBackend()
-        backend.fetchResult = .success((MessagePreferences.default, false))
-        let service = MessagePreferencesService(backend: backend)
-        await service.load()
-
-        backend.resetResult = .failure(StubError(message: "boom"))
-
-        await service.resetToDefaults()
-
-        #expect(service.hasStoredPreferences == false)
-        #expect(service.saveState == .error("boom"))
-    }
-
-    // MARK: - Opt-out all
-
-    @Test("optOutAll() disables every channel and preserves categories")
-    func testOptOutAll() async {
-        let backend = MockMessagePreferencesBackend()
-        var loaded = MessagePreferences.default
-        loaded.categories.marketing = true
-        backend.fetchResult = .success((loaded, true))
-        let service = MessagePreferencesService(backend: backend)
-        await service.load()
-
-        // Backend returns fully opted-out channels + preserved categories
-        let optedOut = MessagePreferences(
-            channels: .optedOut,
-            categories: loaded.categories
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .allowed)
         )
-        backend.optOutAllResult = .success(optedOut)
-
-        await service.optOutAll()
-
-        #expect(service.preferences.isGloballyOptedOut == true)
-        #expect(service.preferences.categories.marketing == true)
-        #expect(service.saveState == .idle)
-        #expect(backend.optOutCallCount == 1)
-    }
-
-    @Test("optOutAll() failure rolls back to previous state")
-    func testOptOutAllRollback() async {
-        let backend = MockMessagePreferencesBackend()
-        backend.fetchResult = .success((MessagePreferences.default, true))
-        let service = MessagePreferencesService(backend: backend)
         await service.load()
 
-        backend.optOutAllResult = .failure(StubError(message: "boom"))
-
-        await service.optOutAll()
+        await service.setPreference(category: .offers, channel: .email, isEnabled: false)
+        try? await Task.sleep(nanoseconds: 50_000_000)
 
         #expect(service.preferences == .default)
-        #expect(service.saveState == .error("boom"))
-        guard case .loaded(let prefs, let hasStored) = service.state else {
-            Issue.record("Expected .loaded")
-            return
+        #expect(service.hasStoredPreferences == false)
+        #expect(service.saveState == .error("network down"))
+    }
+
+    @Test("rapid edits preserve the final intended state")
+    func testQueuedWritesKeepFinalIntent() async {
+        final class SequencedBackend: MessagePreferencesBackend, @unchecked Sendable {
+            let firstContinuation = ContinuationStore()
+            var recorded: [MessagePreferences] = []
+            var callCount = 0
+
+            func fetch() async throws -> MessagePreferencesSnapshot {
+                MessagePreferencesSnapshot(preferences: .default, hasStored: true)
+            }
+
+            func upsert(_ preferences: MessagePreferences) async throws -> MessagePreferences {
+                callCount += 1
+                recorded.append(preferences)
+                if callCount == 1 {
+                    return await withCheckedContinuation { continuation in
+                        Task { await firstContinuation.store(continuation) }
+                    }
+                }
+                return preferences
+            }
         }
-        #expect(prefs == .default)
-        #expect(hasStored == true)
-    }
 
-    // MARK: - Reset to defaults
-
-    @Test("resetToDefaults() returns preferences to default values")
-    func testResetToDefaults() async {
-        let backend = MockMessagePreferencesBackend()
-        var custom = MessagePreferences.default
-        custom.channels.sms = true
-        custom.categories.marketing = true
-        backend.fetchResult = .success((custom, true))
-        let service = MessagePreferencesService(backend: backend)
+        let backend = SequencedBackend()
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .allowed)
+        )
         await service.load()
 
-        backend.resetResult = .success(.default)
+        let first = Task {
+            await service.setPreference(category: .offers, channel: .email, isEnabled: false)
+        }
+        await Task.yield()
+        await service.setPreference(category: .offers, channel: .email, isEnabled: true)
+        await backend.firstContinuation.resume(returning: service.preferences)
+        await first.value
+        try? await Task.sleep(nanoseconds: 50_000_000)
 
-        await service.resetToDefaults()
+        #expect(service.preferences.matrix.offers.email == true)
+        #expect(backend.recorded.count >= 2)
+    }
 
-        #expect(service.preferences == .default)
-        #expect(service.saveState == .idle)
-        #expect(backend.resetCallCount == 1)
+    @Test("push rows ignore app-level changes when iOS settings deny push")
+    func testPushDeniedBlocksToggle() async {
+        let backend = MockMessagePreferencesBackend()
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .denied)
+        )
+        await service.load()
+
+        await service.setPreference(category: .offers, channel: .push, isEnabled: false)
+
+        #expect(service.preferences.matrix.offers.push == true)
+        #expect(backend.upsertCallCount == 0)
+    }
+
+    @Test("quiet hours changes persist with validation")
+    func testQuietHoursUpdate() async {
+        let backend = MockMessagePreferencesBackend()
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .allowed)
+        )
+        await service.load()
+
+        var persisted = MessagePreferences.default
+        persisted = persisted.withQuietHours(
+            QuietHours(start: "22:30", end: "07:15", timezone: "America/New_York")
+        )
+        backend.upsertResult = .success(persisted)
+
+        await service.setQuietHoursEnabled(true)
+        await service.setQuietHours(start: "22:30", end: "07:15", timezone: "America/New_York")
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(service.preferences.quietHours?.start == "22:30")
+        #expect(service.preferences.quietHours?.end == "07:15")
+    }
+
+    @Test("bulk opt out keeps safety enabled")
+    func testDisableAllOptionalNotifications() async {
+        let backend = MockMessagePreferencesBackend()
+        let service = MessagePreferencesService(
+            backend: backend,
+            pushPermissionProvider: FixedPushPermissionProvider(status: .allowed)
+        )
+        await service.load()
+
+        let persisted = MessagePreferences.default.optOutAllOptionalNotifications()
+        backend.upsertResult = .success(persisted)
+
+        await service.disableAllOptionalNotifications()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(service.preferences.isGloballyOptedOut)
+        #expect(service.preferences.matrix.safety == .allEnabled)
     }
 }

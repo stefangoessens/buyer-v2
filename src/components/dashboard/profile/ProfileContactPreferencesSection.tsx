@@ -1,265 +1,295 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 
 import { api } from "../../../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
+import { PreferenceMatrix } from "@/components/dashboard/profile/PreferenceMatrix";
+import { QuietHoursPicker } from "@/components/dashboard/profile/QuietHoursPicker";
+import {
+  clonePreferenceView,
+  diffNotificationPreferences,
+  normalizeNotificationPreferences,
+  serializeMutationPayload,
+  setMatrixCell,
+  setQuietHours,
+  validateQuietHours,
+  type NotificationChannel,
+  type NotificationCategory,
+  type NotificationPreferenceView,
+} from "@/components/dashboard/profile/notificationPreferences";
 import {
   Card,
+  CardAction,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
+import { track } from "@/lib/analytics";
 
-type ChannelKey = "email" | "sms" | "push" | "inApp";
-type CategoryKey =
-  | "transactional"
-  | "tours"
-  | "offers"
-  | "updates"
-  | "marketing";
+type SaveState =
+  | { kind: "idle"; message: string }
+  | { kind: "saving"; message: string }
+  | { kind: "saved"; message: string }
+  | { kind: "error"; message: string };
 
-type ChannelState = Record<ChannelKey, boolean>;
-type CategoryState = Record<CategoryKey, boolean>;
-
-const CHANNELS: { key: ChannelKey; label: string; description: string }[] = [
-  { key: "email", label: "Email", description: "Receive updates by email" },
-  { key: "sms", label: "SMS", description: "Text message alerts" },
-  { key: "push", label: "Push", description: "Mobile push notifications" },
-  { key: "inApp", label: "In-app", description: "Notifications inside Buyer" },
-];
-
-const CATEGORIES: { key: CategoryKey; label: string; description: string }[] = [
-  {
-    key: "transactional",
-    label: "Transactional",
-    description: "Critical updates about your deals and offers",
-  },
-  {
-    key: "tours",
-    label: "Tours",
-    description: "Tour confirmations, reminders, and changes",
-  },
-  {
-    key: "offers",
-    label: "Offers",
-    description: "Counter-offers and negotiation activity",
-  },
-  {
-    key: "updates",
-    label: "Property updates",
-    description: "Price changes and status updates on saved homes",
-  },
-  {
-    key: "marketing",
-    label: "Marketing",
-    description: "New features, market reports, and tips",
-  },
-];
-
-const DEFAULT_CHANNELS: ChannelState = {
-  email: true,
-  sms: false,
-  push: true,
-  inApp: true,
-};
-
-const DEFAULT_CATEGORIES: CategoryState = {
-  transactional: true,
-  tours: true,
-  offers: true,
-  updates: true,
-  marketing: false,
-};
-
-function isChannelDirty(a: ChannelState, b: ChannelState) {
-  return (Object.keys(a) as ChannelKey[]).some((key) => a[key] !== b[key]);
+function hasStatePayload(
+  value: unknown,
+): value is Record<string, unknown> & {
+  deliveryMatrix?: unknown;
+  channels?: unknown;
+  categories?: unknown;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    ("deliveryMatrix" in value || "channels" in value || "categories" in value)
+  );
 }
 
-function isCategoryDirty(a: CategoryState, b: CategoryState) {
-  return (Object.keys(a) as CategoryKey[]).some((key) => a[key] !== b[key]);
+function toAnalyticsChannel(channel: NotificationChannel) {
+  return channel === "inApp" ? "in_app" : channel;
+}
+
+function isSamePreferenceView(
+  left: NotificationPreferenceView,
+  right: NotificationPreferenceView,
+) {
+  return JSON.stringify(serializeMutationPayload(left)) ===
+    JSON.stringify(serializeMutationPayload(right)) &&
+    left.smsGloballySuppressed === right.smsGloballySuppressed
+    ? true
+    : false;
 }
 
 export function ProfileContactPreferencesSection() {
-  const profile = useQuery(api.buyerProfiles.getMyProfile, {});
-  const updateCommPrefs = useMutation(api.buyerProfiles.updateCommPrefs);
+  const preferenceQuery = useQuery(api.messagePreferences.getForCurrentUser, {});
+  const rawMutation = useMutation(
+    api.messagePreferences.upsertForCurrentUser,
+  ) as unknown as (args: unknown) => Promise<unknown>;
 
-  const [channels, setChannels] = useState<ChannelState>(DEFAULT_CHANNELS);
-  const [categories, setCategories] = useState<CategoryState>(DEFAULT_CATEGORIES);
-  const [savedChannels, setSavedChannels] = useState<ChannelState>(DEFAULT_CHANNELS);
-  const [savedCategories, setSavedCategories] = useState<CategoryState>(DEFAULT_CATEGORIES);
-  const [isSaving, setIsSaving] = useState(false);
+  const [preferences, setPreferences] = useState<NotificationPreferenceView>(
+    () => normalizeNotificationPreferences(null),
+  );
+  const [saveState, setSaveState] = useState<SaveState>({
+    kind: "idle",
+    message: "Changes save automatically.",
+  });
+  const [quietHoursError, setQuietHoursError] = useState<string | null>(null);
+
+  const initializedRef = useRef(false);
+  const committedRef = useRef<NotificationPreferenceView>(
+    normalizeNotificationPreferences(null),
+  );
+  const pendingRef = useRef<NotificationPreferenceView | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingRef = useRef(false);
 
   useEffect(() => {
-    if (profile) {
-      const nextChannels: ChannelState = {
-        email: profile.communicationPreferences.channels.email,
-        sms: profile.communicationPreferences.channels.sms,
-        push: profile.communicationPreferences.channels.push,
-        inApp: profile.communicationPreferences.channels.inApp,
-      };
-      const nextCategories: CategoryState = {
-        transactional: profile.communicationPreferences.categories.transactional,
-        tours: profile.communicationPreferences.categories.tours,
-        offers: profile.communicationPreferences.categories.offers,
-        updates: profile.communicationPreferences.categories.updates,
-        marketing: profile.communicationPreferences.categories.marketing,
-      };
-      setChannels(nextChannels);
-      setCategories(nextCategories);
-      setSavedChannels(nextChannels);
-      setSavedCategories(nextCategories);
+    if (preferenceQuery === undefined) {
+      return;
     }
-  }, [profile]);
 
-  const isLoading = profile === undefined;
-  const isDirty =
-    isChannelDirty(channels, savedChannels) ||
-    isCategoryDirty(categories, savedCategories);
+    const normalized = normalizeNotificationPreferences(preferenceQuery);
 
-  async function handleSave() {
-    setIsSaving(true);
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      committedRef.current = normalized;
+      setPreferences(normalized);
+      return;
+    }
+
+    if (!savingRef.current && pendingRef.current === null) {
+      committedRef.current = normalized;
+      setPreferences(normalized);
+    }
+  }, [preferenceQuery]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (window.location.hash === "#notifications") {
+      document
+        .getElementById("notifications")
+        ?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+
+    const search = new URLSearchParams(window.location.search);
+    const source =
+      search.get("source") ?? search.get("notification_source") ?? "";
+
+    if (source === "email_footer") {
+      track("notification_manage_link_clicked", { source: "email_footer" });
+    }
+  }, []);
+
+  async function flushPending() {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    if (savingRef.current || pendingRef.current === null) {
+      return;
+    }
+
+    const validationMessage = validateQuietHours(pendingRef.current.quietHours);
+    setQuietHoursError(validationMessage);
+
+    if (validationMessage) {
+      setSaveState({ kind: "error", message: validationMessage });
+      return;
+    }
+
+    const nextSnapshot = clonePreferenceView(pendingRef.current);
+    pendingRef.current = null;
+    const previousCommitted = committedRef.current;
+
+    savingRef.current = true;
+    setSaveState({ kind: "saving", message: "Saving changes…" });
+
     try {
-      await updateCommPrefs({
-        channels,
-        categories,
-      });
-      setSavedChannels(channels);
-      setSavedCategories(categories);
-      toast.success("Notification preferences updated");
+      const response = await rawMutation(serializeMutationPayload(nextSnapshot));
+      const confirmed = hasStatePayload(response)
+        ? normalizeNotificationPreferences(response)
+        : nextSnapshot;
+
+      committedRef.current = confirmed;
+      setPreferences(confirmed);
+      setSaveState({ kind: "saved", message: "Saved just now." });
+
+      const changes = diffNotificationPreferences(previousCommitted, confirmed);
+      for (const change of changes) {
+        track("notification_preference_changed", {
+          category: change.category,
+          channel: toAnalyticsChannel(change.channel),
+          direction: change.direction,
+          source: "preference_center",
+        });
+      }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Could not save preferences";
+        error instanceof Error
+          ? error.message
+          : "Could not save notification preferences.";
+      pendingRef.current = null;
+      committedRef.current = previousCommitted;
+      setPreferences(previousCommitted);
+      setSaveState({ kind: "error", message });
       toast.error(message);
     } finally {
-      setIsSaving(false);
+      savingRef.current = false;
+      if (pendingRef.current && quietHoursError === null) {
+        void flushPending();
+      }
     }
   }
 
+  function scheduleSave(
+    nextValue: NotificationPreferenceView,
+    delayMs: number,
+  ) {
+    const validationMessage = validateQuietHours(nextValue.quietHours);
+    setQuietHoursError(validationMessage);
+
+    pendingRef.current = nextValue;
+    setPreferences(nextValue);
+
+    if (isSamePreferenceView(nextValue, committedRef.current)) {
+      pendingRef.current = null;
+      setSaveState({ kind: "idle", message: "Changes save automatically." });
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      return;
+    }
+
+    setSaveState({
+      kind: validationMessage ? "error" : "saving",
+      message: validationMessage ?? "Saving changes…",
+    });
+
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+
+    timerRef.current = setTimeout(() => {
+      void flushPending();
+    }, delayMs);
+  }
+
+  function handleToggle(
+    category: NotificationCategory,
+    channel: NotificationChannel,
+    nextValue: boolean,
+  ) {
+    const nextPreferences = setMatrixCell(
+      preferences,
+      category,
+      channel,
+      nextValue,
+    );
+    scheduleSave(nextPreferences, 160);
+  }
+
+  function handleQuietHoursChange(
+    patch: Partial<NotificationPreferenceView["quietHours"]>,
+  ) {
+    const nextPreferences = setQuietHours(preferences, patch);
+    scheduleSave(nextPreferences, 700);
+  }
+
+  function handleQuietHoursCommit() {
+    void flushPending();
+  }
+
   return (
-    <Card id="notifications" className="scroll-mt-24">
+    <Card id="notifications" className="scroll-mt-28">
       <CardHeader>
-        <CardTitle>Notifications</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-8">
-        <section className="flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">Channels</h3>
-            <p className="text-xs text-muted-foreground">
-              How we reach you when there is something to share.
-            </p>
-          </div>
-          <div className="grid gap-3">
-            {CHANNELS.map((channel) => (
-              <div
-                key={channel.key}
-                className="flex items-start justify-between gap-4 rounded-3xl border border-border/60 bg-background/40 p-4"
-              >
-                <div className="flex flex-col gap-0.5">
-                  <Label htmlFor={`channel-${channel.key}`} className="cursor-pointer">
-                    {channel.label}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    {channel.description}
-                  </p>
-                </div>
-                <Switch
-                  id={`channel-${channel.key}`}
-                  checked={channels[channel.key]}
-                  onCheckedChange={(checked) =>
-                    setChannels((prev) => ({ ...prev, [channel.key]: checked }))
-                  }
-                  disabled={isLoading}
-                />
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <Separator />
-
-        <section className="flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">Categories</h3>
-            <p className="text-xs text-muted-foreground">
-              Pick which kinds of messages you want to receive.
-            </p>
-          </div>
-          <div className="grid gap-3">
-            {CATEGORIES.map((category) => (
-              <div
-                key={category.key}
-                className="flex items-start justify-between gap-4 rounded-3xl border border-border/60 bg-background/40 p-4"
-              >
-                <div className="flex flex-col gap-0.5">
-                  <Label htmlFor={`category-${category.key}`} className="cursor-pointer">
-                    {category.label}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    {category.description}
-                  </p>
-                </div>
-                <Switch
-                  id={`category-${category.key}`}
-                  checked={categories[category.key]}
-                  onCheckedChange={(checked) =>
-                    setCategories((prev) => ({
-                      ...prev,
-                      [category.key]: checked,
-                    }))
-                  }
-                  disabled={isLoading}
-                />
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <Separator />
-
-        <section className="flex flex-col gap-3 rounded-3xl border border-dashed border-border/60 p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Quiet hours
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Pause non-urgent messages overnight
-              </p>
-            </div>
-            <span className="text-xs font-medium text-muted-foreground">
-              Coming soon
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">
-                Weekly digest
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Get a single summary instead of individual updates
-              </p>
-            </div>
-            <span className="text-xs font-medium text-muted-foreground">
-              Coming soon
-            </span>
-          </div>
-        </section>
-
-        <div className="flex justify-end">
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={isLoading || isSaving || !isDirty}
-          >
-            {isSaving ? "Saving…" : "Save preferences"}
-          </Button>
+        <div>
+          <CardTitle>Notifications</CardTitle>
+          <CardDescription className="mt-1">
+            Choose how Buyer V2 reaches you across active deals, tours, and
+            closing. Safety alerts stay locked on.
+          </CardDescription>
         </div>
+        <CardAction>
+          <div
+            className="rounded-full border border-border/70 bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground"
+            aria-live="polite"
+          >
+            {saveState.message}
+          </div>
+        </CardAction>
+      </CardHeader>
+
+      <CardContent className="flex flex-col gap-6">
+        <PreferenceMatrix
+          value={preferences}
+          disabled={preferenceQuery === undefined}
+          onToggle={handleToggle}
+        />
+
+        <QuietHoursPicker
+          value={preferences.quietHours}
+          disabled={preferenceQuery === undefined}
+          error={quietHoursError}
+          onChange={handleQuietHoursChange}
+          onCommit={handleQuietHoursCommit}
+        />
       </CardContent>
     </Card>
   );

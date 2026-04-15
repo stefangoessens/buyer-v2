@@ -1,175 +1,155 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
+  buildMessagePreferencesView,
   defaultPreferences,
-  shouldDeliver,
-  shouldAlwaysDeliverInApp,
+  isChannelDeferredByQuietHours,
+  isWithinQuietHours,
   mergePreferences,
+  migrateLegacyPreferences,
   optOutAllChannels,
-  isGloballyOptedOut,
-  MESSAGE_CATEGORIES,
-  MESSAGE_CHANNELS,
-  type MessagePreferences,
+  shouldDeliver,
+  validateQuietHours,
 } from "@/lib/messagePreferences";
 
-describe("defaultPreferences", () => {
-  it("enables essential transactional channels", () => {
-    const prefs = defaultPreferences();
-    expect(prefs.channels.email).toBe(true);
-    expect(prefs.channels.push).toBe(true);
-    expect(prefs.channels.inApp).toBe(true);
+describe("messagePreferences", () => {
+  it("maps legacy updates to market_updates without opting marketing in", () => {
+    const migrated = migrateLegacyPreferences({
+      channels: {
+        email: true,
+        sms: false,
+        push: true,
+        inApp: true,
+      },
+      categories: {
+        transactional: true,
+        tours: true,
+        offers: true,
+        updates: true,
+        marketing: false,
+      },
+    });
+
+    expect(migrated.matrix.market_updates.email).toBe(true);
+    expect(migrated.matrix.market_updates.push).toBe(true);
+    expect(migrated.matrix.marketing.email).toBe(false);
+    expect(migrated.matrix.marketing.push).toBe(false);
   });
 
-  it("disables SMS by default (opt-in only)", () => {
-    expect(defaultPreferences().channels.sms).toBe(false);
+  it("keeps the safety row locked on during merges", () => {
+    const merged = mergePreferences(defaultPreferences(), {
+      matrix: {
+        safety: {
+          email: false,
+          sms: false,
+          push: false,
+          inApp: false,
+        },
+      },
+    });
+
+    expect(merged.matrix.safety).toEqual({
+      email: true,
+      sms: true,
+      push: true,
+      inApp: true,
+    });
   });
 
-  it("enables day-to-day deal categories", () => {
-    const prefs = defaultPreferences();
-    expect(prefs.categories.transactional).toBe(true);
-    expect(prefs.categories.tours).toBe(true);
-    expect(prefs.categories.offers).toBe(true);
-    expect(prefs.categories.updates).toBe(true);
+  it("global opt out preserves mandatory safety delivery", () => {
+    const optedOut = optOutAllChannels(defaultPreferences());
+
+    expect(optedOut.matrix.transactional.email).toBe(false);
+    expect(optedOut.matrix.marketing.push).toBe(false);
+    expect(optedOut.matrix.safety.email).toBe(true);
+    expect(optedOut.matrix.safety.sms).toBe(true);
   });
 
-  it("disables marketing by default (CAN-SPAM/GDPR hygiene)", () => {
-    expect(defaultPreferences().categories.marketing).toBe(false);
+  it("validates quiet-hours timezone and range", () => {
+    expect(() =>
+      validateQuietHours({
+        enabled: true,
+        startMinutes: 60,
+        endMinutes: 60,
+        timezone: "America/New_York",
+      }),
+    ).toThrow(/cannot be the same/);
+
+    expect(() =>
+      validateQuietHours({
+        enabled: true,
+        startMinutes: 60,
+        endMinutes: 120,
+        timezone: "Mars/Olympus",
+      }),
+    ).toThrow(/Unknown IANA timezone/);
   });
 
-  it("contains every declared channel and category key", () => {
-    const prefs = defaultPreferences();
-    for (const channel of MESSAGE_CHANNELS) {
-      expect(typeof prefs.channels[channel]).toBe("boolean");
-    }
-    for (const category of MESSAGE_CATEGORIES) {
-      expect(typeof prefs.categories[category]).toBe("boolean");
-    }
-  });
-});
-
-describe("shouldDeliver", () => {
-  it("delivers when both channel and category are enabled", () => {
-    const prefs = defaultPreferences();
-    expect(shouldDeliver(prefs, "email", "transactional")).toBe(true);
-    expect(shouldDeliver(prefs, "push", "tours")).toBe(true);
-  });
-
-  it("blocks when channel is disabled", () => {
-    const prefs = defaultPreferences();
-    expect(shouldDeliver(prefs, "sms", "transactional")).toBe(false);
-  });
-
-  it("blocks when category is disabled", () => {
-    const prefs = defaultPreferences();
-    expect(shouldDeliver(prefs, "email", "marketing")).toBe(false);
-  });
-
-  it("blocks when both channel and category are disabled", () => {
-    const prefs = defaultPreferences();
-    expect(shouldDeliver(prefs, "sms", "marketing")).toBe(false);
-  });
-
-  it("delivers marketing when the user has explicitly opted in", () => {
+  it("handles overnight quiet-hours windows", () => {
     const prefs = mergePreferences(defaultPreferences(), {
-      categories: { marketing: true },
+      quietHours: {
+        enabled: true,
+        startMinutes: 21 * 60,
+        endMinutes: 8 * 60,
+        timezone: "America/New_York",
+      },
     });
-    expect(shouldDeliver(prefs, "email", "marketing")).toBe(true);
-  });
-});
 
-describe("shouldAlwaysDeliverInApp", () => {
-  it("is true for transactional so audit trail is never muted", () => {
-    expect(shouldAlwaysDeliverInApp("transactional")).toBe(true);
+    expect(
+      isWithinQuietHours(prefs.quietHours, new Date("2026-04-16T03:00:00.000Z")),
+    ).toBe(true);
+    expect(
+      isWithinQuietHours(prefs.quietHours, new Date("2026-04-16T17:00:00.000Z")),
+    ).toBe(false);
+    expect(
+      isChannelDeferredByQuietHours(
+        prefs,
+        "sms",
+        "transactional",
+        new Date("2026-04-16T03:00:00.000Z"),
+      ),
+    ).toBe(true);
+    expect(
+      isChannelDeferredByQuietHours(
+        prefs,
+        "email",
+        "transactional",
+        new Date("2026-04-16T03:00:00.000Z"),
+      ),
+    ).toBe(false);
+    expect(
+      isChannelDeferredByQuietHours(
+        prefs,
+        "push",
+        "safety",
+        new Date("2026-04-16T03:00:00.000Z"),
+      ),
+    ).toBe(false);
   });
 
-  it("is false for all non-transactional categories", () => {
-    expect(shouldAlwaysDeliverInApp("marketing")).toBe(false);
-    expect(shouldAlwaysDeliverInApp("tours")).toBe(false);
-    expect(shouldAlwaysDeliverInApp("offers")).toBe(false);
-    expect(shouldAlwaysDeliverInApp("updates")).toBe(false);
-  });
-});
-
-describe("mergePreferences", () => {
-  it("returns a new object and does not mutate the existing prefs", () => {
-    const existing = defaultPreferences();
-    const snapshot = JSON.stringify(existing);
-    const merged = mergePreferences(existing, {
-      categories: { marketing: true },
+  it("suppresses SMS delivery when STOP has globally opted the buyer out", () => {
+    const view = buildMessagePreferencesView({
+      hasStoredPreferences: true,
+      preferences: defaultPreferences(),
+      smsState: {
+        consentStatus: "opted_out",
+        isGloballySuppressed: true,
+        reason: "sms_stop",
+        phoneMissing: false,
+        updatedAt: "2026-04-15T12:00:00.000Z",
+      },
     });
-    expect(merged).not.toBe(existing);
-    expect(JSON.stringify(existing)).toBe(snapshot);
-    expect(merged.categories.marketing).toBe(true);
-  });
 
-  it("applies partial channel updates without touching unset channels", () => {
-    const existing = defaultPreferences();
-    const merged = mergePreferences(existing, {
-      channels: { sms: true },
-    });
-    expect(merged.channels.sms).toBe(true);
-    expect(merged.channels.email).toBe(true); // unchanged
-    expect(merged.channels.push).toBe(true); // unchanged
-  });
-
-  it("applies partial category updates without touching unset categories", () => {
-    const existing = defaultPreferences();
-    const merged = mergePreferences(existing, {
-      categories: { updates: false },
-    });
-    expect(merged.categories.updates).toBe(false);
-    expect(merged.categories.transactional).toBe(true); // unchanged
-  });
-
-  it("handles an empty update object as a no-op", () => {
-    const existing = defaultPreferences();
-    const merged = mergePreferences(existing, {});
-    expect(merged).toEqual(existing);
-  });
-
-  it("is commutative for independent partial updates", () => {
-    const base = defaultPreferences();
-    const a = mergePreferences(base, { channels: { sms: true } });
-    const ab = mergePreferences(a, { categories: { marketing: true } });
-    const b = mergePreferences(base, { categories: { marketing: true } });
-    const ba = mergePreferences(b, { channels: { sms: true } });
-    expect(ab).toEqual(ba);
-  });
-});
-
-describe("optOutAllChannels", () => {
-  it("disables every channel but preserves categories", () => {
-    const existing = defaultPreferences();
-    const opted = optOutAllChannels(existing);
-    expect(opted.channels.email).toBe(false);
-    expect(opted.channels.sms).toBe(false);
-    expect(opted.channels.push).toBe(false);
-    expect(opted.channels.inApp).toBe(false);
-    expect(opted.categories).toEqual(existing.categories);
-  });
-
-  it("does not mutate the existing prefs", () => {
-    const existing = defaultPreferences();
-    const snapshot = JSON.stringify(existing);
-    optOutAllChannels(existing);
-    expect(JSON.stringify(existing)).toBe(snapshot);
-  });
-});
-
-describe("isGloballyOptedOut", () => {
-  it("is false for default preferences", () => {
-    expect(isGloballyOptedOut(defaultPreferences())).toBe(false);
-  });
-
-  it("is true when every channel is disabled", () => {
-    const prefs = optOutAllChannels(defaultPreferences());
-    expect(isGloballyOptedOut(prefs)).toBe(true);
-  });
-
-  it("is false if any single channel remains enabled", () => {
-    const prefs: MessagePreferences = {
-      channels: { email: false, sms: false, push: false, inApp: true },
-      categories: defaultPreferences().categories,
-    };
-    expect(isGloballyOptedOut(prefs)).toBe(false);
+    expect(view.effective.matrix.transactional.sms).toBe(false);
+    expect(view.effective.matrix.safety.sms).toBe(true);
+    expect(
+      shouldDeliver(defaultPreferences(), "sms", "transactional", {
+        smsState: view.effective.sms,
+      }),
+    ).toBe(false);
+    expect(
+      shouldDeliver(defaultPreferences(), "sms", "safety", {
+        smsState: view.effective.sms,
+      }),
+    ).toBe(true);
   });
 });

@@ -206,6 +206,34 @@ describe("track() — communication category", () => {
       }),
     ).not.toThrow();
   });
+
+  it("accepts notification_preference_changed with the new source union", () => {
+    const sources: Array<
+      AnalyticsEventMap["notification_preference_changed"]["source"]
+    > = [
+      "preference_center",
+      "one_click_unsubscribe",
+      "email_footer",
+      "sms_stop",
+    ];
+
+    for (const source of sources) {
+      expect(() =>
+        track("notification_preference_changed", {
+          category: "market_updates",
+          channel: "in_app",
+          direction: "off",
+          source,
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("accepts notification_manage_link_clicked for email footer landings", () => {
+    expect(() =>
+      track("notification_manage_link_clicked", { source: "email_footer" }),
+    ).not.toThrow();
+  });
 });
 
 describe("track() — agent_ops category", () => {

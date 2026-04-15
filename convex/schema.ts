@@ -861,19 +861,78 @@ export default defineSchema({
 
   messageDeliveryPreferences: defineTable({
     userId: v.id("users"),
-    channels: v.object({
+    // Legacy compatibility projection for the existing profile/iOS clients.
+    channels: v.optional(v.object({
       email: v.boolean(),
       sms: v.boolean(),
       push: v.boolean(),
       inApp: v.boolean(),
-    }),
-    categories: v.object({
+    })),
+    categories: v.optional(v.object({
       transactional: v.boolean(),
       tours: v.boolean(),
       offers: v.boolean(),
       updates: v.boolean(),
       marketing: v.boolean(),
-    }),
+    })),
+    // Canonical KIN-1095 matrix model. Rows created before the migration
+    // may not have these fields yet, so the backend coerces legacy rows on read.
+    matrix: v.optional(v.object({
+      transactional: v.object({
+        email: v.boolean(),
+        sms: v.boolean(),
+        push: v.boolean(),
+        inApp: v.boolean(),
+      }),
+      tours: v.object({
+        email: v.boolean(),
+        sms: v.boolean(),
+        push: v.boolean(),
+        inApp: v.boolean(),
+      }),
+      offers: v.object({
+        email: v.boolean(),
+        sms: v.boolean(),
+        push: v.boolean(),
+        inApp: v.boolean(),
+      }),
+      closing: v.object({
+        email: v.boolean(),
+        sms: v.boolean(),
+        push: v.boolean(),
+        inApp: v.boolean(),
+      }),
+      disclosures: v.object({
+        email: v.boolean(),
+        sms: v.boolean(),
+        push: v.boolean(),
+        inApp: v.boolean(),
+      }),
+      market_updates: v.object({
+        email: v.boolean(),
+        sms: v.boolean(),
+        push: v.boolean(),
+        inApp: v.boolean(),
+      }),
+      marketing: v.object({
+        email: v.boolean(),
+        sms: v.boolean(),
+        push: v.boolean(),
+        inApp: v.boolean(),
+      }),
+      safety: v.object({
+        email: v.boolean(),
+        sms: v.boolean(),
+        push: v.boolean(),
+        inApp: v.boolean(),
+      }),
+    })),
+    quietHours: v.optional(v.object({
+      enabled: v.boolean(),
+      startMinutes: v.number(),
+      endMinutes: v.number(),
+      timezone: v.string(),
+    })),
     createdAt: v.string(),
     updatedAt: v.string(),
   }).index("by_userId", ["userId"]),

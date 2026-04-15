@@ -65,6 +65,26 @@ export const DATA_CATALOG: Record<string, DataClassification> = {
     retentionCategory: "communications",
     encryptionRequired: false,
   },
+  messagePreferenceState: {
+    name: "Message Preference State",
+    sensitivity: "confidential",
+    description:
+      "Current buyer notification matrix, quiet hours, and effective channel state",
+    accessRoles: ["buyer", "broker", "admin", "system"],
+    piiFields: ["email", "phone"],
+    retentionCategory: "buyer_data",
+    encryptionRequired: false,
+  },
+  messagePreferenceAudit: {
+    name: "Message Preference Audit",
+    sensitivity: "internal",
+    description:
+      "Immutable before/after audit trail for preference changes and one-click unsubscribe actions",
+    accessRoles: ["admin", "system"],
+    piiFields: [],
+    retentionCategory: "audit",
+    encryptionRequired: false,
+  },
   aiEngineOutputs: {
     name: "AI Engine Outputs",
     sensitivity: "internal",

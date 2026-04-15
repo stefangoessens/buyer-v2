@@ -1,3 +1,4 @@
+import { api } from "./_generated/api";
 import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -14,6 +15,7 @@ import {
   buyerProfileSavedSearchCriteriaValidator,
   buyerProfileSavedSearchValidator,
   buyerProfileTourFlowValidator,
+  communicationPreferencesViewValidator,
   buyerProfileViewValidator,
   mergeBuyerProfileSections,
   normalizeBuyerProfileSections,
@@ -717,21 +719,16 @@ export const updateCommPrefs = mutation({
       }),
     ),
   },
-  returns: v.id("buyerProfiles"),
+  returns: communicationPreferencesViewValidator,
   handler: async (ctx, args) => {
-    const actor = await requireAuth(ctx);
-    const { user, profile, messagePreferences } = await loadProfileDependencies(
-      ctx,
-      actor._id,
-    );
-    return await upsertProfileRecord(ctx, {
-      actor,
-      targetUser: user,
-      existingProfile: profile,
-      existingMessagePreferences: messagePreferences,
-      args: {
-        communicationPreferences: args,
+    const result: any = await ctx.runMutation(
+      api.messagePreferences.upsertForCurrentUser,
+      {
+        channels: args.channels,
+        categories: args.categories,
+        source: "legacy_client",
       },
-    });
+    );
+    return result;
   },
 });
