@@ -241,3 +241,49 @@ test.describe("homepage #how-we-compare section", () => {
     await expect(heroAnchor).toBeAttached();
   });
 });
+
+test.describe("homepage #rebate-slider section", () => {
+  test("renders eyebrow, default headline values, and CTA", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/");
+
+    const section = page.locator("#rebate-slider");
+    await expect(section).toBeVisible();
+
+    await expect(section.getByText("Up to 2% back at closing")).toBeVisible();
+    // Default $750k → $15k rebate (3% buyer-side − 1% buyer-v2 fee).
+    await expect(section.getByText("$750,000").first()).toBeVisible();
+    await expect(section.getByText("$15,000").first()).toBeVisible();
+
+    const cta = section.locator('a[href="#hero-intake"]');
+    await expect(cta).toBeVisible();
+  });
+
+  test("exposes a [role='slider'] with default aria-valuenow=750000", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const slider = page.locator("#rebate-slider [role='slider']");
+    await expect(slider).toBeAttached();
+    await expect(slider).toHaveAttribute("aria-valuenow", "750000");
+  });
+
+  test("the legacy $12,400 figure is no longer present anywhere on the homepage", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const body = await page.locator("body").textContent();
+    expect(body ?? "").not.toContain("$12,400");
+  });
+
+  test("?price=850000#rebate-slider deep link reflects in aria-valuenow after hydration", async ({
+    page,
+  }) => {
+    await page.goto("/?price=850000#rebate-slider");
+    await page.waitForSelector("[role='slider'][aria-valuenow='850000']");
+    const slider = page.locator("#rebate-slider [role='slider']");
+    await expect(slider).toHaveAttribute("aria-valuenow", "850000");
+  });
+});

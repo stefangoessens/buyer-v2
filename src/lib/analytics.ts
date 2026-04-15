@@ -126,7 +126,11 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   // ─── Engagement events (public site tools) ──────────────────────────
   /** Fired when a buyer uses an interactive calculator on the marketing site. */
   calculator_used: {
-    calculator: "affordability" | "cost" | "pricing";
+    calculator:
+      | "affordability"
+      | "cost"
+      | "pricing"
+      | "home_rebate_slider";
     durationMs?: number;
   };
   /** Fired when the pricing FAQ is opened. */
@@ -182,6 +186,32 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   home_comparison_pricing_cta_clicked: Record<string, never>;
   /** Fired when the "Paste a Zillow, Redfin, or Realtor link" CTA in the comparison section is clicked. */
   home_comparison_intake_cta_clicked: Record<string, never>;
+  /** Fired when the homepage rebate slider section crosses 40% visible. */
+  home_rebate_slider_viewed: Record<string, never>;
+  /** Fired when the slider value is committed after the debounce window. */
+  home_rebate_slider_changed: {
+    price: number;
+    rebate: number;
+    rebateBand: "zero" | "under-5k" | "5k-10k" | "10k-20k" | "over-20k";
+  };
+  /** Fired when the slider thumb snaps to a magnetic snap point. */
+  home_rebate_slider_snap_reached: { snapPoint: number };
+  /** Fired when a new aspiration band renders for the current rebate. */
+  home_rebate_aspiration_viewed: {
+    rebateBand: "zero" | "under-5k" | "5k-10k" | "10k-20k" | "over-20k";
+  };
+  /** Fired when the disclosure footer enters the viewport. */
+  home_rebate_disclosure_viewed: Record<string, never>;
+  /** Fired when the rebate slider "Paste a property link" CTA is clicked. */
+  home_rebate_cta_clicked: Record<string, never>;
+  /** Fired when the homepage loads with a `?price=` deep link hitting the slider. */
+  home_rebate_slider_deep_link_landed: { price: number };
+  /** Fired when the slider loses focus, reporting the session's max drag distance. */
+  home_rebate_slider_interaction_depth: { maxDistanceDollars: number };
+  /** Fired when the static fallback table renders instead of the interactive slider. */
+  home_rebate_slider_fallback_shown: {
+    reason: "flag_off" | "js_disabled";
+  };
 
   // ─── FL availability strip (KIN-1088) ───────────────────────────────
   /** Strip enters viewport for the first time (IntersectionObserver). */
@@ -727,6 +757,64 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     owner: "growth",
     whenFired:
       "waitlistSignups.upsert mutation returns ok: false, or the network call fails",
+    piiSafe: true,
+  },
+  home_rebate_slider_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "IntersectionObserver on #rebate-slider crosses 40% visible",
+    piiSafe: true,
+  },
+  home_rebate_slider_changed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Slider value committed after 250ms debounce window",
+    piiSafe: true,
+  },
+  home_rebate_slider_snap_reached: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Slider thumb snapped to a magnetic snap point",
+    piiSafe: true,
+  },
+  home_rebate_aspiration_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Aspiration band copy rendered for a new rebate band",
+    piiSafe: true,
+  },
+  home_rebate_disclosure_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Disclosure footer entered viewport",
+    piiSafe: true,
+  },
+  home_rebate_cta_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "Paste a property link CTA clicked in the rebate slider section",
+    piiSafe: true,
+  },
+  home_rebate_slider_deep_link_landed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "Page loaded with ?price= query param targeting the rebate slider",
+    piiSafe: true,
+  },
+  home_rebate_slider_interaction_depth: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Final drag distance reported when slider loses focus",
+    piiSafe: true,
+  },
+  home_rebate_slider_fallback_shown: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "Static fallback table rendered instead of the interactive slider",
     piiSafe: true,
   },
 

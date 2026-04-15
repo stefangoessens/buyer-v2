@@ -113,6 +113,16 @@ export const SETTINGS_CATALOG: SettingsCatalog = {
       writeRole: "broker",
       defaultValue: { kind: "boolean", value: true },
     },
+    {
+      key: "rollout.home_rebate_slider_enabled",
+      label: "Home rebate slider enabled",
+      description:
+        "Global kill switch for the interactive homepage rebate slider. When false, the homepage renders a static 4-row fallback table instead.",
+      category: "rollout",
+      kind: "boolean",
+      writeRole: "broker",
+      defaultValue: { kind: "boolean", value: true },
+    },
 
     // ─── Operational defaults ───────────────────────────────────
     {
