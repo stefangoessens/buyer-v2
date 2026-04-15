@@ -55,10 +55,20 @@ export type FAQStage =
   | "under_contract"
   | "post_close";
 
+/**
+ * Editorial theme for the public FAQ page. The page groups questions
+ * under three IA themes so buyers can jump-nav directly to the trust,
+ * savings, or workflow story. Independent from `category` (ops
+ * grouping) and `stage` (buying-journey position); theme is the
+ * PUBLIC-FACING narrative axis on /faq.
+ */
+export type FAQTheme = "how_it_works" | "how_you_save" | "protection";
+
 export interface FAQEntry extends HasVisibility {
   id: string;
   category: FAQCategory;
   stage: FAQStage;
+  theme: FAQTheme;
   question: string;
   answer: string;
 }

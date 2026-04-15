@@ -329,9 +329,30 @@ describe("buildStructuredData", () => {
       }
     );
     expect(data["@type"]).toBe("FAQPage");
+    expect(data.inLanguage).toBe("en-US");
     const mainEntity = data.mainEntity as Array<Record<string, unknown>>;
     expect(mainEntity).toHaveLength(2);
     expect((mainEntity[0] as Record<string, unknown>).name).toBe("Q1?");
+    // Backwards compat: no slug supplied → no url field on the entry.
+    expect((mainEntity[0] as Record<string, unknown>).url).toBeUndefined();
+  });
+
+  it("emits FAQPage with per-entry url when slug provided", () => {
+    const data = buildStructuredData(
+      makeInput({ kind: "faq", path: "/faq" }),
+      {
+        faqEntries: [
+          { question: "Q1?", answer: "A1", slug: "q-one" },
+          { question: "Q2?", answer: "A2", slug: "q-two" },
+        ],
+      }
+    );
+    expect(data["@type"]).toBe("FAQPage");
+    expect(data.inLanguage).toBe("en-US");
+    const mainEntity = data.mainEntity as Array<Record<string, unknown>>;
+    expect(mainEntity).toHaveLength(2);
+    expect(mainEntity[0].url).toBe("https://buyerv2.com/faq#q-one");
+    expect(mainEntity[1].url).toBe("https://buyerv2.com/faq#q-two");
   });
 
   it("emits Article with datePublished for article kind", () => {

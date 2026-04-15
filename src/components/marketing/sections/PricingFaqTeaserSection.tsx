@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
@@ -9,12 +11,13 @@ import {
 } from "@/components/ui/accordion";
 import { FAQ_ENTRIES } from "@/content/faq";
 import { filterPublic } from "@/lib/content/publicFilter";
+import { track } from "@/lib/analytics";
 
 const PRICING_FAQ_IDS = [
-  "how_much_does_it_cost",
-  "how_is_the_rebate_calculated",
-  "what_happens_at_closing",
-  "what_about_ai_decisions",
+  "how-does-buyer-v2-save-me-money",
+  "how-does-the-buyer-credit-work-at-closing",
+  "is-the-rebate-taxable",
+  "are-there-any-hidden-fees-or-commissions",
 ];
 
 export function PricingFaqTeaserSection() {
@@ -27,6 +30,10 @@ export function PricingFaqTeaserSection() {
   if (teaserEntries.length === 0) {
     return null;
   }
+
+  const handleSeeFullFaqClick = () => {
+    track("faq_teaser_clicked", { source: "pricing_page" });
+  };
 
   return (
     <section className="mx-auto w-full max-w-4xl px-6 py-24 sm:py-32">
@@ -57,7 +64,8 @@ export function PricingFaqTeaserSection() {
 
       <div className="mt-10 flex justify-center">
         <Link
-          href="/faq"
+          href="/faq#theme-how-you-save"
+          onClick={handleSeeFullFaqClick}
           className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-primary/80"
         >
           See the full FAQ

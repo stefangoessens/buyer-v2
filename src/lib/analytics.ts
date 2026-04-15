@@ -1,5 +1,6 @@
 import posthog from "posthog-js";
 import type { LaunchEventMap } from "@buyer-v2/shared/launch-events";
+import type { FAQTheme } from "@/lib/content/types";
 import { resolveObservabilityContext } from "@/lib/observability";
 import { deepScrubPii } from "@/lib/security/pii-guard";
 
@@ -130,6 +131,36 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   };
   /** Fired when the pricing FAQ is opened. */
   pricing_faq_viewed: { source: string };
+
+  // ─── FAQ page (KIN-1085) ────────────────────────────────────────────
+  /** FAQ page viewed (mount). */
+  faq_page_viewed: Record<string, never>;
+  /** Jump nav pill clicked. */
+  faq_theme_jump_clicked: { theme: FAQTheme };
+  /** Accordion question opened. */
+  faq_question_opened: {
+    questionId: string;
+    theme: FAQTheme;
+    source: "direct" | "jump_nav" | "deep_link";
+  };
+  /** Copy-link button clicked on a question. */
+  faq_question_link_copied: { questionId: string; theme: FAQTheme };
+  /** Dwell time on an opened question, reported on close or unmount. */
+  faq_question_dwell_ms: {
+    questionId: string;
+    theme: FAQTheme;
+    dwellMs: number;
+  };
+  /** Fired when a buyer opens 2+ questions inside the same theme. */
+  faq_theme_engaged: { theme: FAQTheme; questionCount: number };
+  /** "Still have questions?" contact CTA clicked. */
+  faq_contact_cta_clicked: Record<string, never>;
+  /** Page mounted with a hash that matches a public question slug. */
+  faq_deep_link_landed: { questionId: string; theme: FAQTheme };
+  /** Teaser section on /pricing or /how-it-works clicked through to /faq. */
+  faq_teaser_clicked: {
+    source: "pricing_page" | "how_it_works_page" | "direct" | "deep_link";
+  };
   /** Fired when the homepage "How it works" section becomes visible. */
   home_how_it_works_section_viewed: Record<string, never>;
   /** Fired when a buyer hovers or focuses a homepage HIW step card. */
@@ -504,6 +535,60 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "engagement",
     owner: "growth",
     whenFired: "FAQ item expanded",
+    piiSafe: true,
+  },
+  faq_page_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "/faq page mount",
+    piiSafe: true,
+  },
+  faq_theme_jump_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Jump-nav pill on /faq clicked",
+    piiSafe: true,
+  },
+  faq_question_opened: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Accordion question on /faq expanded",
+    piiSafe: true,
+  },
+  faq_question_link_copied: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Copy-link icon on a /faq question clicked",
+    piiSafe: true,
+  },
+  faq_question_dwell_ms: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Question on /faq closed or unmounted while open",
+    piiSafe: true,
+  },
+  faq_theme_engaged: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Two or more questions opened within the same /faq theme",
+    piiSafe: true,
+  },
+  faq_contact_cta_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "/faq Still-have-questions contact CTA clicked",
+    piiSafe: true,
+  },
+  faq_deep_link_landed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "/faq mount with a hash matching a public question slug",
+    piiSafe: true,
+  },
+  faq_teaser_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "FAQ teaser on /pricing or /how-it-works clicked through to /faq",
     piiSafe: true,
   },
   home_how_it_works_section_viewed: {

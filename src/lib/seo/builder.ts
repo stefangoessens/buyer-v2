@@ -248,7 +248,7 @@ export function buildMetadata(input: SeoInput): Metadata {
 export function buildStructuredData(
   input: SeoInput,
   extras: {
-    faqEntries?: Array<{ question: string; answer: string }>;
+    faqEntries?: Array<{ question: string; answer: string; slug?: string }>;
     howToSteps?: Array<{ name: string; text: string }>;
     articleAuthor?: string;
   } = {}
@@ -261,6 +261,7 @@ export function buildStructuredData(
       return {
         "@context": "https://schema.org",
         "@type": "FAQPage",
+        inLanguage: "en-US",
         mainEntity: entries.map((e) => ({
           "@type": "Question",
           name: e.question,
@@ -268,6 +269,7 @@ export function buildStructuredData(
             "@type": "Answer",
             text: e.answer,
           },
+          ...(e.slug ? { url: `${canonical}#${e.slug}` } : {}),
         })),
         url: canonical,
       };

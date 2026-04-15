@@ -455,11 +455,22 @@ describe("listEventsByCategory()", () => {
     expect(events).toContain("home_how_it_works_section_viewed");
     expect(events).toContain("home_how_it_works_step_interacted");
     expect(events).toContain("home_how_it_works_cta_clicked");
+    // KIN-1084: homepage comparison section added 4 engagement events.
     expect(events).toContain("home_comparison_section_viewed");
     expect(events).toContain("home_comparison_row_interacted");
     expect(events).toContain("home_comparison_pricing_cta_clicked");
     expect(events).toContain("home_comparison_intake_cta_clicked");
-    expect(events).toHaveLength(9);
+    // KIN-1085: themed FAQ page added 9 engagement events.
+    expect(events).toContain("faq_page_viewed");
+    expect(events).toContain("faq_theme_jump_clicked");
+    expect(events).toContain("faq_question_opened");
+    expect(events).toContain("faq_question_link_copied");
+    expect(events).toContain("faq_question_dwell_ms");
+    expect(events).toContain("faq_theme_engaged");
+    expect(events).toContain("faq_contact_cta_clicked");
+    expect(events).toContain("faq_deep_link_landed");
+    expect(events).toContain("faq_teaser_clicked");
+    expect(events).toHaveLength(18);
   });
 });
 

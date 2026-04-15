@@ -77,7 +77,7 @@ export const STATIC_SEO_PAGES = {
     seo: {
       title: "FAQ",
       description:
-        "How buyer-v2 works, how the buyer credit is calculated, and what happens when you engage us — in plain language.",
+        "Answers about how buyer-v2 works, how you save, and how we protect you — from a licensed Florida buyer brokerage.",
       path: "/faq",
       visibility: "public",
       kind: "faq",
@@ -175,7 +175,7 @@ export function metadataForStaticPage(page: StaticSeoPageKey): Metadata {
 export function structuredDataForStaticPage(
   page: StaticSeoPageKey,
   extras?: {
-    faqEntries?: Array<{ question: string; answer: string }>;
+    faqEntries?: Array<{ question: string; answer: string; slug?: string }>;
     howToSteps?: Array<{ name: string; text: string }>;
     articleAuthor?: string;
   }

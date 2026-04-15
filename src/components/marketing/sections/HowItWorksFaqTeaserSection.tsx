@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
@@ -9,11 +11,12 @@ import {
 } from "@/components/ui/accordion";
 import { FAQ_ENTRIES } from "@/content/faq";
 import { filterPublic } from "@/lib/content/publicFilter";
+import { track } from "@/lib/analytics";
 
 const HOW_IT_WORKS_FAQ_IDS = [
-  "who_shows_me_homes",
-  "can_i_negotiate_myself",
-  "what_happens_at_closing",
+  "how-does-buyer-v2-work",
+  "can-i-tour-homes-with-buyer-v2",
+  "can-i-still-talk-to-a-real-person",
 ];
 
 export function HowItWorksFaqTeaserSection() {
@@ -26,6 +29,10 @@ export function HowItWorksFaqTeaserSection() {
   if (teaserEntries.length === 0) {
     return null;
   }
+
+  const handleSeeAllClick = () => {
+    track("faq_teaser_clicked", { source: "how_it_works_page" });
+  };
 
   return (
     <section className="mx-auto w-full max-w-4xl px-6 py-24 sm:py-32">
@@ -59,7 +66,8 @@ export function HowItWorksFaqTeaserSection() {
 
       <div className="mt-10 flex justify-center">
         <Link
-          href="/faq"
+          href="/faq#theme-how-it-works"
+          onClick={handleSeeAllClick}
           className="inline-flex items-center gap-2 text-sm font-medium text-primary transition-colors hover:text-primary/80"
         >
           See all questions

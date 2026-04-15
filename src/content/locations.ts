@@ -72,9 +72,9 @@ export const LOCATION_CATALOG: LocationCatalog = {
           kind: "faq_ref",
           heading: "Common questions from Miami buyers",
           entryIds: [
-            "what_is_buyer_v2",
-            "how_much_does_it_cost",
-            "who_shows_me_homes",
+            "what-is-buyer-v2",
+            "how-does-buyer-v2-save-me-money",
+            "can-i-tour-homes-with-buyer-v2",
           ],
         },
         {
@@ -138,9 +138,9 @@ export const LOCATION_CATALOG: LocationCatalog = {
           kind: "faq_ref",
           heading: "Common questions from Tampa buyers",
           entryIds: [
-            "paste_link_flow",
-            "how_is_the_rebate_calculated",
-            "what_happens_at_closing",
+            "how-does-buyer-v2-work",
+            "how-does-the-buyer-credit-work-at-closing",
+            "is-the-rebate-taxable",
           ],
         },
         {
@@ -192,9 +192,9 @@ export const LOCATION_CATALOG: LocationCatalog = {
           kind: "faq_ref",
           heading: "Common questions from Orlando buyers",
           entryIds: [
-            "what_is_buyer_v2",
-            "is_buyer_v2_a_broker",
-            "do_you_support_mls_direct",
+            "what-is-buyer-v2",
+            "is-buyer-v2-a-licensed-brokerage",
+            "how-is-buyer-v2-different-from-zillow-redfin-or-a-traditional-agent",
           ],
         },
         {
@@ -258,7 +258,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
         {
           kind: "faq_ref",
           heading: "Questions from Brickell buyers",
-          entryIds: ["how_much_does_it_cost", "how_is_the_rebate_calculated"],
+          entryIds: ["how-does-buyer-v2-save-me-money", "how-does-the-buyer-credit-work-at-closing"],
         },
         {
           kind: "cta",
@@ -288,7 +288,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
         {
           kind: "faq_ref",
           heading: "Questions from Coconut Grove buyers",
-          entryIds: ["what_is_buyer_v2", "what_about_ai_decisions"],
+          entryIds: ["what-is-buyer-v2", "can-i-still-talk-to-a-real-person"],
         },
         {
           kind: "cta",
@@ -317,7 +317,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
         {
           kind: "faq_ref",
           heading: "Questions from Hyde Park buyers",
-          entryIds: ["how_much_does_it_cost", "who_shows_me_homes"],
+          entryIds: ["how-does-buyer-v2-save-me-money", "can-i-tour-homes-with-buyer-v2"],
         },
         {
           kind: "cta",
@@ -346,7 +346,7 @@ export const LOCATION_CATALOG: LocationCatalog = {
         {
           kind: "faq_ref",
           heading: "Questions from Seminole Heights buyers",
-          entryIds: ["paste_link_flow", "is_my_data_private"],
+          entryIds: ["how-does-buyer-v2-work", "who-owns-my-data"],
         },
         {
           kind: "cta",
