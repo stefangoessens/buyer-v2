@@ -569,7 +569,10 @@ describe("Sign & Submit guard", () => {
     const btn = within(card as HTMLElement).getByRole("button", {
       name: /Awaiting broker callback/i,
     });
-    expect(btn).toBeDisabled();
+    // The button omits the native `disabled` attribute so blocked clicks
+    // still fire a SUBMIT_BLOCKED analytics event. `aria-disabled` keeps
+    // the accessibility semantics.
+    expect(btn).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(btn);
     expect(onSubmit).not.toHaveBeenCalled();
   });
@@ -597,7 +600,7 @@ describe("Sign & Submit guard", () => {
     const btn = screen.getByRole("button", {
       name: /Awaiting signed agreement/i,
     });
-    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute("aria-disabled", "true");
   });
 
   it("is enabled and fires onSubmit when callback completed + eligible + canSubmit", () => {

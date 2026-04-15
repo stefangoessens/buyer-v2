@@ -91,6 +91,7 @@ export function OfferCockpit({ dealRoomId }: OfferCockpitProps) {
   return (
     <EligibilityGate
       brokerageStage={brokerageStage}
+      viewerRole={data.viewerRole}
       dealRoomId={data.dealRoom._id as Id<"dealRooms">}
       propertyId={data.propertyId}
       listPrice={data.listPrice}

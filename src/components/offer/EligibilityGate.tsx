@@ -7,6 +7,11 @@ import { BrokeragePhoneGateModal } from "./BrokeragePhoneGateModal";
 
 interface EligibilityGateProps {
   brokerageStage: "none" | "requested" | "completed";
+  // Broker/admin viewers bypass the gate entirely — the phone mutation rejects
+  // non-buyers (`dealRoom.buyerId !== user._id`), so forcing staff into this
+  // modal would hard-lock them out of the cockpit when reviewing a buyer's
+  // deal room.
+  viewerRole: "buyer" | "broker" | "admin";
   dealRoomId: Id<"dealRooms">;
   propertyId: Id<"properties"> | string;
   listPrice: number;
@@ -15,12 +20,13 @@ interface EligibilityGateProps {
 
 export function EligibilityGate({
   brokerageStage,
+  viewerRole,
   dealRoomId,
   propertyId,
   listPrice,
   children,
 }: EligibilityGateProps) {
-  if (brokerageStage !== "none") {
+  if (viewerRole !== "buyer" || brokerageStage !== "none") {
     return <>{children}</>;
   }
 

@@ -225,12 +225,18 @@ export function OfferSubmitStep({
           )}
 
           <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-end">
+            {/* We intentionally omit the native `disabled` prop so blocked
+                clicks still fire — it's the only way to emit `SUBMIT_BLOCKED`
+                analytics for the funnel. `aria-disabled` keeps the
+                accessibility and visual-disabled semantics. */}
             <Button
               type="button"
               size="lg"
-              className="sm:w-auto"
+              className={cn(
+                "sm:w-auto",
+                !submitEnabled && "opacity-50 hover:opacity-50",
+              )}
               onClick={submitEnabled ? handleSubmitClick : handleDisabledClick}
-              disabled={!submitEnabled}
               aria-disabled={!submitEnabled}
               title={disabledLabel ?? undefined}
             >
