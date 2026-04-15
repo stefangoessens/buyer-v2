@@ -48,6 +48,26 @@ export interface AnalyticsEventMap extends LaunchEventMap {
     confidence: number;
   };
 
+  // ─── List price review (KIN-1089) ───────────────────────────────────
+  /** Fired when the List Price Review card first mounts with non-null data. */
+  list_price_review_viewed: {
+    assessment: "at_market" | "under_market" | "over_market" | "insufficient";
+  };
+  /** Fired when the assessment chip first renders after data load. */
+  list_price_review_assessment_rendered: {
+    assessment: "at_market" | "under_market" | "over_market" | "insufficient";
+    referencesAvailable: number;
+    signalsAgreed: number;
+  };
+  /** Fired when a buyer opens a reference tile's provenance tooltip. */
+  list_price_review_reference_tooltip_opened: {
+    referenceKey:
+      | "suggested_list_price"
+      | "avm_estimate"
+      | "comp_median"
+      | "market_velocity_dom";
+  };
+
   // ─── Document events ────────────────────────────────────────────────
   /** Fired when a document upload completes. */
   document_uploaded: {
@@ -421,6 +441,24 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "deal_room",
     owner: "ai",
     whenFired: "Any AI engine output first rendered",
+    piiSafe: true,
+  },
+  list_price_review_viewed: {
+    category: "deal_room",
+    owner: "ai",
+    whenFired: "List Price Review card first mounts with non-null data",
+    piiSafe: true,
+  },
+  list_price_review_assessment_rendered: {
+    category: "deal_room",
+    owner: "ai",
+    whenFired: "Assessment chip first renders after data load",
+    piiSafe: true,
+  },
+  list_price_review_reference_tooltip_opened: {
+    category: "deal_room",
+    owner: "ai",
+    whenFired: "User opens a reference tile's provenance tooltip",
     piiSafe: true,
   },
 
