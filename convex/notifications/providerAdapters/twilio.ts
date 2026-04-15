@@ -164,7 +164,9 @@ export function parseTwilioWebhookParams(
 ): Record<string, string> {
   const params = new Map<string, string>();
   const entries =
-    value instanceof URLSearchParams ? value.entries() : value.entries();
+    value instanceof URLSearchParams
+      ? value.entries()
+      : (value as unknown as Iterable<[string, FormDataEntryValue]>);
 
   for (const [key, rawValue] of entries) {
     if (typeof rawValue === "string") {
