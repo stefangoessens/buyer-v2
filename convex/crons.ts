@@ -8,10 +8,18 @@
  * function reference; never a direct symbol import.
  */
 
-import { cronJobs } from "convex/server";
+import { cronJobs, type SchedulableFunctionReference } from "convex/server";
 import { internal } from "./_generated/api";
+import { runDeliveryFanout } from "./notifications/deliveryFanout";
 
 const crons = cronJobs();
+const notificationsInternal = (internal as unknown as {
+  notifications: {
+    deliveryFanout: {
+      runDeliveryFanout: typeof runDeliveryFanout;
+    };
+  };
+}).notifications;
 
 // KIN-1078 — daily purge of disclosure packets past the 7-year
 // `legal_documents` retention window. Runs once a day at 03:00 UTC
@@ -30,6 +38,17 @@ crons.interval(
   "disclosureRequestFollowUpSweep",
   { hours: 1 },
   internal.disclosures.runDisclosureRequestFollowUpSweep,
+  {},
+);
+
+// KIN-1091 — notification fanout sweep. Runs every 15 seconds so the
+// delivery ledger can pick up new buyer events, apply routing rules, and
+// enqueue stub provider attempts with bounded batch pressure.
+crons.interval(
+  "notificationDeliveryFanout",
+  { seconds: 15 },
+  notificationsInternal.deliveryFanout
+    .runDeliveryFanout as unknown as SchedulableFunctionReference,
   {},
 );
 
