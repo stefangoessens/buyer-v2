@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyFanoutBackpressure,
+  deriveEventDeliveryState,
   FANOUT_BACKPRESSURE_THRESHOLD,
   getRetryDelayMs,
 } from "../../../../convex/notifications/deliveryFanout";
@@ -37,6 +38,28 @@ describe("notification fanout helpers", () => {
     expect(getRetryDelayMs(4)).toBe(120_000);
     expect(getRetryDelayMs(5)).toBe(600_000);
     expect(getRetryDelayMs(6)).toBeNull();
+  });
+
+  it("keeps preference skips distinct from terminal failures", () => {
+    expect(
+      deriveEventDeliveryState({
+        anyDelivered: false,
+        anyDispatched: false,
+        waitingForLater: false,
+        skippedByPreferenceOrSuppression: true,
+        allTerminalFailures: false,
+      }),
+    ).toBe("skipped_by_preference");
+
+    expect(
+      deriveEventDeliveryState({
+        anyDelivered: false,
+        anyDispatched: false,
+        waitingForLater: false,
+        skippedByPreferenceOrSuppression: false,
+        allTerminalFailures: true,
+      }),
+    ).toBe("failed");
   });
 
   it("sheds relationship events once the queue crosses the backpressure threshold", () => {

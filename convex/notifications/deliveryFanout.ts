@@ -549,6 +549,7 @@ async function dispatchEventAcrossChannels(
 
     if (latestAttempt?.status === "failed") {
       if (channelAttempts.length >= args.config.maxAttempts) {
+        skippedByPreferenceOrSuppression = false;
         continue;
       }
 
@@ -735,7 +736,7 @@ async function getChannelBlockReason(
   return suppression ? "suppressed" : null;
 }
 
-function deriveEventDeliveryState(args: {
+export function deriveEventDeliveryState(args: {
   anyDelivered: boolean;
   anyDispatched: boolean;
   waitingForLater: boolean;

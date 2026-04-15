@@ -63,16 +63,20 @@ async function upsertSuppression(
     .collect();
 
   const active = existing.find((row: Doc<"notificationSuppressionList">) => row.active);
-  if (active) {
-    await ctx.db.patch(active._id, {
+  const reusable = active ?? existing[0] ?? null;
+  if (reusable) {
+    await ctx.db.patch(reusable._id, {
+      recipientKey: normalized,
+      channel: "email",
       reason: args.reason,
       source: "webhook",
+      liftedAt: undefined,
       notes: args.notes,
       suppressedAt: args.occurredAt,
       updatedAt: args.occurredAt,
       active: true,
     });
-    return false;
+    return !reusable.active;
   }
 
   await ctx.db.insert("notificationSuppressionList", {
@@ -87,6 +91,23 @@ async function upsertSuppression(
     updatedAt: args.occurredAt,
   });
   return true;
+}
+
+function getSuppressionRecipientKeys(args: {
+  attemptRecipientKey?: string;
+  providerRecipientKeys: string[];
+}): string[] {
+  if (args.attemptRecipientKey?.trim()) {
+    return [normalizeRecipientKey(args.attemptRecipientKey)];
+  }
+
+  return Array.from(
+    new Set(
+      args.providerRecipientKeys
+        .map((recipientKey) => normalizeRecipientKey(recipientKey))
+        .filter((recipientKey) => recipientKey.length > 0),
+    ),
+  );
 }
 
 const receiptValidator = v.object({
@@ -195,9 +216,20 @@ export const processResendWebhookEvent = mutation({
     suppressionApplied: v.boolean(),
   }),
   handler: async (ctx, args) => {
+    const deliveryAttempt = args.providerMessageId
+      ? await ctx.db
+          .query("notificationDeliveryAttempts")
+          .withIndex("by_providerMessageId", (q) =>
+            q.eq("providerMessageId", args.providerMessageId!),
+          )
+          .unique()
+      : null;
+    const eventId = args.eventId ?? deliveryAttempt?.eventId;
     const receipt = await upsertReceiptRow(ctx, {
       provider: "resend",
       providerEventId: args.providerEventId,
+      eventId,
+      attemptId: deliveryAttempt?._id,
       payload: args.rawPayload,
       signatureVerified: args.signatureVerified,
       receivedAt: args.occurredAt,
@@ -229,7 +261,6 @@ export const processResendWebhookEvent = mutation({
       };
     }
 
-    const eventId = args.eventId;
     const disclosureRequest = args.providerMessageId
       ? await ctx.db
           .query("disclosureRequests")
@@ -269,7 +300,12 @@ export const processResendWebhookEvent = mutation({
         args.transition === "complained" ||
         args.transition === "suppressed"
       ) {
-        for (const recipient of args.recipientKeys) {
+        const suppressionRecipientKeys = getSuppressionRecipientKeys({
+          attemptRecipientKey: deliveryAttempt?.recipientKey,
+          providerRecipientKeys: args.recipientKeys,
+        });
+
+        for (const recipient of suppressionRecipientKeys) {
           suppressionApplied =
             (await upsertSuppression(ctx, {
               recipientKey: recipient,
