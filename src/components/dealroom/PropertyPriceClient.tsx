@@ -6,7 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { PriceSpectrumBar } from "./PriceSpectrumBar";
-import { PricingPanelCard } from "./PricingPanelCard";
+import { ListPriceReviewCard } from "./ListPriceReviewCard";
 import {
   LeverageScoreCard,
   type LeverageSignal,
@@ -140,12 +140,7 @@ function PriceOverview({
         signals={leverageSignals}
       />
 
-      <PricingPanelCard
-        status={overview.pricing.status}
-        data={overview.pricing.data}
-        reason={overview.pricing.reason}
-        confidence={overview.pricing.confidence}
-      />
+      <ListPriceReviewCard dealRoomId={dealRoomId} />
 
       <CostEstimateCard
         status={overview.cost.status}
