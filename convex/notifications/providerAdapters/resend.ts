@@ -77,6 +77,7 @@ type EmailWebhookEvent = {
   tags: Record<string, string>;
   clickedLink?: string;
   failureReason?: string;
+  suppressedType?: string;
   bounce?: {
     type: string;
     subType: string;
@@ -191,6 +192,10 @@ export const resendAdapter: ProviderAdapter = {
         getString(data.reason) ??
         getString(data.message) ??
         getString(data.response),
+      suppressedType:
+        data.suppressed && typeof data.suppressed === "object"
+          ? getString((data.suppressed as Record<string, unknown>).type)
+          : undefined,
       raw: record,
     };
   },
@@ -283,6 +288,10 @@ export const resendEmailRailAdapter: EmailProviderAdapter = {
         getString(data.reason) ??
         getString(data.message) ??
         getString(data.response),
+      suppressedType:
+        data.suppressed && typeof data.suppressed === "object"
+          ? getString((data.suppressed as Record<string, unknown>).type)
+          : undefined,
       bounce:
         data.bounce && typeof data.bounce === "object"
           ? {
@@ -331,6 +340,8 @@ function mapResendTransition(type: string | undefined): WebhookEvent["transition
       return "failed";
     case "email.suppressed":
       return "suppressed";
+    case "email.received":
+      return "received";
     default:
       return "sent";
   }

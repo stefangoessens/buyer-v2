@@ -18,7 +18,6 @@ import {
   isWithinQuietHours,
   resolveEffectiveNotificationPreferences,
 } from "./preferencesResolver";
-import { getProviderAdapter } from "./providerAdapters";
 import { getConvexNotificationRoutingRule } from "./routingRules";
 import { getActiveSuppressionInternal, normalizeRecipientKey } from "./suppressionList";
 import {
@@ -74,6 +73,7 @@ type AnyInternalMutationRef = FunctionReference<
   any,
   any
 >;
+type AnyInternalActionRef = FunctionReference<"action", "internal", any, any>;
 
 const externalDeliveryChannelValidator = v.union(
   v.literal("email"),
@@ -427,6 +427,8 @@ const recordDeliveryAttemptRef =
   recordDeliveryAttempt as unknown as AnyInternalMutationRef;
 const updateEventDeliveryStateRef =
   updateEventDeliveryState as unknown as AnyInternalMutationRef;
+const dispatchDeliveryRef =
+  "notifications/providerDispatch:dispatchDelivery" as unknown as AnyInternalActionRef;
 
 export const runDeliveryFanout = internalAction({
   args: {},
@@ -599,7 +601,6 @@ async function dispatchEventAcrossChannels(
     }
 
     skippedByPreferenceOrSuppression = false;
-    const adapter = getProviderAdapter(channel);
     const attemptNumber = nextAttemptNumber;
     nextAttemptNumber += 1;
     const request = {
@@ -608,7 +609,7 @@ async function dispatchEventAcrossChannels(
       dedupeKey: args.event.dedupeKey,
       recipientKey: args.recipientKey,
       channel,
-      provider: adapter.name,
+      provider: providerNameForChannel(channel),
       category: rule.category,
       urgency: rule.urgency,
       attemptNumber,
@@ -625,14 +626,14 @@ async function dispatchEventAcrossChannels(
       },
     } as const;
 
-    const result = await adapter.send(request);
+    const result = await ctx.runAction(dispatchDeliveryRef, request);
     attempted += 1;
 
     await ctx.runMutation(recordDeliveryAttemptRef, {
       eventId: args.event._id,
       recipientKey: args.recipientKey,
       channel,
-      adapter: adapter.name,
+      adapter: result.provider,
       attemptNumber,
       status: mapDeliveryResultToAttemptStatus(result.status),
       reason: result.reason,
@@ -812,6 +813,19 @@ function mapDeliveryResultToAttemptStatus(
 
 function toMatrixChannel(channel: DeliveryChannel): "email" | "sms" | "push" {
   return channel;
+}
+
+function providerNameForChannel(
+  channel: DeliveryChannel,
+): "resend" | "twilio" | "apns" {
+  switch (channel) {
+    case "email":
+      return "resend";
+    case "sms":
+      return "twilio";
+    case "push":
+      return "apns";
+  }
 }
 
 function attemptsForChannel(

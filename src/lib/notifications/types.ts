@@ -42,6 +42,7 @@ export const WEBHOOK_TRANSITIONS = [
   "complained",
   "failed",
   "suppressed",
+  "received",
   "inbound_received",
 ] as const;
 
@@ -103,6 +104,7 @@ export interface WebhookEvent {
   recipientKeys?: string[];
   eventId?: string;
   failureReason?: string;
+  suppressedType?: string;
   raw: Record<string, unknown>;
 }
 

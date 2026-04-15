@@ -207,11 +207,21 @@ export async function POST(request: Request) {
   const event = verifiedPayload as {
     providerEventId: string;
     providerMessageId?: string;
-    transition: "sent" | "delivered" | "opened" | "clicked" | "bounced" | "complained" | "failed" | "suppressed" | "inbound_received";
+    transition:
+      | "sent"
+      | "delivered"
+      | "opened"
+      | "clicked"
+      | "bounced"
+      | "complained"
+      | "failed"
+      | "suppressed"
+      | "received";
     occurredAt: string;
     recipientKeys?: string[];
     eventId?: string;
     failureReason?: string;
+    suppressedType?: string;
     raw: Record<string, unknown>;
   };
 
@@ -225,6 +235,7 @@ export async function POST(request: Request) {
     recipientKeys: event.recipientKeys ?? [],
     eventId: event.eventId,
     failureReason: event.failureReason,
+    suppressedType: event.suppressedType,
     rawPayload: payload,
     signatureVerified,
   });

@@ -131,6 +131,7 @@ const processResendWebhookEventArgs = {
   recipientKeys: v.array(v.string()),
   eventId: v.optional(v.id("buyerUpdateEvents")),
   failureReason: v.optional(v.string()),
+  suppressedType: v.optional(v.string()),
   rawPayload: v.string(),
   signatureVerified: v.boolean(),
 };
@@ -311,7 +312,7 @@ export const processResendWebhookEvent = mutation({
               recipientKey: recipient,
               reason: suppressionReasonFor({
                 type: args.transition,
-                suppressedType: undefined,
+                suppressedType: args.suppressedType,
               }),
               notes: args.failureReason,
               occurredAt: args.occurredAt,
