@@ -173,3 +173,36 @@ test.describe("homepage #how-it-works section", () => {
     await expect(h3s).toHaveCount(4);
   });
 });
+
+test.describe("homepage #how-we-compare section", () => {
+  test("renders eyebrow, headline, semantic table, CTAs, and hero anchor", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/");
+
+    const comparison = page.locator("#how-we-compare");
+    await expect(comparison).toBeVisible();
+
+    await expect(comparison.getByText("How we compare")).toBeVisible();
+    await expect(
+      comparison.getByText("Better than traditional. Safer than going alone."),
+    ).toBeVisible();
+
+    // Desktop semantic <table> exists at the 1280px viewport.
+    const table = comparison.locator("table");
+    await expect(table.first()).toBeAttached();
+
+    // CTAs.
+    const pricingCta = comparison.locator(
+      'a[href="/pricing#savings-calculator"]',
+    );
+    await expect(pricingCta).toBeVisible();
+    const intakeCta = comparison.locator('a[href="#hero-intake"]');
+    await expect(intakeCta).toBeVisible();
+
+    // The hero anchor target the secondary CTA jumps to must exist.
+    const heroAnchor = page.locator("#hero-intake");
+    await expect(heroAnchor).toBeAttached();
+  });
+});
