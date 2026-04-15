@@ -2138,6 +2138,70 @@ export default defineSchema({
     .index("by_contentHash", ["contentHash"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // DISCLOSURE REQUESTS (KIN-1079)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Request-a-disclosure rail: buyer clicks "Request Disclosures" in their
+  // deal room, we compose a broker-authored email (plus the buyer's optional
+  // personal note) and ship it through the mailRail driver to the listing
+  // agent on file. Rows persist the composed body verbatim for audit and
+  // track status through send → open → reply, plus a 48h follow-up sweep.
+  //
+  // This table is SEPARATE from `disclosurePackets` (KIN-1078). When a reply
+  // eventually lands with attachments, the reply handler links the resulting
+  // packet via `replyPacketId` — the request row itself never stores files.
+  disclosureRequests: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    buyerId: v.id("users"),
+    propertyId: v.id("properties"),
+    listingAgentEmail: v.string(),
+    listingAgentName: v.optional(v.string()),
+    subject: v.string(),
+    // Full composed email body (broker template + personal note).
+    // Persisted verbatim so the audit trail contains exactly what was
+    // "sent" even under the no-op driver.
+    bodyText: v.string(),
+    // Raw buyer-added snippet, stored separately from the composed body
+    // for audit + replay.
+    personalNote: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("sent"),
+      v.literal("opened"),
+      v.literal("replied"),
+      v.literal("follow_up_needed"),
+      v.literal("cancelled"),
+    ),
+    // Correlation id from the mail provider. For noop driver this is a
+    // synthetic `noop-<uuid>` value so the audit row still has a handle.
+    providerMessageId: v.optional(v.string()),
+    provider: v.union(v.literal("noop"), v.literal("resend")),
+    sentAt: v.optional(v.string()),
+    openedAt: v.optional(v.string()),
+    repliedAt: v.optional(v.string()),
+    lastFollowUpAt: v.optional(v.string()),
+    followUpCount: v.number(),
+    // ISO of `sentAt + 48h` while awaiting a reply. Nulled on reply, on
+    // cancel, and after a follow-up sweep flips the row.
+    nextFollowUpDueAt: v.optional(v.string()),
+    // Set when the reply ingestion eventually correlates a disclosurePacket
+    // back to the original request (v1 no-op driver never sets this; the
+    // field is reserved for the KIN-1092 Resend wiring).
+    replyPacketId: v.optional(v.id("disclosurePackets")),
+    // First ~500 chars of the reply body for quick audit surfacing without
+    // loading any attachments.
+    replyBodySnippetText: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_status_and_nextFollowUpDueAt", [
+      "status",
+      "nextFollowUpDueAt",
+    ])
+    .index("by_dealRoomId_and_status", ["dealRoomId", "status"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // OFFER COCKPIT DRAFTS (KIN-791)
   // ═══════════════════════════════════════════════════════════════════════════
   //

@@ -15,6 +15,7 @@ import { DisclosureFindingsList } from "./DisclosureFindingsList";
 import { DisclosurePacketHistory } from "./DisclosurePacketHistory";
 import { DisclosureLegalDisclaimer } from "./DisclosureLegalDisclaimer";
 import { DisclosurePerFileStatus } from "./DisclosurePerFileStatus";
+import { DisclosureRequestCard } from "./DisclosureRequestCard";
 
 type FindingDoc = Doc<"fileAnalysisFindings">;
 
@@ -110,6 +111,8 @@ export function DisclosuresClient({
 
   return (
     <div className="flex flex-col gap-6">
+      <DisclosureRequestCard dealRoomId={dealRoomId} />
+
       {showUpload && (
         <DisclosureUploadCard
           dealRoomId={dealRoomId}
