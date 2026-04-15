@@ -37,6 +37,16 @@ import {
   smsIntakeOutcome,
 } from "./lib/validators";
 import { buyerProfileRecordFields } from "./lib/buyerProfile";
+import {
+  notificationDeliveryCategoryValidator,
+  notificationDeliveryChannelValidator,
+  notificationDeliveryMatrixValidator,
+  notificationQuietHoursValidator,
+} from "./notifications/preferencesResolver";
+import {
+  notificationSuppressionReasonValidator,
+  notificationSuppressionSourceValidator,
+} from "./notifications/suppressionList";
 
 // ─── buyer-v2 Convex Schema ─────────────────────────────────────────────────
 // System of record for the AI-native Florida buyer brokerage platform.
@@ -80,6 +90,9 @@ export default defineSchema({
     authTokenIdentifier: v.optional(v.string()),
     sessionVersion: v.optional(v.number()),
     lastAuthenticatedAt: v.optional(v.string()),
+    welcomeEmailSentAt: v.optional(v.string()),
+    welcomeEmailProviderMessageId: v.optional(v.string()),
+    welcomeEmailTemplateKey: v.optional(v.string()),
   })
     // Indexes required by @convex-dev/auth. The "email" / "phone" names are
     // load-bearing — the auth runtime looks them up by literal name.
@@ -874,9 +887,116 @@ export default defineSchema({
       updates: v.boolean(),
       marketing: v.boolean(),
     }),
+    deliveryMatrix: v.optional(notificationDeliveryMatrixValidator),
+    quietHours: v.optional(notificationQuietHoursValidator),
     createdAt: v.string(),
     updatedAt: v.string(),
   }).index("by_userId", ["userId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NOTIFICATION SUPPRESSION LIST (KIN-1091)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Cross-channel suppression state keyed by a normalized recipient
+  // identifier. The fanout worker will use this as the server-side gate
+  // before any external delivery attempt. A single row represents one
+  // recipient/channel suppression reason and can be lifted later without
+  // touching the buyer preference row.
+
+  notificationSuppressionList: defineTable({
+    recipientKey: v.string(),
+    channel: notificationDeliveryChannelValidator,
+    reason: notificationSuppressionReasonValidator,
+    source: notificationSuppressionSourceValidator,
+    active: v.boolean(),
+    notes: v.optional(v.string()),
+    suppressedAt: v.string(),
+    liftedAt: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_recipientKey", ["recipientKey"])
+    .index("by_recipientKey_and_channel", ["recipientKey", "channel"])
+    .index("by_recipientKey_and_channel_and_active", [
+      "recipientKey",
+      "channel",
+      "active",
+    ])
+    .index("by_channel_and_active", ["channel", "active"])
+    .index("by_active", ["active"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NOTIFICATION DELIVERY ATTEMPTS (KIN-1091)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Append-only attempt log for fanout debugging and retry orchestration.
+  // The worker writes here; the schema exists now so downstream slices can
+  // rely on a stable shape without inventing their own attempt store.
+
+  notificationDeliveryAttempts: defineTable({
+    eventId: v.id("buyerUpdateEvents"),
+    recipientKey: v.string(),
+    channel: notificationDeliveryChannelValidator,
+    adapter: v.optional(v.string()),
+    attemptNumber: v.number(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("dispatched"),
+      v.literal("delivered"),
+      v.literal("failed"),
+      v.literal("skipped"),
+    ),
+    reason: v.optional(v.string()),
+    providerEventId: v.optional(v.string()),
+    providerMessageId: v.optional(v.string()),
+    attemptedAt: v.string(),
+    dispatchedAt: v.optional(v.string()),
+    deliveredAt: v.optional(v.string()),
+    failedAt: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_eventId", ["eventId"])
+    .index("by_eventId_and_attemptNumber", ["eventId", "attemptNumber"])
+    .index("by_recipientKey_and_channel", ["recipientKey", "channel"])
+    .index("by_providerMessageId", ["providerMessageId"])
+    .index("by_status_and_attemptedAt", ["status", "attemptedAt"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // NOTIFICATION WEBHOOK RECEIPTS (KIN-1091)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // Raw provider callback audit trail. This gives the future webhook
+  // handlers a stable sink for idempotency and debugging without coupling
+  // the schema to any specific provider implementation.
+
+  notificationWebhookReceipts: defineTable({
+    provider: v.union(
+      v.literal("resend"),
+      v.literal("twilio"),
+      v.literal("apns"),
+    ),
+    providerEventId: v.string(),
+    eventId: v.optional(v.id("buyerUpdateEvents")),
+    attemptId: v.optional(v.id("notificationDeliveryAttempts")),
+    payload: v.string(),
+    signatureVerified: v.boolean(),
+    status: v.union(
+      v.literal("received"),
+      v.literal("processed"),
+      v.literal("duplicate"),
+      v.literal("ignored"),
+      v.literal("failed"),
+    ),
+    errorReason: v.optional(v.string()),
+    receivedAt: v.string(),
+    processedAt: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_provider_and_providerEventId", ["provider", "providerEventId"])
+    .index("by_status_and_receivedAt", ["status", "receivedAt"])
+    .index("by_eventId", ["eventId"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // VISITOR PRE-REGISTRATIONS (KIN-824)
@@ -1116,6 +1236,29 @@ export default defineSchema({
     // Canonical typed state. New writes persist this and derive any
     // channel-specific or UI-specific summaries from it.
     state: v.optional(buyerEventState),
+    // Canonical delivery bucket for the notification fabric. Existing
+    // in-app consumers still read the legacy summary/body fields below.
+    category: v.optional(notificationDeliveryCategoryValidator),
+    // Delivery urgency used by fanout and future digesting rules.
+    urgency: v.optional(
+      v.union(
+        v.literal("transactional_must_deliver"),
+        v.literal("transactional"),
+        v.literal("relationship"),
+        v.literal("digest_only"),
+      ),
+    ),
+    // Fanout state. The event itself remains the source of truth even when
+    // external delivery is pending or skipped.
+    deliveryState: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("dispatched"),
+        v.literal("delivered"),
+        v.literal("failed"),
+        v.literal("skipped_by_preference"),
+      ),
+    ),
     // Legacy denormalized summary label. New writes still populate it so
     // older readers keep working during the transition to shared read models.
     title: v.string(),
@@ -1152,6 +1295,11 @@ export default defineSchema({
     dedupeCount: v.number(),
     // Last time a dedupe attempt bumped this record.
     lastDedupedAt: v.optional(v.string()),
+    // Fanout timestamps. Optional now so existing writers stay valid while
+    // downstream notification workers adopt the new ledger.
+    dispatchedAt: v.optional(v.string()),
+    deliveredAt: v.optional(v.string()),
+    failedReason: v.optional(v.string()),
     createdAt: v.string(),
     updatedAt: v.string(),
   })
@@ -1163,7 +1311,9 @@ export default defineSchema({
       "dealRoomId",
       "dedupeKey",
     ])
-    .index("by_buyerId_and_emittedAt", ["buyerId", "emittedAt"]),
+    .index("by_buyerId_and_emittedAt", ["buyerId", "emittedAt"])
+    .index("by_deliveryState", ["deliveryState"])
+    .index("by_deliveryState_and_emittedAt", ["deliveryState", "emittedAt"]),
 
   // ═══ LEAD ATTRIBUTION (KIN-819) ═══
   //
@@ -1252,6 +1402,34 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_status", ["status"]),
 
+  // ═══ CONTACT REQUESTS (KIN-1096) ═══
+  //
+  // Durable public contact-intake records. The marketing page writes
+  // these rows first, then layers broker triage mail + buyer auto-reply
+  // on top via `convex/mailRail.ts`. The stored row is the source of
+  // truth for ops and audit; email delivery is downstream.
+  contactRequests: defineTable({
+    name: v.string(),
+    email: v.string(),
+    message: v.string(),
+    listingLink: v.optional(v.string()),
+    sourcePath: v.string(),
+    throttleKey: v.string(),
+    attributionSessionId: v.optional(v.string()),
+    userAgent: v.optional(v.string()),
+    brokerEmailSentAt: v.optional(v.string()),
+    brokerEmailProviderMessageId: v.optional(v.string()),
+    brokerEmailTemplateKey: v.optional(v.string()),
+    buyerEmailSentAt: v.optional(v.string()),
+    buyerEmailProviderMessageId: v.optional(v.string()),
+    buyerEmailTemplateKey: v.optional(v.string()),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_throttleKey", ["throttleKey"])
+    .index("by_email", ["email"])
+    .index("by_createdAt", ["createdAt"]),
+
   // waitlistSignups (KIN-1088) — non-Florida demand capture for the public
   // marketing site. Distinct from `leadAttribution`: that table tracks
   // *attribution* for visitors who eventually register, while this one
@@ -1290,6 +1468,12 @@ export default defineSchema({
     // User agent string at capture time. Used only for abuse detection
     // by ops — do NOT surface to analytics.
     userAgent: v.optional(v.string()),
+    // Optional send markers for the waitlist confirmation rail. These
+    // keep the public upsert idempotent without making email the source
+    // of truth.
+    confirmationEmailSentAt: v.optional(v.string()),
+    confirmationEmailProviderMessageId: v.optional(v.string()),
+    confirmationEmailTemplateKey: v.optional(v.string()),
     // ISO timestamps.
     createdAt: v.string(),
     updatedAt: v.string(),
@@ -2161,6 +2345,7 @@ export default defineSchema({
     // Persisted verbatim so the audit trail contains exactly what was
     // "sent" even under the no-op driver.
     bodyText: v.string(),
+    bodyHtml: v.optional(v.string()),
     // Raw buyer-added snippet, stored separately from the composed body
     // for audit + replay.
     personalNote: v.optional(v.string()),
@@ -2199,6 +2384,7 @@ export default defineSchema({
       "status",
       "nextFollowUpDueAt",
     ])
+    .index("by_providerMessageId", ["providerMessageId"])
     .index("by_dealRoomId_and_status", ["dealRoomId", "status"]),
 
   // ═══════════════════════════════════════════════════════════════════════════

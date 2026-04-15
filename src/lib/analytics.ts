@@ -1,6 +1,15 @@
 import posthog from "posthog-js";
 import type { LaunchEventMap } from "@buyer-v2/shared/launch-events";
 import type { FAQTheme } from "@/lib/content/types";
+import type {
+  ExternalNotificationChannel,
+  NotificationCategory,
+  NotificationChannel,
+  NotificationDeliveryState,
+  NotificationProviderName,
+  NotificationUrgency,
+  WebhookTransition,
+} from "@/lib/notifications/types";
 import { resolveObservabilityContext } from "@/lib/observability";
 import { deepScrubPii } from "@/lib/security/pii-guard";
 
@@ -120,12 +129,144 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   milestone_completed: { contractId: string; milestoneName: string };
 
   // ─── Communication flow ─────────────────────────────────────────────
+  /** Fired when a fanout attempt is accepted for outbound delivery. */
+  message_sent: {
+    channel: NotificationChannel;
+    templateKey: string;
+    category?: NotificationCategory;
+    provider?: NotificationProviderName;
+    recipientHash?: string;
+  };
   /** Fired when delivery is confirmed by the channel provider. */
-  message_delivered: { messageId: string; channel: string };
+  message_delivered: {
+    messageId: string;
+    channel: ExternalNotificationChannel;
+    category?: NotificationCategory;
+    provider?: NotificationProviderName;
+    recipientHash?: string;
+  };
   /** Fired when a recipient opens a message (email/push). */
-  message_opened: { messageId: string; channel: string };
+  message_opened: {
+    messageId: string;
+    channel: ExternalNotificationChannel;
+    category?: NotificationCategory;
+    provider?: NotificationProviderName;
+    recipientHash?: string;
+  };
   /** Fired when a recipient clicks a link in a message. */
-  message_clicked: { messageId: string; channel: string; link: string };
+  message_clicked: {
+    messageId: string;
+    channel: ExternalNotificationChannel;
+    link: string;
+    category?: NotificationCategory;
+    provider?: NotificationProviderName;
+    recipientHash?: string;
+  };
+  /** Fired when a delivery attempt hard-fails before delivery. */
+  message_failed: {
+    channel: ExternalNotificationChannel;
+    errorKind: string;
+    category?: NotificationCategory;
+    provider?: NotificationProviderName;
+    recipientHash?: string;
+  };
+  /** Fired when a provider reports a bounce or equivalent delivery failure. */
+  message_bounced: {
+    channel: ExternalNotificationChannel;
+    bounceType: string;
+    category?: NotificationCategory;
+    provider?: NotificationProviderName;
+    recipientHash?: string;
+  };
+  /** Fired when delivery is blocked by suppression or provider suppression. */
+  message_suppressed: {
+    channel: ExternalNotificationChannel;
+    reason: string;
+    category?: NotificationCategory;
+    provider?: NotificationProviderName;
+    recipientHash?: string;
+  };
+  /** Fired when a buyer changes a notification preference successfully. */
+  notification_preference_changed: {
+    category:
+      | "transactional"
+      | "tours"
+      | "offers"
+      | "closing"
+      | "disclosures"
+      | "market_updates"
+      | "marketing"
+      | "safety";
+    channel: "email" | "sms" | "push" | "in_app";
+    direction: "on" | "off";
+    source:
+      | "preference_center"
+      | "one_click_unsubscribe"
+      | "email_footer"
+      | "sms_stop";
+  };
+  /** Fired when the email footer's manage-notifications link lands on profile. */
+  notification_manage_link_clicked: {
+    source: "email_footer";
+  };
+  /** Fired when the notification fanout worker begins a sweep. */
+  notification_delivery_fanout_started: {
+    batchSize: number;
+    candidateCount: number;
+    pendingCount: number;
+    failedCount: number;
+    backpressureActive: boolean;
+  };
+  /** Fired when the fanout worker applies backpressure shedding. */
+  notification_delivery_backpressure_applied: {
+    candidateCount: number;
+    selectedCount: number;
+    shedCount: number;
+    threshold: number;
+    lowestSelectedUrgency: NotificationUrgency;
+  };
+  /** Fired when lower-priority notifications are shed under load. */
+  notification_fanout_backpressure: {
+    shedCategory: "digest_only" | "relationship";
+    shedCount: number;
+    pendingCount: number;
+  };
+  /** Fired when an outbound delivery attempt is recorded. */
+  notification_delivery_attempt_recorded: {
+    eventType: string;
+    category: NotificationCategory;
+    urgency: NotificationUrgency;
+    channel: ExternalNotificationChannel;
+    provider: NotificationProviderName;
+    attemptNumber: number;
+    outcome: "queued" | "dispatched" | "delivered" | "failed" | "skipped";
+  };
+  /** Fired when the durable delivery state changes on a buyer update event. */
+  notification_delivery_state_changed: {
+    eventType: string;
+    from: NotificationDeliveryState;
+    to: NotificationDeliveryState;
+    reason:
+      | "preference_disabled"
+      | "suppressed"
+      | "quiet_hours"
+      | "backpressure_shed"
+      | "provider_accepted"
+      | "provider_delivered"
+      | "provider_failed"
+      | "duplicate"
+      | "other";
+  };
+  /** Fired when a provider webhook receipt is ingested and deduped. */
+  notification_webhook_receipt_recorded: {
+    provider: NotificationProviderName;
+    transition: WebhookTransition;
+    duplicate: boolean;
+    signatureVerified: boolean;
+    linkedEvent: boolean;
+    linkedAttempt: boolean;
+    suppressionApplied: boolean;
+  };
 
   // ─── Disclosure request rail (KIN-1079) ─────────────────────────────
   /** Fired once when the Request Disclosures CTA card mounts. */
@@ -637,6 +778,72 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "communication",
     owner: "platform",
     whenFired: "Link click tracked via redirect",
+    piiSafe: true,
+  },
+  message_failed: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Outbound notification attempt fails before delivery",
+    piiSafe: true,
+  },
+  message_bounced: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Provider reports a bounce or undeliverable recipient",
+    piiSafe: true,
+  },
+  message_suppressed: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Delivery is skipped because the recipient is suppressed",
+    piiSafe: true,
+  },
+  notification_preference_changed: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "A notification preference mutation succeeds",
+    piiSafe: true,
+  },
+  notification_manage_link_clicked: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Profile notifications opens from an email footer link",
+    piiSafe: true,
+  },
+  notification_delivery_fanout_started: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Notification fanout worker starts a sweep",
+    piiSafe: true,
+  },
+  notification_delivery_backpressure_applied: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Fanout worker sheds lower-priority events under load",
+    piiSafe: true,
+  },
+  notification_fanout_backpressure: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Fanout backpressure sheds relationship or digest-only events",
+    piiSafe: true,
+  },
+  notification_delivery_attempt_recorded: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Outbound notification attempt recorded in the delivery ledger",
+    piiSafe: true,
+  },
+  notification_delivery_state_changed: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Buyer update event delivery state changes",
+    piiSafe: true,
+  },
+  notification_webhook_receipt_recorded: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Provider webhook receipt is ingested and deduped",
     piiSafe: true,
   },
 

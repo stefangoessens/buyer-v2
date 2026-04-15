@@ -11,6 +11,7 @@ import {
 import {
   applyBuyerEventEmission,
   applyBuyerEventResolution,
+  defaultBuyerEventNotificationDefaults,
   composeBuyerEventFeed,
   defaultPriorityFor,
   makeDedupeKey,
@@ -23,6 +24,16 @@ import {
 } from "./lib/buyerEvents";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
+
+export type BuyerEventWebhookTransition =
+  | "sent"
+  | "delivered"
+  | "opened"
+  | "clicked"
+  | "bounced"
+  | "complained"
+  | "failed"
+  | "suppressed";
 
 const emitContextValidator = v.optional(
   v.object({
@@ -138,6 +149,9 @@ async function emitCore(
     const patch: Partial<Doc<"buyerUpdateEvents">> = {
       eventType: decision.record.eventType,
       state: decision.record.state,
+      category: decision.record.category,
+      urgency: decision.record.urgency,
+      deliveryState: decision.record.deliveryState,
       title: summary.label,
       body: legacyBody,
       dedupeKey: decision.record.dedupeKey,
@@ -146,6 +160,9 @@ async function emitCore(
       emittedAt: decision.record.emittedAt,
       resolvedAt: decision.record.resolvedAt,
       resolvedBy: decision.record.resolvedBy,
+      dispatchedAt: decision.record.dispatchedAt,
+      deliveredAt: decision.record.deliveredAt,
+      failedReason: decision.record.failedReason,
       dedupeCount: decision.record.dedupeCount,
       lastDedupedAt: decision.record.lastDedupedAt,
       updatedAt: decision.record.updatedAt,
@@ -180,6 +197,9 @@ async function emitCore(
     dealRoomId: args.dealRoomId,
     eventType: decision.record.eventType,
     state: decision.record.state,
+    category: decision.record.category,
+    urgency: decision.record.urgency,
+    deliveryState: decision.record.deliveryState,
     title: summary.label,
     body: legacyBody,
     dedupeKey: decision.record.dedupeKey,
@@ -188,6 +208,9 @@ async function emitCore(
       decision.record.priority ?? defaultPriorityFor(decision.record.eventType),
     context: args.context,
     emittedAt: decision.record.emittedAt,
+    dispatchedAt: decision.record.dispatchedAt,
+    deliveredAt: decision.record.deliveredAt,
+    failedReason: decision.record.failedReason,
     dedupeCount: decision.record.dedupeCount,
     createdAt: decision.record.createdAt,
     updatedAt: decision.record.updatedAt,
@@ -457,9 +480,65 @@ export const emitInternal = internalMutation({
   },
 });
 
+export async function applyBuyerEventDeliveryUpdate(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    eventId: Id<"buyerUpdateEvents">;
+    transition: BuyerEventWebhookTransition;
+    occurredAt: string;
+    failedReason?: string;
+  },
+): Promise<boolean> {
+  const row = await ctx.db.get(args.eventId);
+  if (!row) {
+    return false;
+  }
+
+  const patch: Partial<Doc<"buyerUpdateEvents">> = {
+    updatedAt: args.occurredAt,
+  };
+
+  switch (args.transition) {
+    case "sent":
+      if (row.deliveryState !== "delivered") {
+        patch.deliveryState = "dispatched";
+      }
+      patch.dispatchedAt = row.dispatchedAt ?? args.occurredAt;
+      break;
+    case "delivered":
+    case "opened":
+    case "clicked":
+      patch.deliveryState = "delivered";
+      patch.dispatchedAt = row.dispatchedAt ?? args.occurredAt;
+      patch.deliveredAt = row.deliveredAt ?? args.occurredAt;
+      patch.failedReason = undefined;
+      break;
+    case "bounced":
+    case "failed":
+    case "suppressed":
+      if (row.deliveryState !== "delivered") {
+        patch.deliveryState = "failed";
+        patch.failedReason = args.failedReason ?? args.transition;
+      }
+      patch.dispatchedAt = row.dispatchedAt ?? args.occurredAt;
+      break;
+    case "complained":
+      // Complaints happen after delivery. Preserve the delivered state but
+      // capture the complaint marker in failedReason for ops review.
+      patch.deliveryState = row.deliveryState ?? "delivered";
+      patch.deliveredAt = row.deliveredAt ?? args.occurredAt;
+      patch.failedReason = args.failedReason ?? "complained";
+      break;
+  }
+
+  await ctx.db.patch(row._id, patch);
+  return true;
+}
+
 function toStorageRecord(
   row: Doc<"buyerUpdateEvents">,
 ): BuyerEventStorageRecord {
+  const defaults = defaultBuyerEventNotificationDefaults(row.eventType);
   return {
     id: row._id,
     buyerId: row.buyerId,
@@ -469,12 +548,18 @@ function toStorageRecord(
       kind: row.eventType,
       referenceId: referenceIdFromDedupeKey(row.dedupeKey),
     },
+    category: row.category ?? defaults.category,
+    urgency: row.urgency ?? defaults.urgency,
+    deliveryState: row.deliveryState ?? defaults.deliveryState,
     dedupeKey: row.dedupeKey,
     status: row.status,
     priority: row.priority,
     emittedAt: row.emittedAt,
     resolvedAt: row.resolvedAt,
     resolvedBy: row.resolvedBy,
+    dispatchedAt: row.dispatchedAt,
+    deliveredAt: row.deliveredAt,
+    failedReason: row.failedReason,
     dedupeCount: row.dedupeCount,
     lastDedupedAt: row.lastDedupedAt,
     createdAt: row.createdAt,

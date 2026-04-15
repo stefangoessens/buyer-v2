@@ -123,6 +123,16 @@ export const SETTINGS_CATALOG: SettingsCatalog = {
       writeRole: "broker",
       defaultValue: { kind: "boolean", value: true },
     },
+    {
+      key: "rollout.notifications_fanout_enabled",
+      label: "Notification fanout enabled",
+      description:
+        "Master kill switch for the buyer notification fanout fabric. Keep false until the downstream provider rails are ready.",
+      category: "rollout",
+      kind: "boolean",
+      writeRole: "broker",
+      defaultValue: { kind: "boolean", value: false },
+    },
 
     // ─── Operational defaults ───────────────────────────────────
     {
@@ -175,6 +185,139 @@ export const SETTINGS_CATALOG: SettingsCatalog = {
       writeRole: "admin",
       defaultValue: { kind: "string", value: "" },
       constraints: { minLength: 0, maxLength: 50 },
+    },
+    {
+      key: "broker.outbound_from_name",
+      label: "Outbound sender name",
+      description:
+        "Brokerage sender name used on transactional and relationship email.",
+      category: "operational",
+      kind: "string",
+      writeRole: "broker",
+      defaultValue: { kind: "string", value: "buyer-v2 Brokerage" },
+      constraints: { minLength: 1, maxLength: 120 },
+    },
+    {
+      key: "broker.outbound_from_email",
+      label: "Outbound sender email",
+      description:
+        "Brokerage sender email used in the From header for Resend sends.",
+      category: "operational",
+      kind: "string",
+      writeRole: "broker",
+      defaultValue: { kind: "string", value: "broker@buyer-v2.app" },
+      constraints: {
+        minLength: 5,
+        maxLength: 200,
+        pattern: "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+      },
+    },
+    {
+      key: "broker.reply_domain",
+      label: "Reply-to domain",
+      description:
+        "Domain used to mint per-thread reply aliases for broker-to-broker email.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "reply.buyer-v2.app" },
+      constraints: { minLength: 3, maxLength: 120 },
+    },
+    {
+      key: "broker.signature_postal_address",
+      label: "Brokerage postal address",
+      description:
+        "Physical brokerage mailing address rendered in CAN-SPAM email footers.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "" },
+      constraints: { minLength: 0, maxLength: 400 },
+    },
+    {
+      key: "email.resend_api_key_env_var_name",
+      label: "Resend API key env var",
+      description:
+        "Name of the environment variable that stores the transactional Resend API key.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "RESEND_API_KEY" },
+      constraints: { minLength: 1, maxLength: 120 },
+    },
+    {
+      key: "email.resend_webhook_secret_env_var_name",
+      label: "Resend webhook secret env var",
+      description:
+        "Name of the environment variable that stores the Resend webhook signing secret.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "RESEND_WEBHOOK_SECRET" },
+      constraints: { minLength: 1, maxLength: 120 },
+    },
+    {
+      key: "email.marketing_list_id",
+      label: "Relationship audience list id",
+      description:
+        "Resend relationship/marketing audience identifier kept separate from transactional email.",
+      category: "operational",
+      kind: "string",
+      writeRole: "broker",
+      defaultValue: { kind: "string", value: "" },
+      constraints: { minLength: 0, maxLength: 200 },
+    },
+    {
+      key: "notifications.default_quiet_hours_start",
+      label: "Default quiet hours start",
+      description:
+        "Default quiet-hours start time used when a buyer has not set a personal notification window. Stored as Eastern Time HH:MM.",
+      category: "operational",
+      kind: "string",
+      writeRole: "broker",
+      defaultValue: { kind: "string", value: "21:00" },
+      constraints: {
+        minLength: 4,
+        maxLength: 5,
+        pattern: "^([01]?\\d|2[0-3]):[0-5]\\d$",
+      },
+    },
+    {
+      key: "notifications.default_quiet_hours_end",
+      label: "Default quiet hours end",
+      description:
+        "Default quiet-hours end time used when a buyer has not set a personal notification window. Stored as Eastern Time HH:MM.",
+      category: "operational",
+      kind: "string",
+      writeRole: "broker",
+      defaultValue: { kind: "string", value: "08:00" },
+      constraints: {
+        minLength: 4,
+        maxLength: 5,
+        pattern: "^([01]?\\d|2[0-3]):[0-5]\\d$",
+      },
+    },
+    {
+      key: "notifications.fanout_batch_size",
+      label: "Notification fanout batch size",
+      description:
+        "Maximum event rows the fanout worker should pull per batch before it re-checks suppression and preference state.",
+      category: "operational",
+      kind: "number",
+      writeRole: "admin",
+      defaultValue: { kind: "number", value: 100 },
+      constraints: { min: 1, max: 1000, integer: true },
+    },
+    {
+      key: "notifications.retry_max_attempts",
+      label: "Notification retry max attempts",
+      description:
+        "Upper bound for transient notification retries before the event is treated as permanently failed.",
+      category: "operational",
+      kind: "number",
+      writeRole: "admin",
+      defaultValue: { kind: "number", value: 5 },
+      constraints: { min: 1, max: 10, integer: true },
     },
 
     // ─── Branding ───────────────────────────────────────────────
