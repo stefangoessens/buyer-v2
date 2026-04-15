@@ -53,7 +53,13 @@ const DEFAULT_LICENSE_PLACEHOLDER = "[Brokerage License #]";
 const SELLER_FUNDS_PCT = 0.03;
 
 function formatPhoneMask(raw: string): string {
-  const digits = raw.replace(/\D+/g, "").slice(0, 10);
+  let digits = raw.replace(/\D+/g, "");
+  // Drop a leading "1" country code so inputs like "1 305 555 0123" or "+1..."
+  // keep all 10 significant digits instead of being truncated to "1305555012".
+  if (digits.length === 11 && digits.startsWith("1")) {
+    digits = digits.slice(1);
+  }
+  digits = digits.slice(0, 10);
   if (digits.length === 0) return "";
   if (digits.length <= 3) return `(${digits}`;
   if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
@@ -61,7 +67,11 @@ function formatPhoneMask(raw: string): string {
 }
 
 function countDigits(raw: string): number {
-  return raw.replace(/\D+/g, "").length;
+  let digits = raw.replace(/\D+/g, "");
+  if (digits.length === 11 && digits.startsWith("1")) {
+    digits = digits.slice(1);
+  }
+  return digits.length;
 }
 
 function useIsDesktop(): boolean {

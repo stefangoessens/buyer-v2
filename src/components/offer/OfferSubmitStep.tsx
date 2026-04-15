@@ -114,12 +114,18 @@ export function OfferSubmitStep({
   const spokeDone = brokerageCallState.stage === "completed";
   const agreementDone = eligibility.isEligible;
 
-  const submitEnabled = canSubmit && !submitting;
+  // The button must gate on the full brokerage pipeline — not just draft
+  // editability. Otherwise the button goes live as soon as the phone is
+  // submitted and terms validate, and the buyer hits a server-side rejection
+  // instead of seeing the intended UI gate. Callback must be completed AND
+  // the buyer must be formally eligible (signed full_representation).
+  const submitEnabled =
+    canSubmit && !submitting && spokeDone && agreementDone;
   const disabledKind: "awaiting_callback" | "awaiting_agreement" | null =
     !submitEnabled
-      ? brokerageCallState.stage !== "completed"
+      ? !spokeDone
         ? "awaiting_callback"
-        : !eligibility.isEligible
+        : !agreementDone
           ? "awaiting_agreement"
           : null
       : null;
