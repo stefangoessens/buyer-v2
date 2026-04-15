@@ -33,6 +33,7 @@ export type SeoContentKind =
   | "legal"          // terms/privacy/disclosures
   | "article"        // blog articles (future KIN-812)
   | "story"          // verified buyer stories (KIN-1087) — Review JSON-LD
+  | "guide"          // long-form Florida buyer guides (KIN-1090) — Article JSON-LD
   | "product"        // product areas (dashboard, deal room — gated)
   | "system";        // 404, error pages
 

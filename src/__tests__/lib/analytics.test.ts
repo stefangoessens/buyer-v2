@@ -495,8 +495,12 @@ describe("listEventsByCategory()", () => {
     expect(events).toContain("home_rebate_slider_deep_link_landed");
     expect(events).toContain("home_rebate_slider_interaction_depth");
     expect(events).toContain("home_rebate_slider_fallback_shown");
-    // Total: 2 legacy + 3 HIW + 4 comparison + 9 FAQ + 6 FL strip/waitlist + 7 stories + 9 rebate slider = 40
-    expect(events).toHaveLength(40);
+    // KIN-1090: marketing guides + our-process added 3 engagement events.
+    expect(events).toContain("guide_page_viewed");
+    expect(events).toContain("guide_cta_clicked");
+    expect(events).toContain("our_process_page_viewed");
+    // Total: 2 legacy + 3 HIW + 4 comparison + 9 FAQ + 6 FL strip/waitlist + 7 stories + 9 rebate slider + 3 guides/our-process = 43
+    expect(events).toHaveLength(43);
   });
 });
 

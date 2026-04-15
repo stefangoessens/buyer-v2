@@ -15,6 +15,7 @@ import {
 } from "@/lib/newConstruction/selectors";
 import { BUYER_STORIES } from "@/content/trustProof";
 import { filterPublishableStories } from "@/lib/trustProof/policy";
+import { GUIDES, publicGuides } from "@/content/guides";
 
 /**
  * Next.js sitemap generator (KIN-815 + KIN-812 + KIN-818).
@@ -124,6 +125,19 @@ export default function sitemap(): MetadataRoute.Sitemap {
       })
     );
 
+  // Dynamic: one entry per public Florida buyer guide (KIN-1090). The
+  // static `/guides` index and `/our-process` route are both picked up
+  // via the static registry in pageDefinitions — only the per-slug
+  // detail pages are emitted here.
+  const guideEntries: MetadataRoute.Sitemap = publicGuides(GUIDES).map(
+    (guide) => ({
+      url: `${origin}/guides/${guide.slug}`,
+      lastModified: guide.updatedAt,
+      changeFrequency: "monthly" as const,
+      priority: 0.55,
+    })
+  );
+
   return [
     ...staticEntries,
     ...articleEntries,
@@ -132,5 +146,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...builderEntries,
     ...newConstructionCommunityEntries,
     ...storyEntries,
+    ...guideEntries,
   ];
 }

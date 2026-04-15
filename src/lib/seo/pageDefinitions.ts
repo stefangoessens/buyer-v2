@@ -131,6 +131,62 @@ export const STATIC_SEO_PAGES = {
       changeFrequency: "monthly",
     },
   },
+  ourProcess: {
+    seo: {
+      title: "Our process: how we buy Florida homes for you",
+      description:
+        "A walk-through of the buyer-v2 process — from a pasted listing link, through AI analysis and a licensed Florida tour, to a broker-written offer and a coordinated closing.",
+      path: "/our-process",
+      visibility: "public",
+      kind: "howTo",
+    },
+    sitemap: {
+      priority: 0.8,
+      changeFrequency: "monthly",
+    },
+  },
+  guides: {
+    seo: {
+      title: "Florida buyer guides",
+      description:
+        "Plain-language guides for Florida homebuyers — homestead exemption, buyer rebates, closing costs, hurricane insurance, and more. Written for buyers, reviewed by brokers.",
+      path: "/guides",
+      visibility: "public",
+      kind: "marketing",
+    },
+    sitemap: {
+      priority: 0.7,
+      changeFrequency: "weekly",
+    },
+  },
+  guideFloridaHomesteadExemption: {
+    seo: {
+      title: "Florida Homestead Exemption: A First-Time Owner's Guide",
+      description:
+        "How Florida's homestead exemption works for first-time owners — the $25k layers, Save Our Homes 3% cap, the March 1 deadline, and what happens if you miss it.",
+      path: "/guides/florida-homestead-exemption",
+      visibility: "public",
+      kind: "guide",
+    },
+    sitemap: {
+      priority: 0.55,
+      changeFrequency: "monthly",
+    },
+  },
+  guideFloridaBuyerRebateExplained: {
+    seo: {
+      title: "The Florida Buyer Rebate Explained: Up To 2% Back",
+      description:
+        "How Florida buyer rebates work — the FREC rule that makes them legal, how the commission flows, a worked example at $450k, and how the rebate reaches the buyer.",
+      path: "/guides/florida-buyer-rebate-explained",
+      visibility: "public",
+      kind: "guide",
+    },
+    sitemap: {
+      priority: 0.55,
+      changeFrequency: "monthly",
+    },
+  },
   intake: {
     seo: {
       title: "Importing listing",

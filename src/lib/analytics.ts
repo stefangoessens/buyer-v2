@@ -349,6 +349,14 @@ export interface AnalyticsEventMap extends LaunchEventMap {
     storyCount: number;
   };
 
+  // ─── Marketing guides (KIN-1090) ────────────────────────────────────
+  /** Fired when a `/guides/<slug>` page first mounts. */
+  guide_page_viewed: { guideSlug: string; guideCategory: string };
+  /** Fired when a buyer clicks the footer CTA on a guide page. */
+  guide_cta_clicked: { guideSlug: string };
+  /** Fired when the `/our-process` page first mounts. */
+  our_process_page_viewed: Record<string, never>;
+
   // ─── System events ──────────────────────────────────────────────────
   /**
    * Fired when a React error boundary catches an error.
@@ -1048,6 +1056,25 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "engagement",
     owner: "growth",
     whenFired: "Homepage aggregate savings counter enters viewport",
+    piiSafe: true,
+  },
+
+  guide_page_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Guide detail page mount",
+    piiSafe: true,
+  },
+  guide_cta_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Guide footer CTA click",
+    piiSafe: true,
+  },
+  our_process_page_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Our process page mount",
     piiSafe: true,
   },
 
