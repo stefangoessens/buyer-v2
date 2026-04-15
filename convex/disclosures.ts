@@ -84,6 +84,11 @@ const packetFileRowValidator = v.object({
   failureReason: v.optional(v.string()),
 });
 
+const workflowValidator = v.union(
+  v.literal("disclosure"),
+  v.literal("inspection"),
+);
+
 const packetRowValidator = v.object({
   _id: v.id("disclosurePackets"),
   _creationTime: v.number(),
@@ -98,7 +103,16 @@ const packetRowValidator = v.object({
   updatedAt: v.string(),
   supersededAt: v.optional(v.string()),
   supersededBy: v.optional(v.id("disclosurePackets")),
+  workflow: v.optional(workflowValidator),
 });
+
+// KIN-1081: rows shipped by KIN-1078 have `workflow === undefined`. Treat
+// missing workflow as "disclosure" everywhere we filter or compare.
+function packetWorkflow(
+  packet: Doc<"disclosurePackets">,
+): "disclosure" | "inspection" {
+  return packet.workflow === "inspection" ? "inspection" : "disclosure";
+}
 
 const findingRowValidator = v.object({
   _id: v.id("fileAnalysisFindings"),
@@ -138,6 +152,14 @@ const findingRowValidator = v.object({
       v.literal("environmental"),
       v.literal("title"),
       v.literal("not_disclosed"),
+      // KIN-1081: the shared `category` union also carries the inspection
+      // categories now. They never appear on disclosure packets at runtime
+      // (disclosure parsers only emit the disclosure values), but the
+      // validator must accept the wider type the schema row carries.
+      v.literal("safety"),
+      v.literal("major_repair"),
+      v.literal("monitor"),
+      v.literal("cosmetic"),
     ),
   ),
   pageReference: v.optional(v.string()),
@@ -193,10 +215,17 @@ async function sha256Hex(input: string): Promise<string> {
  * Get the latest non-superseded packet for a deal room, along with its
  * current findings. Returns null if no packet exists yet.
  *
+ * KIN-1081: scoped to a single workflow ("disclosure" default, or
+ * "inspection"). Disclosure and inspection packets share this table but
+ * have independent version sequences and supersede chains.
+ *
  * Auth: buyer owner OR broker/admin.
  */
 export const getLatestPacket = query({
-  args: { dealRoomId: v.id("dealRooms") },
+  args: {
+    dealRoomId: v.id("dealRooms"),
+    workflow: v.optional(workflowValidator),
+  },
   returns: v.union(
     v.null(),
     v.object({
@@ -206,18 +235,26 @@ export const getLatestPacket = query({
   ),
   handler: async (ctx, args) => {
     await requirePacketAccess(ctx, args.dealRoomId);
+    const workflow = args.workflow ?? "disclosure";
 
-    const latest = await ctx.db
+    // Walk by_dealRoomId_and_version desc and pick the first row matching
+    // workflow. Independent version sequences mean we can't use a single
+    // .first() — a fresh inspection upload could be version 1 while the
+    // newest disclosure is version 5.
+    const candidates = await ctx.db
       .query("disclosurePackets")
       .withIndex("by_dealRoomId_and_version", (q) =>
         q.eq("dealRoomId", args.dealRoomId),
       )
       .order("desc")
-      .first();
+      .collect();
+
+    const latest = candidates.find((p) => packetWorkflow(p) === workflow);
 
     if (!latest || latest.status === "superseded") {
-      // If the newest row by version is `superseded`, by construction there
-      // is no active packet — a fresh upload will create the next version.
+      // If the newest row in this workflow is `superseded`, by construction
+      // there is no active packet — a fresh upload will create the next
+      // version.
       return null;
     }
 
@@ -234,13 +271,19 @@ export const getLatestPacket = query({
  * List all packets (including superseded) for a deal room, newest first.
  * Used by the history drawer on the disclosures page.
  *
+ * KIN-1081: filtered by workflow ("disclosure" default, or "inspection").
+ *
  * Auth: buyer owner OR broker/admin.
  */
 export const listPacketHistory = query({
-  args: { dealRoomId: v.id("dealRooms") },
+  args: {
+    dealRoomId: v.id("dealRooms"),
+    workflow: v.optional(workflowValidator),
+  },
   returns: v.array(packetRowValidator),
   handler: async (ctx, args) => {
     await requirePacketAccess(ctx, args.dealRoomId);
+    const workflow = args.workflow ?? "disclosure";
 
     const packets = await ctx.db
       .query("disclosurePackets")
@@ -250,7 +293,7 @@ export const listPacketHistory = query({
       .order("desc")
       .collect();
 
-    return packets;
+    return packets.filter((p) => packetWorkflow(p) === workflow);
   },
 });
 
@@ -259,11 +302,24 @@ export const listPacketHistory = query({
  * one high/critical severity finding OR a low-confidence finding, ordered
  * by worst-severity first, then most recent.
  *
+ * KIN-1081: scoped by workflow. Default `"any"` returns both disclosure
+ * and inspection packets in one queue. Pass `"disclosure"` or
+ * `"inspection"` to filter.
+ *
  * Implementation: fetch flagged findings via the review-index, group by
  * packetId, then hydrate the packet rows.
  */
 export const listBrokerReviewQueue = query({
-  args: { limit: v.optional(v.number()) },
+  args: {
+    limit: v.optional(v.number()),
+    workflow: v.optional(
+      v.union(
+        v.literal("disclosure"),
+        v.literal("inspection"),
+        v.literal("any"),
+      ),
+    ),
+  },
   returns: v.array(
     v.object({
       packet: packetRowValidator,
@@ -279,6 +335,7 @@ export const listBrokerReviewQueue = query({
   ),
   handler: async (ctx, args) => {
     await requireBrokerOrAdmin(ctx);
+    const workflowFilter = args.workflow ?? "any";
 
     const flagged = await ctx.db
       .query("fileAnalysisFindings")
@@ -333,6 +390,12 @@ export const listBrokerReviewQueue = query({
     for (const agg of byPacket.values()) {
       const packet = await ctx.db.get(agg.packetId);
       if (!packet) continue;
+      if (
+        workflowFilter !== "any" &&
+        packetWorkflow(packet) !== workflowFilter
+      ) {
+        continue;
+      }
       rows.push({
         packet,
         worstSeverity: agg.worstLabel,
@@ -399,6 +462,10 @@ export const generateUploadUrl = mutation({
     fileName: v.string(),
     byteSize: v.number(),
     mimeType: v.string(),
+    // KIN-1081: workflow discriminator. Optional, defaults to "disclosure".
+    // File-size + mime-type rules are identical for both workflows; this
+    // arg only flows through for symmetry with commitUpload.
+    workflow: v.optional(workflowValidator),
   },
   returns: v.object({
     uploadUrl: v.string(),
@@ -431,11 +498,12 @@ export const generateUploadUrl = mutation({
       throw new Error("File name is required");
     }
 
+    const workflow = args.workflow ?? "disclosure";
     const uploadUrl = await ctx.storage.generateUploadUrl();
     // `storageKey` is a stable echo of the filename + version intent so
     // the client can correlate uploads to the commit call. The real
     // storage id is returned by Convex's upload response itself.
-    const storageKey = `${args.dealRoomId}/v${args.packetVersion}/${args.fileName}`;
+    const storageKey = `${args.dealRoomId}/${workflow}/v${args.packetVersion}/${args.fileName}`;
 
     return { uploadUrl, storageKey };
   },
@@ -455,6 +523,10 @@ export const commitUpload = mutation({
     dealRoomId: v.id("dealRooms"),
     packetVersion: v.number(),
     files: v.array(packetFileInputValidator),
+    // KIN-1081: workflow discriminator. Optional, defaults to "disclosure".
+    // Inspection vs. disclosure packets share this table but have
+    // INDEPENDENT version sequences, dedupe scopes, and supersede chains.
+    workflow: v.optional(workflowValidator),
   },
   returns: v.object({
     packetId: v.id("disclosurePackets"),
@@ -497,6 +569,8 @@ export const commitUpload = mutation({
     const dealRoom = await ctx.db.get(args.dealRoomId);
     if (!dealRoom) throw new Error("Deal room not found");
 
+    const workflow = args.workflow ?? "disclosure";
+
     const contentHash = await sha256Hex(
       args.files
         .map((f) => f.fileHash)
@@ -504,16 +578,17 @@ export const commitUpload = mutation({
         .join("|"),
     );
 
-    // De-dupe: any prior packet for THIS dealRoom with the same contentHash
-    // short-circuits a re-analysis. We scope by dealRoom rather than global
-    // hash matches so two unrelated buyers uploading identical blank forms
-    // still each get their own packet.
+    // De-dupe: any prior packet for THIS dealRoom + workflow with the same
+    // contentHash short-circuits a re-analysis. Scoped by dealRoom AND
+    // workflow — a disclosure packet with hash X and an inspection packet
+    // with hash X are NOT duplicates of each other.
     const dupeCandidates = await ctx.db
       .query("disclosurePackets")
       .withIndex("by_contentHash", (q) => q.eq("contentHash", contentHash))
       .collect();
     const duplicate = dupeCandidates.find(
-      (p) => p.dealRoomId === args.dealRoomId,
+      (p) =>
+        p.dealRoomId === args.dealRoomId && packetWorkflow(p) === workflow,
     );
     if (duplicate) {
       return {
@@ -523,16 +598,21 @@ export const commitUpload = mutation({
       };
     }
 
-    // Version monotonicity check: newest existing packet (any status) wins.
-    // The buyer-supplied version must be exactly `latest + 1`, or `1` if no
-    // prior packet exists. Anything else is a client bug — reject.
-    const latest = await ctx.db
+    // Version monotonicity check: scoped by workflow. Newest existing
+    // packet for the same (dealRoom, workflow) wins. The buyer-supplied
+    // version must be exactly `latest + 1`, or `1` if no prior packet
+    // exists in this workflow. A fresh inspection upload starts at
+    // version 1 even if disclosure is already at version 5.
+    const sameDealRoomPackets = await ctx.db
       .query("disclosurePackets")
       .withIndex("by_dealRoomId_and_version", (q) =>
         q.eq("dealRoomId", args.dealRoomId),
       )
       .order("desc")
-      .first();
+      .collect();
+    const latest = sameDealRoomPackets.find(
+      (p) => packetWorkflow(p) === workflow,
+    );
     const expectedVersion = latest ? latest.version + 1 : 1;
     if (args.packetVersion !== expectedVersion) {
       throw new Error("Invalid packet version");
@@ -561,10 +641,13 @@ export const commitUpload = mutation({
       })),
       createdAt: now,
       updatedAt: now,
+      workflow,
     });
 
     // Supersede the previous latest packet (if any) AFTER the new row is
-    // created so `supersededBy` can point at it.
+    // created so `supersededBy` can point at it. Scoped by workflow — a
+    // new inspection packet does NOT supersede the latest disclosure
+    // packet, only the prior latest inspection.
     if (latest && latest.status !== "superseded") {
       await ctx.db.patch(latest._id, {
         status: "superseded",
@@ -576,7 +659,10 @@ export const commitUpload = mutation({
 
     await ctx.db.insert("auditLog", {
       userId: user._id,
-      action: "disclosure_packet_created",
+      action:
+        workflow === "inspection"
+          ? "inspection_packet_created"
+          : "disclosure_packet_created",
       entityType: "disclosurePackets",
       entityId: packetId,
       details: JSON.stringify({
@@ -585,18 +671,34 @@ export const commitUpload = mutation({
         fileCount: args.files.length,
         totalBytes,
         contentHash,
+        workflow,
       }),
       timestamp: now,
     });
 
-    // Kick off the AI disclosure parser. Only fires for fresh packets —
-    // duplicate commits short-circuited above with the existing packetId,
-    // which already carries persisted analysis.
-    await ctx.scheduler.runAfter(
-      0,
-      internal.engines.disclosureParser.runDisclosureParser,
-      { packetId },
-    );
+    // Kick off the AI parser. Only fires for fresh packets — duplicate
+    // commits short-circuited above with the existing packetId, which
+    // already carries persisted analysis. Inspection packets dispatch to
+    // `inspectionParser.runInspectionParser`, which is shipped by the
+    // inspection-engine teammate (KIN-1081 Agent #3). The typed
+    // `internal.engines.inspectionParser.*` reference does not yet exist
+    // in the codegen graph, so we use a string FunctionReference escape
+    // hatch — Convex resolves it at runtime once the module ships.
+    if (workflow === "inspection") {
+      await ctx.scheduler.runAfter(
+        0,
+        "engines/inspectionParser:runInspectionParser" as unknown as Parameters<
+          typeof ctx.scheduler.runAfter
+        >[1],
+        { packetId },
+      );
+    } else {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.engines.disclosureParser.runDisclosureParser,
+        { packetId },
+      );
+    }
 
     return { packetId, contentHash, wasDuplicate: false };
   },

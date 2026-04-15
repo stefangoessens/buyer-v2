@@ -91,13 +91,17 @@ export const getSecureFileUrl = query({
 
     if (!referencedFileIds.has(args.fileId)) {
       // Fall through to disclosure packets — a file referenced by a
-      // disclosurePackets row in the same deal room is also valid.
+      // disclosurePackets row (disclosure OR inspection workflow, since
+      // KIN-1081 they share this table) in the same deal room is valid.
       const disclosureAllowed = await canAccessDisclosureFile(
         ctx,
         user._id,
         args.fileId,
       );
-      if (!disclosureAllowed) return null;
+      const inspectionAllowed = disclosureAllowed
+        ? true
+        : await canAccessInspectionFile(ctx, user._id, args.fileId);
+      if (!disclosureAllowed && !inspectionAllowed) return null;
     }
 
     return await ctx.storage.getUrl(args.fileId);
@@ -117,21 +121,36 @@ export const getSecureFileUrl = query({
  *
  * For broker/admin: any disclosure packet referencing this file is fair
  * game (they can read every dealRoom's packets).
+ *
+ * KIN-1081: the `disclosurePackets` table now also holds inspection-
+ * workflow rows. A `workflow` filter scopes lookups to a specific
+ * sub-stream when callers care which workflow the file belongs to. Use
+ * `"any"` to allow either — that matches pre-KIN-1081 behavior.
  */
-export async function canAccessDisclosureFile(
+async function packetFileAccess(
   ctx: QueryCtx,
   userId: Id<"users">,
   storageId: Id<"_storage">,
+  workflowFilter: "disclosure" | "inspection" | "any",
 ): Promise<boolean> {
   const user = await ctx.db.get(userId);
   if (!user) return false;
 
   const isPrivileged = user.role === "broker" || user.role === "admin";
 
+  const matchesWorkflow = (
+    packetWorkflow: "disclosure" | "inspection" | undefined,
+  ): boolean => {
+    if (workflowFilter === "any") return true;
+    const effective = packetWorkflow === "inspection" ? "inspection" : "disclosure";
+    return effective === workflowFilter;
+  };
+
   if (isPrivileged) {
     // Full-table scan is acceptable here because broker/admin downloads
     // are low-frequency and the packet table is one row per upload.
     for await (const p of ctx.db.query("disclosurePackets")) {
+      if (!matchesWorkflow(p.workflow)) continue;
       if (p.files.some((f) => f.storageId === storageId)) return true;
     }
     return false;
@@ -144,7 +163,31 @@ export async function canAccessDisclosureFile(
     .collect();
 
   for (const p of myPackets) {
+    if (!matchesWorkflow(p.workflow)) continue;
     if (p.files.some((f) => f.storageId === storageId)) return true;
   }
   return false;
+}
+
+export async function canAccessDisclosureFile(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  storageId: Id<"_storage">,
+): Promise<boolean> {
+  return packetFileAccess(ctx, userId, storageId, "disclosure");
+}
+
+/**
+ * KIN-1081: counterpart to `canAccessDisclosureFile` for inspection-
+ * workflow packets. Inspection packets share the `disclosurePackets`
+ * table but carry `workflow === "inspection"` and need their own access
+ * gate so callers reading inspection storage ids don't accidentally
+ * authorize against unrelated disclosure files.
+ */
+export async function canAccessInspectionFile(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  storageId: Id<"_storage">,
+): Promise<boolean> {
+  return packetFileAccess(ctx, userId, storageId, "inspection");
 }

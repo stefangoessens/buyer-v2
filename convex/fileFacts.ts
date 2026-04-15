@@ -16,6 +16,13 @@ import { getCurrentUser, requireAuth, requireRole } from "./lib/session";
  *     see everything. Role filtering is enforced server-side.
  *   - `createFact` / `updateFact` / `transitionReview` /
  *     `markSuperseded`: ops-only (`requireRole(ctx, "broker")`).
+ *
+ * KIN-1081: inspection facts piggyback on this generic shape via the
+ * `inspection.*` slug namespace (e.g. `inspection.roof_age_years`,
+ * `inspection.hvac_age_years`). The slug regex already accepts dotted
+ * keys, and `valueKind` covers numeric / boolean / enum / text needs,
+ * so the inspection engine writes through `createFact` directly with
+ * NO schema change required.
  */
 
 // MARK: - Validators

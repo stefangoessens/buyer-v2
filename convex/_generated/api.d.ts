@@ -58,6 +58,8 @@ import type * as engines_disclosureParser from "../engines/disclosureParser.js";
 import type * as engines_disclosureParserMutations from "../engines/disclosureParserMutations.js";
 import type * as engines_insights from "../engines/insights.js";
 import type * as engines_insightsMutations from "../engines/insightsMutations.js";
+import type * as engines_inspectionParser from "../engines/inspectionParser.js";
+import type * as engines_inspectionParserMutations from "../engines/inspectionParserMutations.js";
 import type * as engines_leverage from "../engines/leverage.js";
 import type * as engines_offer from "../engines/offer.js";
 import type * as engines_orchestrate from "../engines/orchestrate.js";
@@ -200,6 +202,8 @@ declare const fullApi: ApiFromModules<{
   "engines/disclosureParserMutations": typeof engines_disclosureParserMutations;
   "engines/insights": typeof engines_insights;
   "engines/insightsMutations": typeof engines_insightsMutations;
+  "engines/inspectionParser": typeof engines_inspectionParser;
+  "engines/inspectionParserMutations": typeof engines_inspectionParserMutations;
   "engines/leverage": typeof engines_leverage;
   "engines/offer": typeof engines_offer;
   "engines/orchestrate": typeof engines_orchestrate;

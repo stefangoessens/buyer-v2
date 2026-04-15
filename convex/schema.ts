@@ -1902,6 +1902,12 @@ export default defineSchema({
     // KIN-1078 — disclosure packet extensions. All optional so existing
     // rows (from non-packet jobs) still validate. The disclosure parser
     // engine populates these; legacy docParser writes leave them undefined.
+    //
+    // KIN-1081 extends the `category` union with the four inspection
+    // categories (`safety`, `major_repair`, `monitor`, `cosmetic`) so
+    // inspection findings can reuse the same field. The disclosure
+    // values stay; the two sets coexist on the same union, distinguished
+    // at read time by the packet's `workflow` discriminator.
     category: v.optional(
       v.union(
         v.literal("structural"),
@@ -1912,6 +1918,11 @@ export default defineSchema({
         v.literal("environmental"),
         v.literal("title"),
         v.literal("not_disclosed"),
+        // KIN-1081 inspection categories
+        v.literal("safety"),
+        v.literal("major_repair"),
+        v.literal("monitor"),
+        v.literal("cosmetic"),
       ),
     ),
     pageReference: v.optional(v.string()),
@@ -1922,6 +1933,51 @@ export default defineSchema({
     packetVersion: v.optional(v.number()),
     packetId: v.optional(v.id("disclosurePackets")),
     findingKey: v.optional(v.string()),
+    // KIN-1081 — inspection-specific buyer-facing severity. We do NOT
+    // overload the existing `severity` enum because risk-summary code
+    // paths and the review queue depend on its current shape. Inspection
+    // findings populate BOTH `severity` (for the shared review pipeline)
+    // and `buyerSeverity` (for inspection-only buyer surfaces).
+    buyerSeverity: v.optional(
+      v.union(
+        v.literal("life_safety"),
+        v.literal("major_repair"),
+        v.literal("monitor"),
+        v.literal("cosmetic"),
+      ),
+    ),
+    // System the finding is about — inspection only. Disclosure findings
+    // leave this undefined.
+    system: v.optional(
+      v.union(
+        v.literal("roof"),
+        v.literal("hvac"),
+        v.literal("electrical"),
+        v.literal("plumbing"),
+        v.literal("structural"),
+        v.literal("exterior"),
+        v.literal("interior"),
+        v.literal("grounds"),
+        v.literal("appliances"),
+        v.literal("pest"),
+      ),
+    ),
+    // Cost estimation — inspection only.
+    estimatedCostLowUsd: v.optional(v.number()),
+    estimatedCostHighUsd: v.optional(v.number()),
+    costEstimateConfidence: v.optional(v.number()), // 0..1
+    costEstimateBasis: v.optional(
+      v.union(
+        v.literal("llm_only"),
+        v.literal("llm_plus_rule"),
+        v.literal("broker_override"),
+      ),
+    ),
+    // Life-safety acknowledgment — inspection only. Set by the buyer
+    // through `acknowledgeLifeSafetyFinding`; never written by the upsert
+    // path.
+    acknowledgedAt: v.optional(v.string()),
+    acknowledgedByUserId: v.optional(v.id("users")),
   })
     .index("by_jobId", ["jobId"])
     .index("by_dealRoomId", ["dealRoomId"])
@@ -1969,12 +2025,67 @@ export default defineSchema({
           v.literal("failed"),
         ),
         failureReason: v.optional(v.string()),
+        // KIN-1081 — inspection workflow per-file metadata. All optional
+        // so disclosure packets continue to validate. The inspection
+        // parser populates these; disclosure parsers leave them undefined.
+        reportType: v.optional(
+          v.union(
+            v.literal("general_inspection"),
+            v.literal("four_point"),
+            v.literal("wind_mitigation"),
+            v.literal("wdo"),
+            v.literal("pool"),
+            v.literal("seawall"),
+            v.literal("dock"),
+            v.literal("sprinkler"),
+            v.literal("septic"),
+            v.literal("other"),
+          ),
+        ),
+        reportTypeConfidence: v.optional(v.number()), // 0..1
+        reportTypeSource: v.optional(
+          v.union(v.literal("parser"), v.literal("broker_override")),
+        ),
+        // Inspector metadata extracted from the report header.
+        inspectorName: v.optional(v.string()),
+        inspectorLicenseNumber: v.optional(v.string()),
+        inspectorLicenseVerificationStatus: v.optional(
+          v.union(
+            v.literal("parsed"),
+            v.literal("missing"),
+            v.literal("malformed"),
+          ),
+        ),
+        inspectionDate: v.optional(v.string()),
+        inspectionAddressFromReport: v.optional(v.string()),
       }),
     ),
     createdAt: v.string(),
     updatedAt: v.string(),
     supersededAt: v.optional(v.string()),
     supersededBy: v.optional(v.id("disclosurePackets")),
+    // KIN-1081: workflow discriminator. Optional for back-compat with rows
+    // shipped by KIN-1078 — `undefined` is treated as "disclosure" at every
+    // read site. Inspection packets reuse this table but have INDEPENDENT
+    // version sequences, dedupe scopes, and supersede chains per workflow.
+    workflow: v.optional(
+      v.union(v.literal("disclosure"), v.literal("inspection")),
+    ),
+    // KIN-1081 — negotiation summary review state (inspection workflow
+    // only). The buyer- and broker-facing summaries are stored as JSON
+    // strings so the engine + UI can iterate on the shape without a
+    // schema migration. Review state gates publication to the buyer.
+    negotiationSummaryBuyer: v.optional(v.string()),
+    negotiationSummaryInternal: v.optional(v.string()),
+    negotiationSummaryReviewState: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("approved"),
+        v.literal("rejected"),
+      ),
+    ),
+    negotiationSummaryReviewedBy: v.optional(v.id("users")),
+    negotiationSummaryReviewedAt: v.optional(v.string()),
   })
     .index("by_dealRoomId_and_version", ["dealRoomId", "version"])
     .index("by_buyerId", ["buyerId"])

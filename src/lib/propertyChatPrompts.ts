@@ -58,8 +58,59 @@ export const WIZARD_STEP_SUGGESTED_QUESTIONS: Record<WizardStep, string[]> = {
     "How do I wire closing funds safely?",
     "What happens at the final walk-through?",
     "What if the inspection finds major issues?",
+    // KIN-1081 — inspection-specific seed prompts. Filled with a finding
+    // title by the UI when the buyer clicks "Ask about this finding" on
+    // a row in the closing-inspections tab.
+    "Explain this finding: {findingTitle}",
+    "Based on the inspection findings, what could I ask the seller to repair or credit?",
+    "Help me draft a buyer-safe repair request addendum for the top 3 inspection findings.",
+    "Based on my inspection period deadline, which findings should I prioritize first?",
+    "I'd like to request a specialist consult for {findingTitle}. What should I tell my broker?",
   ],
 };
+
+/**
+ * KIN-1081 — labeled inspection-specific prompts for the closing
+ * inspections tab. The UI drawer reads this list and substitutes
+ * `{findingTitle}` with the row the buyer clicked. Kept separate from
+ * `WIZARD_STEP_SUGGESTED_QUESTIONS` (which is rendered as a flat list)
+ * so the UI can pair labels with the placeholder-aware values.
+ */
+export const INSPECTION_SUGGESTED_PROMPTS: ReadonlyArray<{
+  label: string;
+  value: string;
+  requiresFindingTitle: boolean;
+}> = [
+  {
+    label: "Explain this finding",
+    value: "Tell me about the finding: {findingTitle}. What does it mean for me?",
+    requiresFindingTitle: true,
+  },
+  {
+    label: "What should I ask the seller?",
+    value:
+      "Based on the inspection findings, what could I ask the seller to repair or credit?",
+    requiresFindingTitle: false,
+  },
+  {
+    label: "Draft repair request addendum",
+    value:
+      "Help me draft a buyer-safe repair request addendum for the top 3 findings in this inspection.",
+    requiresFindingTitle: false,
+  },
+  {
+    label: "How urgent is this?",
+    value:
+      "Based on my inspection period deadline, which findings should I prioritize first?",
+    requiresFindingTitle: false,
+  },
+  {
+    label: "Request specialist consult",
+    value:
+      "I'd like to request a specialist consult for {findingTitle}. What should I tell my broker?",
+    requiresFindingTitle: true,
+  },
+];
 
 function formatPrice(price: number | null): string {
   if (price == null) return "unknown";

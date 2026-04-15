@@ -16,6 +16,7 @@ import { ClosingTopRail } from "./ClosingTopRail";
 import { ClosingTabNav } from "./ClosingTabNav";
 import { ClosingTaskGroupCard } from "./ClosingTaskGroupCard";
 import { ClosingWireFraudBanner } from "./ClosingWireFraudBanner";
+import { InspectionsTabContent } from "./inspections/InspectionsTabContent";
 
 interface ClosingCommandCenterProps {
   dealRoomId: Id<"dealRooms">;
@@ -144,6 +145,13 @@ export function ClosingCommandCenter({
       <div className="space-y-4">
         {activeTab === "title" && (
           <ClosingWireFraudBanner dealRoomId={dealRoomId} />
+        )}
+
+        {activeTab === "inspections" && (
+          <InspectionsTabContent
+            dealRoomId={dealRoomId}
+            propertyId={data.dealRoom.propertyId}
+          />
         )}
 
         {activeTabPayload && activeTabPayload.groups.length > 0 ? (
