@@ -95,8 +95,15 @@ final class ConvexMessagePreferencesBackend: MessagePreferencesBackend, @uncheck
 private struct EmptyBody: Encodable {}
 
 private struct UpsertBody: Encodable {
-    let preferences: MessagePreferences
+    let matrix: MessagePreferenceMatrix
+    let quietHours: QuietHours
     let source: String
+
+    init(preferences: MessagePreferences, source: String) {
+        self.matrix = preferences.matrix
+        self.quietHours = preferences.quietHours
+        self.source = source
+    }
 }
 
 private struct PreferencesEnvelope: Decodable {

@@ -99,7 +99,7 @@ struct LegacyChannelEnablement: Sendable, Codable, Equatable {
         case email
         case sms
         case push
-        case inApp = "in_app"
+        case inApp = "inApp"
     }
 }
 
@@ -128,7 +128,7 @@ struct MessageChannelPreferences: Sendable, Codable, Equatable {
         case email
         case sms
         case push
-        case inApp = "in_app"
+        case inApp = "inApp"
     }
 
     static let allEnabled = MessageChannelPreferences(

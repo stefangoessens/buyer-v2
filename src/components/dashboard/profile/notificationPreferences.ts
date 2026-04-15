@@ -236,6 +236,13 @@ function normalizeMatrix(
           push: nextValue.push,
           inApp: nextValue.in_app,
         };
+      } else if (isBooleanRecord(nextValue, ["email", "sms", "push", "inApp"])) {
+        acc[category] = {
+          email: nextValue.email,
+          sms: nextValue.sms,
+          push: nextValue.push,
+          inApp: nextValue.inApp,
+        };
       } else {
         acc[category] = { ...fallback[category] };
       }
@@ -253,7 +260,7 @@ function buildLegacyMatrix(input: MaybeRecord): NotificationDeliveryMatrix {
     email: channels.email === true,
     sms: channels.sms === true,
     push: channels.push === true,
-    inApp: channels.inApp === true,
+    inApp: channels.inApp === true || channels.in_app === true,
   };
 
   const categoryState = {
@@ -292,17 +299,35 @@ function normalizeQuietHours(
     return { ...fallback };
   }
 
-  const timeZone =
-    typeof value.timeZone === "string" && isValidTimezone(value.timeZone)
+  const rawTimeZone =
+    typeof value.timeZone === "string"
       ? value.timeZone
-      : fallback.timeZone;
+      : typeof value.timezone === "string"
+        ? value.timezone
+        : null;
+  const timeZone = rawTimeZone && isValidTimezone(rawTimeZone)
+    ? rawTimeZone
+    : fallback.timeZone;
+
+  const start =
+    typeof value.startMinutes === "number"
+      ? minutesToClock(value.startMinutes, fallback.start)
+      : isClock(value.start)
+        ? value.start
+        : fallback.start;
+  const end =
+    typeof value.endMinutes === "number"
+      ? minutesToClock(value.endMinutes, fallback.end)
+      : isClock(value.end)
+        ? value.end
+        : fallback.end;
 
   return {
     enabled:
       typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
     timeZone,
-    start: isClock(value.start) ? value.start : fallback.start,
-    end: isClock(value.end) ? value.end : fallback.end,
+    start,
+    end,
     suppressSms:
       typeof value.suppressSms === "boolean"
         ? value.suppressSms
@@ -380,7 +405,10 @@ export function normalizeNotificationPreferences(
   const fallbackMatrix = isRecord(record.channels) || isRecord(record.categories)
     ? buildLegacyMatrix(record)
     : cloneMatrix(DEFAULT_MATRIX);
-  const deliveryMatrix = normalizeMatrix(record.deliveryMatrix, fallbackMatrix);
+  const deliveryMatrix = normalizeMatrix(
+    isRecord(record.matrix) ? record.matrix : record.deliveryMatrix,
+    fallbackMatrix,
+  );
 
   deliveryMatrix.safety = { email: true, sms: true, push: true, inApp: true };
 
@@ -480,22 +508,22 @@ export function diffNotificationPreferences(
 
 export function serializeMutationPayload(value: NotificationPreferenceView) {
   return {
-    deliveryMatrix: NOTIFICATION_CATEGORIES.reduce<
-      Record<NotificationCategory, { email: boolean; sms: boolean; push: boolean; in_app: boolean }>
+    matrix: NOTIFICATION_CATEGORIES.reduce<
+      Record<NotificationCategory, { email: boolean; sms: boolean; push: boolean; inApp: boolean }>
     >((acc, category) => {
       acc[category] = {
         email: value.deliveryMatrix[category].email,
         sms: value.deliveryMatrix[category].sms,
         push: value.deliveryMatrix[category].push,
-        in_app: value.deliveryMatrix[category].inApp,
+        inApp: value.deliveryMatrix[category].inApp,
       };
       return acc;
-    }, {} as Record<NotificationCategory, { email: boolean; sms: boolean; push: boolean; in_app: boolean }>),
+    }, {} as Record<NotificationCategory, { email: boolean; sms: boolean; push: boolean; inApp: boolean }>),
     quietHours: {
       enabled: value.quietHours.enabled,
-      timeZone: value.quietHours.timeZone,
-      start: value.quietHours.start,
-      end: value.quietHours.end,
+      timezone: value.quietHours.timeZone,
+      startMinutes: clockToMinutes(value.quietHours.start),
+      endMinutes: clockToMinutes(value.quietHours.end),
       suppressSms: value.quietHours.suppressSms,
       suppressPush: value.quietHours.suppressPush,
     },
@@ -519,4 +547,22 @@ export function validateQuietHours(
   }
 
   return null;
+}
+
+function clockToMinutes(value: string): number {
+  const [hours, minutes] = value.split(":").map((part) => Number(part));
+  return hours * 60 + minutes;
+}
+
+function minutesToClock(value: number, fallback: string): string {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+
+  const totalMinutes = ((Math.trunc(value) % 1440) + 1440) % 1440;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours.toString().padStart(2, "0")}:${minutes
+    .toString()
+    .padStart(2, "0")}`;
 }
