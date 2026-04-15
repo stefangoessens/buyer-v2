@@ -1,7 +1,11 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { financingType } from "./validators";
+import {
+  financingType,
+  smsConsentSource,
+  smsConsentState,
+} from "./validators";
 
 export const buyerMoveTimeline = v.union(
   v.literal("asap"),
@@ -91,6 +95,35 @@ export const buyerProfileRebatePayoutMethodValidator = v.object({
   updatedAt: v.string(),
 });
 
+export const buyerProfileSmsConsentLogEntryValidator = v.object({
+  source: smsConsentSource,
+  state: smsConsentState,
+  phone: v.string(),
+  policyVersion: v.string(),
+  createdAt: v.string(),
+  messageSid: v.optional(v.string()),
+  verificationSid: v.optional(v.string()),
+  note: v.optional(v.string()),
+});
+
+export const buyerProfileSmsPatchValidator = v.object({
+  phoneVerifiedAt: v.optional(v.string()),
+  consentState: v.optional(smsConsentState),
+  consentSource: v.optional(smsConsentSource),
+  consentPolicyVersion: v.optional(v.string()),
+  consentUpdatedAt: v.optional(v.string()),
+  consentLog: v.optional(v.array(buyerProfileSmsConsentLogEntryValidator)),
+});
+
+export const buyerProfileSmsViewValidator = v.object({
+  phoneVerifiedAt: v.union(v.string(), v.null()),
+  consentState: smsConsentState,
+  consentSource: v.union(smsConsentSource, v.null()),
+  consentPolicyVersion: v.union(v.string(), v.null()),
+  consentUpdatedAt: v.union(v.string(), v.null()),
+  consentLog: v.array(buyerProfileSmsConsentLogEntryValidator),
+});
+
 export const buyerProfileIdentityValidator = v.object({
   name: v.string(),
   email: v.string(),
@@ -106,6 +139,12 @@ export const buyerProfileRecordFields = {
   internal: v.optional(buyerProfileInternalValidator),
   savedSearches: v.optional(v.array(buyerProfileSavedSearchValidator)),
   rebatePayoutMethod: v.optional(buyerProfileRebatePayoutMethodValidator),
+  phoneVerifiedAt: v.optional(v.string()),
+  smsConsentState: v.optional(smsConsentState),
+  smsConsentSource: v.optional(smsConsentSource),
+  smsConsentPolicyVersion: v.optional(v.string()),
+  smsConsentUpdatedAt: v.optional(v.string()),
+  smsConsentLog: v.optional(v.array(buyerProfileSmsConsentLogEntryValidator)),
   createdAt: v.string(),
   updatedAt: v.string(),
 };
@@ -118,6 +157,7 @@ export const buyerProfileViewValidator = v.object({
   financing: buyerProfileFinancingValidator,
   searchPreferences: buyerProfileSearchPreferencesValidator,
   communicationPreferences: communicationPreferencesViewValidator,
+  sms: buyerProfileSmsViewValidator,
   household: buyerProfileHouseholdValidator,
   savedSearches: v.array(buyerProfileSavedSearchValidator),
   rebatePayoutMethod: v.union(buyerProfileRebatePayoutMethodValidator, v.null()),
@@ -193,6 +233,25 @@ export type BuyerProfileView = {
       marketing: boolean;
     };
   };
+  sms: {
+    phoneVerifiedAt: string | null;
+    consentState:
+      | "unknown"
+      | "pending"
+      | "verified"
+      | "opted_out"
+      | "suppressed";
+    consentSource:
+      | "dashboard_banner"
+      | "offer_gate"
+      | "sms_to_deal_room"
+      | "support"
+      | "admin"
+      | null;
+    consentPolicyVersion: string | null;
+    consentUpdatedAt: string | null;
+    consentLog: BuyerProfileSmsConsentLogEntry[];
+  };
   household: {
     householdSize?: number;
     attendeeCountDefault?: number;
@@ -204,6 +263,50 @@ export type BuyerProfileView = {
   internal?: {
     notes?: string;
   };
+};
+
+export type BuyerProfileSmsConsentSource = Exclude<
+  BuyerProfileView["sms"]["consentSource"],
+  null
+>;
+
+export type BuyerProfileSmsConsentLogEntry = {
+  source:
+    | "dashboard_banner"
+    | "offer_gate"
+    | "sms_to_deal_room"
+    | "support"
+    | "admin";
+  state:
+    | "unknown"
+    | "pending"
+    | "verified"
+    | "opted_out"
+    | "suppressed";
+  phone: string;
+  policyVersion: string;
+  createdAt: string;
+  messageSid?: string;
+  verificationSid?: string;
+  note?: string;
+};
+
+export type BuyerProfileSmsPatch = {
+  phoneVerifiedAt?: string;
+  consentState?: BuyerProfileView["sms"]["consentState"];
+  consentSource?: BuyerProfileSmsConsentSource;
+  consentPolicyVersion?: string;
+  consentUpdatedAt?: string;
+  consentLog?: BuyerProfileSmsConsentLogEntry[];
+};
+
+export type BuyerProfileRow = Doc<"buyerProfiles"> & {
+  phoneVerifiedAt?: string;
+  smsConsentState?: BuyerProfileView["sms"]["consentState"];
+  smsConsentSource?: BuyerProfileSmsConsentSource;
+  smsConsentPolicyVersion?: string;
+  smsConsentUpdatedAt?: string;
+  smsConsentLog?: BuyerProfileSmsConsentLogEntry[];
 };
 
 export type BuyerProfileSavedSearchCriteria = {
@@ -268,6 +371,64 @@ function defaultCategories() {
   };
 }
 
+export function buildBuyerProfileSmsView(
+  row: BuyerProfileRow | null,
+): BuyerProfileView["sms"] {
+  return {
+    phoneVerifiedAt: row?.phoneVerifiedAt ?? null,
+    consentState:
+      row?.smsConsentState ??
+      (row?.phoneVerifiedAt ? "verified" : "unknown"),
+    consentSource: row?.smsConsentSource ?? null,
+    consentPolicyVersion: row?.smsConsentPolicyVersion ?? null,
+    consentUpdatedAt: row?.smsConsentUpdatedAt ?? row?.phoneVerifiedAt ?? null,
+    consentLog: row?.smsConsentLog ?? [],
+  };
+}
+
+export function mergeBuyerProfileSmsRecord(
+  existing: BuyerProfileRow | null,
+  patch: BuyerProfileSmsPatch | undefined,
+): BuyerProfileSmsPatch {
+  if (!patch) {
+    return {
+      phoneVerifiedAt: existing?.phoneVerifiedAt,
+      consentState: existing?.smsConsentState,
+      consentSource: existing?.smsConsentSource,
+      consentPolicyVersion: existing?.smsConsentPolicyVersion,
+      consentUpdatedAt: existing?.smsConsentUpdatedAt,
+      consentLog: existing?.smsConsentLog,
+    };
+  }
+
+  return {
+    phoneVerifiedAt:
+      patch.phoneVerifiedAt !== undefined
+        ? patch.phoneVerifiedAt
+        : existing?.phoneVerifiedAt,
+    consentState:
+      patch.consentState !== undefined
+        ? patch.consentState
+        : existing?.smsConsentState,
+    consentSource:
+      patch.consentSource !== undefined
+        ? patch.consentSource
+        : existing?.smsConsentSource,
+    consentPolicyVersion:
+      patch.consentPolicyVersion !== undefined
+        ? patch.consentPolicyVersion
+        : existing?.smsConsentPolicyVersion,
+    consentUpdatedAt:
+      patch.consentUpdatedAt !== undefined
+        ? patch.consentUpdatedAt
+        : existing?.smsConsentUpdatedAt,
+    consentLog:
+      patch.consentLog !== undefined
+        ? patch.consentLog
+        : existing?.smsConsentLog,
+  };
+}
+
 export function defaultBuyerProfileSections(): BuyerProfileSections {
   return {
     financing: {
@@ -325,7 +486,7 @@ export function mergeBuyerProfileSections(
 }
 
 export function normalizeBuyerProfileSections(
-  row: Doc<"buyerProfiles"> | null,
+  row: BuyerProfileRow | null,
 ): BuyerProfileSections {
   return mergeBuyerProfileSections(defaultBuyerProfileSections(), {
     financing: row?.financing,
@@ -347,7 +508,7 @@ export function buildCommunicationPreferences(
 
 export function buildBuyerProfileView(params: {
   user: Doc<"users">;
-  profile: Doc<"buyerProfiles"> | null;
+  profile: BuyerProfileRow | null;
   messagePreferences: MessagePreferenceRow;
   includeInternal: boolean;
 }): BuyerProfileView {
@@ -367,6 +528,7 @@ export function buildBuyerProfileView(params: {
     communicationPreferences: buildCommunicationPreferences(
       params.messagePreferences,
     ),
+    sms: buildBuyerProfileSmsView(params.profile),
     household: sections.household,
     savedSearches: params.profile?.savedSearches ?? [],
     rebatePayoutMethod: params.profile?.rebatePayoutMethod ?? null,
@@ -434,7 +596,7 @@ export async function loadBuyerProfileView(
     ctx.db
       .query("buyerProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .unique(),
+      .unique() as Promise<BuyerProfileRow | null>,
     ctx.db
       .query("messageDeliveryPreferences")
       .withIndex("by_userId", (q) => q.eq("userId", userId))

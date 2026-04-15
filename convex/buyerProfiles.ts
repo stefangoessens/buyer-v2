@@ -1,9 +1,17 @@
-import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { getCurrentUser, requireAuth } from "./lib/session";
 import {
   buildBuyerProfileView,
+  buildBuyerProfileSmsView,
   buildDealRoomFlowProfile,
   buildOfferFlowProfile,
   buildTourFlowProfile,
@@ -11,16 +19,25 @@ import {
   buyerProfileDealRoomFlowValidator,
   buyerProfileOfferFlowValidator,
   buyerProfileRebatePayoutMethodValidator,
+  buyerProfileSmsPatchValidator,
   buyerProfileSavedSearchCriteriaValidator,
   buyerProfileSavedSearchValidator,
   buyerProfileTourFlowValidator,
   buyerProfileViewValidator,
+  mergeBuyerProfileSmsRecord,
   mergeBuyerProfileSections,
   normalizeBuyerProfileSections,
+  type BuyerProfileRow,
+  type BuyerProfileSmsPatch,
   type BuyerProfileRebatePayoutMethod,
   type BuyerProfileSavedSearch,
 } from "./lib/buyerProfile";
-import { financingType } from "./lib/validators";
+import {
+  financingType,
+  smsConsentSource,
+  smsConsentState,
+} from "./lib/validators";
+import { normalizePhone } from "./lib/smsIntakeCompute";
 
 type SessionCtx = QueryCtx | MutationCtx;
 type MessagePreferencePatch = {
@@ -78,6 +95,7 @@ const upsertArgs = {
     }),
   ),
   communicationPreferences: v.optional(communicationPatchValidator),
+  sms: v.optional(buyerProfileSmsPatchValidator),
   household: v.optional(
     v.object({
       householdSize: v.optional(v.number()),
@@ -99,7 +117,7 @@ async function loadProfileDependencies(ctx: SessionCtx, userId: Id<"users">) {
     ctx.db
       .query("buyerProfiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .unique(),
+      .unique() as Promise<BuyerProfileRow | null>,
     ctx.db
       .query("messageDeliveryPreferences")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -122,7 +140,35 @@ function messagePatchProvided(patch: MessagePreferencePatch | undefined): boolea
     Boolean(
       patch.categories &&
         Object.values(patch.categories).some((value) => value !== undefined),
-    );
+  );
+}
+
+function buildSmsRecordFields(
+  patch: BuyerProfileSmsPatch | undefined,
+): Partial<BuyerProfileRow> {
+  const result: Partial<BuyerProfileRow> = {};
+  if (!patch) {
+    return result;
+  }
+  if (patch.phoneVerifiedAt !== undefined) {
+    result.phoneVerifiedAt = patch.phoneVerifiedAt;
+  }
+  if (patch.consentState !== undefined) {
+    result.smsConsentState = patch.consentState;
+  }
+  if (patch.consentSource !== undefined) {
+    result.smsConsentSource = patch.consentSource;
+  }
+  if (patch.consentPolicyVersion !== undefined) {
+    result.smsConsentPolicyVersion = patch.consentPolicyVersion;
+  }
+  if (patch.consentUpdatedAt !== undefined) {
+    result.smsConsentUpdatedAt = patch.consentUpdatedAt;
+  }
+  if (patch.consentLog !== undefined) {
+    result.smsConsentLog = patch.consentLog;
+  }
+  return result;
 }
 
 function buildMessagePreferencesRow(
@@ -223,7 +269,7 @@ async function upsertProfileRecord(
   params: {
     actor: Doc<"users">;
     targetUser: Doc<"users">;
-    existingProfile: Doc<"buyerProfiles"> | null;
+    existingProfile: BuyerProfileRow | null;
     existingMessagePreferences: Doc<"messageDeliveryPreferences"> | null;
     args: {
       identity?: {
@@ -249,6 +295,7 @@ async function upsertProfileRecord(
         moveTimeline?: "asap" | "1_3_months" | "3_6_months" | "6_plus_months" | "just_looking";
       };
       communicationPreferences?: MessagePreferencePatch;
+      sms?: BuyerProfileSmsPatch;
       household?: {
         householdSize?: number;
         attendeeCountDefault?: number;
@@ -329,11 +376,28 @@ async function upsertProfileRecord(
     JSON.stringify(params.existingProfile?.rebatePayoutMethod ?? null) !==
       JSON.stringify(params.args.rebatePayoutMethod ?? null);
 
+  const nextSms = mergeBuyerProfileSmsRecord(
+    params.existingProfile,
+    params.args.sms,
+  );
+  const existingSmsView = buildBuyerProfileSmsView(params.existingProfile);
+  const nextSmsView = buildBuyerProfileSmsView({
+    ...(params.existingProfile ?? {}),
+    ...nextSms,
+  } as BuyerProfileRow);
+  const smsChanged =
+    JSON.stringify(existingSmsView) !== JSON.stringify(nextSmsView);
+
   let profileId: Id<"buyerProfiles">;
   if (params.existingProfile) {
     profileId = params.existingProfile._id;
-    if (sectionsChanged || savedSearchesChanged || rebatePayoutChanged) {
-      await ctx.db.patch(profileId, {
+    if (
+      sectionsChanged ||
+      savedSearchesChanged ||
+      rebatePayoutChanged ||
+      smsChanged
+    ) {
+      const profilePatch: Record<string, unknown> = {
         financing: nextSections.financing,
         searchPreferences: nextSections.searchPreferences,
         household: nextSections.household,
@@ -343,10 +407,12 @@ async function upsertProfileRecord(
         ...(rebatePayoutProvided
           ? { rebatePayoutMethod: params.args.rebatePayoutMethod }
           : {}),
-      });
+        ...buildSmsRecordFields(nextSms),
+      };
+      await ctx.db.patch(profileId, profilePatch as any);
     }
   } else {
-    profileId = await ctx.db.insert("buyerProfiles", {
+    const profileInsert: Record<string, unknown> = {
       userId: params.targetUser._id,
       financing: nextSections.financing,
       searchPreferences: nextSections.searchPreferences,
@@ -358,7 +424,9 @@ async function upsertProfileRecord(
       ...(nextRebatePayoutMethod !== undefined
         ? { rebatePayoutMethod: nextRebatePayoutMethod }
         : {}),
-    });
+      ...buildSmsRecordFields(nextSms),
+    };
+    profileId = await ctx.db.insert("buyerProfiles", profileInsert as any);
   }
 
   const messagePreferenceResult = await upsertMessagePreferences(
@@ -381,6 +449,7 @@ async function upsertProfileRecord(
     if (identityChanged) changedSections.push("identity");
     if (savedSearchesChanged) changedSections.push("savedSearches");
     if (rebatePayoutChanged) changedSections.push("rebatePayoutMethod");
+    if (smsChanged) changedSections.push("sms");
     if (sectionsChanged) {
       if (
         JSON.stringify(baseSections.financing) !==
@@ -731,6 +800,70 @@ export const updateCommPrefs = mutation({
       existingMessagePreferences: messagePreferences,
       args: {
         communicationPreferences: args,
+      },
+    });
+  },
+});
+
+/** Internal SMS consent writer used by Twilio Verify and inbound SMS later. */
+export const recordSmsConsent = internalMutation({
+  args: {
+    userId: v.id("users"),
+    phone: v.string(),
+    consentState: smsConsentState,
+    consentSource: smsConsentSource,
+    policyVersion: v.string(),
+    messageSid: v.optional(v.string()),
+    verificationSid: v.optional(v.string()),
+    note: v.optional(v.string()),
+    consentedAt: v.optional(v.string()),
+  },
+  returns: v.id("buyerProfiles"),
+  handler: async (ctx, args) => {
+    const normalizedPhone = normalizePhone(args.phone);
+    if (!normalizedPhone) {
+      throw new Error("A valid SMS phone number is required");
+    }
+
+    const { user, profile, messagePreferences } = await loadProfileDependencies(
+      ctx,
+      args.userId,
+    );
+    const actor = user;
+    const now = args.consentedAt ?? new Date().toISOString();
+    const consentLog = [
+      ...(profile?.smsConsentLog ?? []),
+      {
+        source: args.consentSource,
+        state: args.consentState,
+        phone: normalizedPhone,
+        policyVersion: args.policyVersion,
+        createdAt: now,
+        ...(args.messageSid ? { messageSid: args.messageSid } : {}),
+        ...(args.verificationSid ? { verificationSid: args.verificationSid } : {}),
+        ...(args.note ? { note: args.note } : {}),
+      },
+    ];
+
+    return await upsertProfileRecord(ctx, {
+      actor,
+      targetUser: user,
+      existingProfile: profile,
+      existingMessagePreferences: messagePreferences,
+      args: {
+        identity:
+          normalizedPhone !== user.phone ? { phone: normalizedPhone } : undefined,
+        sms: {
+          phoneVerifiedAt:
+            args.consentState === "verified"
+              ? now
+              : profile?.phoneVerifiedAt,
+          consentState: args.consentState,
+          consentSource: args.consentSource,
+          consentPolicyVersion: args.policyVersion,
+          consentUpdatedAt: now,
+          consentLog,
+        },
       },
     });
   },

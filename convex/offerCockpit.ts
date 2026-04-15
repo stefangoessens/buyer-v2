@@ -1,4 +1,5 @@
 import { query, mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getCurrentUser, requireAuth } from "./lib/session";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -549,6 +550,32 @@ export const requestBrokerageCallback = mutation({
       }),
       timestamp: now,
     });
+
+    if (!wasAlreadyRequested) {
+      const brandName =
+        (
+          await ctx.db
+            .query("settingsEntries")
+            .withIndex("by_key", (q) => q.eq("key", "branding.site_name"))
+            .unique()
+        )?.stringValue ?? "buyer-v2";
+
+      await ctx.scheduler.runAfter(
+        0,
+        internal.sms.inboundHandler.sendTemplateMessage,
+        {
+          to: normalizedPhone,
+          templateKey: "offer-gate-callback-confirmation",
+          variables: {
+            brand: brandName,
+            phone: normalizedPhone,
+          },
+          buyerId: user._id,
+          dealRoomId: args.dealRoomId,
+          propertyId: dealRoom.propertyId,
+        },
+      );
+    }
 
     return {
       draftId,

@@ -477,6 +477,91 @@ export const leadAttributionStatus = v.union(
   v.literal("converted")
 );
 
+// Deal room origin channel.
+export const dealRoomOrigin = v.union(
+  v.literal("web"),
+  v.literal("sms_inbound"),
+  v.literal("admin")
+);
+
+// ─── SMS Enrollment / Messaging ───────────────────────────────────────────
+
+// SMS consent source tracked on the buyer profile consent log.
+export const smsConsentSource = v.union(
+  v.literal("dashboard_banner"),
+  v.literal("offer_gate"),
+  v.literal("sms_to_deal_room"),
+  v.literal("support"),
+  v.literal("admin")
+);
+
+// Unified SMS enrollment / consent state for buyer profile views.
+export const smsConsentState = v.union(
+  v.literal("unknown"),
+  v.literal("pending"),
+  v.literal("verified"),
+  v.literal("opted_out"),
+  v.literal("suppressed")
+);
+
+// Twilio message direction.
+export const smsMessageDirection = v.union(
+  v.literal("inbound"),
+  v.literal("outbound")
+);
+
+// High-level processing status for durable SMS message rows.
+export const smsMessageProcessingStatus = v.union(
+  v.literal("pending"),
+  v.literal("processing"),
+  v.literal("completed"),
+  v.literal("failed"),
+  v.literal("suppressed"),
+  v.literal("duplicate"),
+  v.literal("unsupported_url"),
+  v.literal("needs_verification"),
+  v.literal("rate_limited")
+);
+
+// Twilio delivery state recorded from status callbacks.
+export const smsMessageProviderState = v.union(
+  v.literal("queued"),
+  v.literal("sending"),
+  v.literal("sent"),
+  v.literal("delivered"),
+  v.literal("undelivered"),
+  v.literal("failed"),
+  v.literal("received")
+);
+
+// Cross-channel suppression scope. `all` blocks every channel; a concrete
+// channel blocks only the matching delivery rail.
+export const notificationSuppressionScope = v.union(
+  v.literal("all"),
+  v.literal("sms"),
+  v.literal("email"),
+  v.literal("push"),
+  v.literal("in_app")
+);
+
+// Why a recipient was suppressed.
+export const notificationSuppressionReason = v.union(
+  v.literal("recipient_opt_out"),
+  v.literal("manual_block"),
+  v.literal("hard_bounce"),
+  v.literal("spam_complaint"),
+  v.literal("unsubscribed"),
+  v.literal("system")
+);
+
+// Where the suppression came from.
+export const notificationSuppressionSource = v.union(
+  v.literal("twilio_stop_keyword"),
+  v.literal("admin_console"),
+  v.literal("support"),
+  v.literal("system")
+);
+
 // ─── SMS Intake (KIN-776) ──────────────────────────────────────────────────
 
 // SMS consent status — derived from inbound keyword tracking.

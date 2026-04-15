@@ -9,6 +9,7 @@
  */
 
 import type * as addressIntake from "../addressIntake.js";
+import type * as adminSms from "../adminSms.js";
 import type * as adminShell from "../adminShell.js";
 import type * as agentCoverage from "../agentCoverage.js";
 import type * as agreementSupersession from "../agreementSupersession.js";
@@ -140,6 +141,9 @@ import type * as security_fileAccess from "../security/fileAccess.js";
 import type * as settings from "../settings.js";
 import type * as showingCoordination from "../showingCoordination.js";
 import type * as showingPayouts from "../showingPayouts.js";
+import type * as sms_inboundHandler from "../sms/inboundHandler.js";
+import type * as sms_store from "../sms/store.js";
+import type * as sms_twilioVerify from "../sms/twilioVerify.js";
 import type * as smsIntake from "../smsIntake.js";
 import type * as tourRequests from "../tourRequests.js";
 import type * as tours from "../tours.js";
@@ -156,6 +160,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   addressIntake: typeof addressIntake;
+  adminSms: typeof adminSms;
   adminShell: typeof adminShell;
   agentCoverage: typeof agentCoverage;
   agreementSupersession: typeof agreementSupersession;
@@ -287,6 +292,9 @@ declare const fullApi: ApiFromModules<{
   settings: typeof settings;
   showingCoordination: typeof showingCoordination;
   showingPayouts: typeof showingPayouts;
+  "sms/inboundHandler": typeof sms_inboundHandler;
+  "sms/store": typeof sms_store;
+  "sms/twilioVerify": typeof sms_twilioVerify;
   smsIntake: typeof smsIntake;
   tourRequests: typeof tourRequests;
   tours: typeof tours;

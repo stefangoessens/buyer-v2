@@ -71,6 +71,14 @@ const STATIC_NAV: StaticNavItem[] = [
     description: "Buyer-hidden notes attached to properties and deals",
   },
   {
+    slug: "sms",
+    label: "SMS activity",
+    href: "/console/sms",
+    section: "tools",
+    allowedRoles: ["broker", "admin"],
+    description: "Inbound SMS intake, delivery state, and manual re-parse tools",
+  },
+  {
     slug: "settings",
     label: "Settings",
     href: "/settings",

@@ -126,6 +126,34 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   message_opened: { messageId: string; channel: string };
   /** Fired when a recipient clicks a link in a message. */
   message_clicked: { messageId: string; channel: string; link: string };
+  /** Fired when the Twilio inbound webhook accepts a new SMS payload. */
+  sms_inbound_received: { messageId: string; recipientHash: string };
+  /** Fired when an inbound SMS listing URL parses to a supported portal. */
+  sms_inbound_parsed: {
+    messageId: string;
+    recipientHash: string;
+    portal: "zillow" | "redfin" | "realtor";
+  };
+  /** Fired when an inbound SMS creates a new deal room. */
+  sms_inbound_dealroom_created: {
+    messageId: string;
+    recipientHash: string;
+    dealRoomId: string;
+  };
+  /** Fired when an inbound SMS contains an unsupported portal URL. */
+  sms_inbound_unsupported_url: {
+    messageId: string;
+    recipientHash: string;
+    portal?: string;
+  };
+  /** Fired when an inbound SMS comes from an unverified sender. */
+  sms_inbound_unverified_sender: { messageId: string; recipientHash: string };
+  /** Fired when an inbound SMS resolves to an existing deal room. */
+  sms_inbound_duplicate: {
+    messageId: string;
+    recipientHash: string;
+    dealRoomId: string;
+  };
 
   // ─── Disclosure request rail (KIN-1079) ─────────────────────────────
   /** Fired once when the Request Disclosures CTA card mounts. */
@@ -637,6 +665,42 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "communication",
     owner: "platform",
     whenFired: "Link click tracked via redirect",
+    piiSafe: true,
+  },
+  sms_inbound_received: {
+    category: "communication",
+    owner: "brokerage",
+    whenFired: "Twilio inbound webhook accepts a new SMS payload",
+    piiSafe: true,
+  },
+  sms_inbound_parsed: {
+    category: "communication",
+    owner: "brokerage",
+    whenFired: "Inbound SMS listing URL parses to a supported portal",
+    piiSafe: true,
+  },
+  sms_inbound_dealroom_created: {
+    category: "communication",
+    owner: "brokerage",
+    whenFired: "Inbound SMS creates a new deal room",
+    piiSafe: true,
+  },
+  sms_inbound_unsupported_url: {
+    category: "communication",
+    owner: "brokerage",
+    whenFired: "Inbound SMS contains an unsupported portal URL",
+    piiSafe: true,
+  },
+  sms_inbound_unverified_sender: {
+    category: "communication",
+    owner: "brokerage",
+    whenFired: "Inbound SMS comes from a phone without verified enrollment",
+    piiSafe: true,
+  },
+  sms_inbound_duplicate: {
+    category: "communication",
+    owner: "brokerage",
+    whenFired: "Inbound SMS resolves to an existing deal room",
     piiSafe: true,
   },
 

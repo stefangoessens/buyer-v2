@@ -118,6 +118,7 @@ export function ProfileContactPreferencesSection() {
   }, [profile]);
 
   const isLoading = profile === undefined;
+  const smsLocked = !profile?.sms.phoneVerifiedAt;
   const isDirty =
     isChannelDirty(channels, savedChannels) ||
     isCategoryDirty(categories, savedCategories);
@@ -165,7 +166,9 @@ export function ProfileContactPreferencesSection() {
                     {channel.label}
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    {channel.description}
+                    {channel.key === "sms" && smsLocked
+                      ? "Verify your phone from the dashboard banner before enabling SMS."
+                      : channel.description}
                   </p>
                 </div>
                 <Switch
@@ -174,7 +177,9 @@ export function ProfileContactPreferencesSection() {
                   onCheckedChange={(checked) =>
                     setChannels((prev) => ({ ...prev, [channel.key]: checked }))
                   }
-                  disabled={isLoading}
+                  disabled={
+                    isLoading || (channel.key === "sms" && smsLocked)
+                  }
                 />
               </div>
             ))}
