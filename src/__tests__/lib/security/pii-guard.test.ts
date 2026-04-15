@@ -118,6 +118,32 @@ describe("scrubPiiFromString", () => {
   it("handles empty string", () => {
     expect(scrubPiiFromString("")).toBe("");
   });
+
+  // KIN-1078 — disclosure-specific patterns.
+  it("redacts Florida driver license numbers", () => {
+    const result = scrubPiiFromString("DL S123-456-78-901-2 on file");
+    expect(result).not.toContain("S123-456-78-901-2");
+    expect(result).toContain("[FL-DL]");
+  });
+
+  it("redacts bank account numbers near 'Account'", () => {
+    const result = scrubPiiFromString("Account Number: 123456789012");
+    expect(result).not.toContain("123456789012");
+    expect(result).toContain("[ACCT]");
+  });
+
+  it("redacts DOB values after 'Date of Birth'", () => {
+    const result = scrubPiiFromString("Date of Birth: 03/14/1965, Florida");
+    expect(result).not.toContain("03/14/1965");
+    expect(result).toContain("[DOB]");
+    expect(result).toContain("Florida");
+  });
+
+  it("redacts DOB values with 'DOB' abbreviation", () => {
+    const result = scrubPiiFromString("DOB 12-25-1980 — homestead filed");
+    expect(result).not.toContain("12-25-1980");
+    expect(result).toContain("[DOB]");
+  });
 });
 
 describe("deepScrubPii", () => {

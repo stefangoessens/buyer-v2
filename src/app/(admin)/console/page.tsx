@@ -7,6 +7,7 @@ import { AdminShell, type AdminShellSession } from "@/components/admin/AdminShel
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import { AdminMetricCard } from "@/components/admin/AdminMetricCard";
 import { AdminEmptyState } from "@/components/admin/AdminEmptyState";
+import { DisclosureReviewQueue } from "@/components/admin/DisclosureReviewQueue";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatConsoleTimestamp, pluralize } from "@/lib/admin/format";
 
@@ -83,6 +84,12 @@ function ConsoleOverviewContent() {
       </section>
 
       <section className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="lg:col-span-2">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-500">
+            Disclosure review
+          </h2>
+          <DisclosureReviewQueue />
+        </div>
         <div>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-500">
             Review queues

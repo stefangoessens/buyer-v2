@@ -1899,11 +1899,86 @@ export default defineSchema({
     resolvedBy: v.optional(v.id("users")),
     resolutionNotes: v.optional(v.string()),
     createdAt: v.string(),
+    // KIN-1078 — disclosure packet extensions. All optional so existing
+    // rows (from non-packet jobs) still validate. The disclosure parser
+    // engine populates these; legacy docParser writes leave them undefined.
+    category: v.optional(
+      v.union(
+        v.literal("structural"),
+        v.literal("water"),
+        v.literal("hoa"),
+        v.literal("legal"),
+        v.literal("insurance"),
+        v.literal("environmental"),
+        v.literal("title"),
+        v.literal("not_disclosed"),
+      ),
+    ),
+    pageReference: v.optional(v.string()),
+    evidenceQuote: v.optional(v.string()),
+    sourceFileName: v.optional(v.string()),
+    buyerFriendlyExplanation: v.optional(v.string()),
+    recommendedAction: v.optional(v.string()),
+    packetVersion: v.optional(v.number()),
+    packetId: v.optional(v.id("disclosurePackets")),
+    findingKey: v.optional(v.string()),
   })
     .index("by_jobId", ["jobId"])
     .index("by_dealRoomId", ["dealRoomId"])
     .index("by_rule_and_severity", ["rule", "severity"])
-    .index("by_requiresReview_and_severity", ["requiresReview", "severity"]),
+    .index("by_requiresReview_and_severity", ["requiresReview", "severity"])
+    .index("by_packetId", ["packetId"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DISCLOSURE PACKETS (KIN-1078)
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // A disclosure packet bundles every file a buyer uploaded in a single
+  // disclosure review session (one deal room, one packetVersion). Versions
+  // are monotonically increasing per dealRoom — uploading a new packet
+  // supersedes the prior one. Findings live in `fileAnalysisFindings` and
+  // are denormalized back by `packetId` via the `by_packetId` index.
+  disclosurePackets: defineTable({
+    dealRoomId: v.id("dealRooms"),
+    buyerId: v.id("users"),
+    propertyId: v.id("properties"),
+    version: v.number(),
+    status: v.union(
+      v.literal("uploading"),
+      v.literal("processing"),
+      v.literal("ready"),
+      v.literal("partial_failure"),
+      v.literal("failed"),
+      v.literal("superseded"),
+    ),
+    // Hex SHA-256 of the sorted per-file hashes, used to de-dupe identical
+    // re-uploads (buyer uploads the same PDFs twice → return existing packet).
+    contentHash: v.string(),
+    files: v.array(
+      v.object({
+        storageId: v.id("_storage"),
+        fileName: v.string(),
+        fileHash: v.string(),
+        byteSize: v.number(),
+        mimeType: v.string(),
+        status: v.union(
+          v.literal("pending"),
+          v.literal("ocr"),
+          v.literal("parsing"),
+          v.literal("done"),
+          v.literal("failed"),
+        ),
+        failureReason: v.optional(v.string()),
+      }),
+    ),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    supersededAt: v.optional(v.string()),
+    supersededBy: v.optional(v.id("disclosurePackets")),
+  })
+    .index("by_dealRoomId_and_version", ["dealRoomId", "version"])
+    .index("by_buyerId", ["buyerId"])
+    .index("by_contentHash", ["contentHash"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // OFFER COCKPIT DRAFTS (KIN-791)

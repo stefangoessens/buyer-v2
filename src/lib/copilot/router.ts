@@ -69,8 +69,8 @@ const ROUTES: ReadonlyArray<RouteDefinition> = [
   {
     intent: "documents",
     engine: "docs",
-    availability: "planned",
-    description: "Document parser engine — planned",
+    availability: "available",
+    description: "Disclosure parser engine (KIN-1078)",
   },
   {
     intent: "scheduling",

@@ -1,7 +1,7 @@
 [project]
 name = "buyer-v2-python-workers"
 version = "0.1.0"
-description = "Python workers for buyer-v2: portal fetch orchestration, deterministic extractors, Browser Use fallback"
+description = "Python workers for buyer-v2: portal fetch orchestration, deterministic extractors, Browser Use fallback, disclosure OCR"
 requires-python = ">=3.13"
 dependencies = [
   "httpx>=0.28.0",
@@ -9,6 +9,13 @@ dependencies = [
   "lxml>=5.3.0",
   "pydantic>=2.9.0",
   "structlog>=24.4.0",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "pdfplumber>=0.11.0",
+  "pytesseract>=0.3.13",
+  "Pillow>=11.0.0",
+  "pdf2image>=1.17.0",
+  "langdetect>=1.0.9",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +33,7 @@ requires = ["setuptools>=75.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["common*", "fetch*", "parsers*", "fallback*", "sources*", "lib*", "crawlers*"]
+include = ["common*", "fetch*", "parsers*", "fallback*", "sources*", "lib*", "crawlers*", "ocr*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

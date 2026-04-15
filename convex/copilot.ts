@@ -234,6 +234,7 @@ export const ask = action({
         costs: "cost",
         leverage: "leverage",
         offer: "offer",
+        documents: "doc_parser",
       };
       const engineType = engineTypeByIntent[intent];
       if (!engineType) return null;
