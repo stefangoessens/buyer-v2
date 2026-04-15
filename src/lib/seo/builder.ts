@@ -325,6 +325,7 @@ export function buildStructuredData(
         ...(input.lastModified ? { dateModified: input.lastModified } : {}),
       };
     }
+    case "story":
     case "marketing":
     case "product":
     case "system":
@@ -338,4 +339,73 @@ export function buildStructuredData(
       };
     }
   }
+}
+
+// MARK: - Buyer story schemas (KIN-1087)
+
+/**
+ * Schema.org Review markup for an approved buyer-story detail page.
+ *
+ * `itemReviewed` MUST be the buyer-v2 Organization, NOT the story
+ * itself — the buyer is reviewing the brokerage experience, and
+ * Google's Review rich-result rules require an itemReviewed that
+ * represents the entity being reviewed.
+ */
+export function buildBuyerStoryReviewSchema(opts: {
+  storyTitle: string;
+  storyBody: string;
+  storySlug: string;
+  buyerDisplayName: string;
+  closedLabel: string;
+  totalSavedUsd: number;
+  canonicalUrl: string;
+  organizationName?: string;
+  organizationUrl?: string;
+  datePublished?: string;
+}): Record<string, unknown> {
+  const orgName = opts.organizationName ?? DEFAULT_SITE_NAME;
+  const orgUrl = opts.organizationUrl ?? getSiteOrigin();
+  const datePublished =
+    opts.datePublished ?? new Date().toISOString().slice(0, 10);
+  return {
+    "@context": "https://schema.org",
+    "@type": "Review",
+    itemReviewed: {
+      "@type": "Organization",
+      name: orgName,
+      url: orgUrl,
+    },
+    author: {
+      "@type": "Person",
+      name: opts.buyerDisplayName,
+    },
+    reviewBody: opts.storyBody,
+    name: opts.storyTitle,
+    url: opts.canonicalUrl,
+    datePublished,
+    reviewRating: {
+      "@type": "Rating",
+      ratingValue: "5",
+      bestRating: "5",
+      worstRating: "1",
+    },
+  };
+}
+
+/**
+ * Schema.org CollectionPage markup for the `/stories` archive page.
+ * Only emit when at least one approved story exists — gating happens
+ * in the route, not the builder.
+ */
+export function buildBuyerStoriesCollectionSchema(opts: {
+  canonicalUrl: string;
+  storyCount: number;
+}): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "CollectionPage",
+    name: "Buyer stories",
+    url: opts.canonicalUrl,
+    numberOfItems: opts.storyCount,
+  };
 }

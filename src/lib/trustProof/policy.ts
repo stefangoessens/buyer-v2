@@ -11,6 +11,7 @@
  */
 
 import type {
+  BuyerStory,
   CaseStudy,
   LabelingPolicy,
   LabeledCaseStudy,
@@ -288,4 +289,107 @@ export function summarizeTrustProof(
     liveProofBlocks: liveBlocks,
     hasLiveProof: liveCases > 0 || liveBlocks > 0,
   };
+}
+
+// MARK: - Buyer story approval (KIN-1087)
+
+/**
+ * Thrown when an `approved` buyer story is missing any of the three
+ * compliance gates. The build-time content loader catches these and
+ * aborts the build — an approved story without release/broker/legal
+ * sign-off is a legal incident, not a runtime degradation.
+ */
+export class BuyerStoryApprovalError extends Error {
+  constructor(
+    public storyId: string,
+    public reason: string
+  ) {
+    super(`Buyer story "${storyId}" is approved but invalid: ${reason}`);
+    this.name = "BuyerStoryApprovalError";
+  }
+}
+
+/**
+ * Hard guardrail: a story row is only considered "approved" for public
+ * display if ALL three compliance gates are set:
+ *   1. `compliance.releaseRef` — non-empty pointer to the signed release
+ *   2. `compliance.brokerApprovedForPublicUse === true`
+ *   3. `compliance.legalApprovedForPublicUse === true`
+ *
+ * Called from:
+ *   - build-time content loader (throws -> build fails)
+ *   - unit tests asserting each seed obeys the invariant
+ *   - runtime list helpers (defensive)
+ *
+ * Draft stories intentionally bypass this check — drafts are allowed
+ * to omit release metadata until broker/legal review happens.
+ */
+export function assertBuyerStoryCompliance(story: BuyerStory): void {
+  if (story.publicationStatus !== "approved") return;
+  if (
+    !story.compliance.releaseRef ||
+    story.compliance.releaseRef.trim() === ""
+  ) {
+    throw new BuyerStoryApprovalError(story.id, "missing compliance.releaseRef");
+  }
+  if (story.compliance.brokerApprovedForPublicUse !== true) {
+    throw new BuyerStoryApprovalError(
+      story.id,
+      "compliance.brokerApprovedForPublicUse must be true"
+    );
+  }
+  if (story.compliance.legalApprovedForPublicUse !== true) {
+    throw new BuyerStoryApprovalError(
+      story.id,
+      "compliance.legalApprovedForPublicUse must be true"
+    );
+  }
+}
+
+/**
+ * Filter a catalog to only publicly-publishable stories (approved +
+ * passes compliance). Drafts are excluded by default. Call sites that
+ * want to render drafts (with a DRAFT badge on an internal preview
+ * route) pass `{ includeDrafts: true }`.
+ *
+ * Every approved story is run through `assertBuyerStoryCompliance`
+ * — if a story sneaks into the catalog with `publicationStatus:
+ * "approved"` but missing compliance metadata, this throws. This is
+ * intentional: we'd rather fail the build than silently publish an
+ * unapproved testimonial.
+ */
+export function filterPublishableStories(
+  stories: readonly BuyerStory[],
+  opts: { includeDrafts?: boolean } = {}
+): BuyerStory[] {
+  const publishable: BuyerStory[] = [];
+  for (const story of stories) {
+    if (story.publicationStatus === "approved") {
+      assertBuyerStoryCompliance(story);
+      publishable.push(story);
+    } else if (story.publicationStatus === "draft" && opts.includeDrafts) {
+      publishable.push(story);
+    }
+  }
+  return publishable;
+}
+
+/**
+ * Top N stories for a given placement, sorted by `sortOrder` ascending.
+ * Used by the homepage (3 cards) and pricing section (3 cards) to pick
+ * their featured stories, and by /stories to render the full index.
+ *
+ * Drafts are excluded by default. The story-ui-routes teammate passes
+ * `{ includeDrafts: true }` only for internal preview builds.
+ */
+export function selectStoriesForPlacement(
+  stories: readonly BuyerStory[],
+  placement: "home" | "pricing" | "stories",
+  limit: number,
+  opts: { includeDrafts?: boolean } = {}
+): BuyerStory[] {
+  return filterPublishableStories(stories, opts)
+    .filter((s) => s.placements.includes(placement))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .slice(0, limit);
 }

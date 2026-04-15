@@ -32,6 +32,7 @@ export type SeoContentKind =
   | "howTo"          // step-by-step pages (gets HowTo JSON-LD)
   | "legal"          // terms/privacy/disclosures
   | "article"        // blog articles (future KIN-812)
+  | "story"          // verified buyer stories (KIN-1087) — Review JSON-LD
   | "product"        // product areas (dashboard, deal room — gated)
   | "system";        // 404, error pages
 

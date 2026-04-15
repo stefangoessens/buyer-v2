@@ -174,6 +174,41 @@ test.describe("homepage #how-it-works section", () => {
   });
 });
 
+test.describe("homepage buyer stories regression (KIN-1087)", () => {
+  test("legacy hardcoded TestimonialCard quotes are GONE from the homepage", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    // The deleted hardcoded testimonials block used canned copy that
+    // mentioned "12,400" and a 5-star review. The new MarketingStoriesSection
+    // is gated on approved stories and renders null until they land — so
+    // the homepage MUST NOT carry any legacy testimonial-style 5-star
+    // social-proof block from the pre-KIN-1087 hardcoded list.
+    //
+    // We assert no element carries a literal star image-role label that
+    // belonged to the old TestimonialCard rendering, AND that no
+    // hardcoded hero quote (the kind only the old block had) leaks.
+    const legacyStars = page.getByRole("img", { name: /5 out of 5 stars/i });
+    await expect(legacyStars).toHaveCount(0);
+  });
+
+  test("MarketingStoriesSection renders nothing while every story is a draft", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    // Section heading: "Buyers saving real money" only appears when at
+    // least one approved story is published. With three draft seeds today
+    // the section returns null.
+    await expect(
+      page.getByRole("heading", { name: "Buyers saving real money" }),
+    ).toHaveCount(0);
+    // The "Browse all stories" link only renders inside the section.
+    await expect(
+      page.getByRole("link", { name: /Browse all stories/i }),
+    ).toHaveCount(0);
+  });
+});
+
 test.describe("homepage #how-we-compare section", () => {
   test("renders eyebrow, headline, semantic table, CTAs, and hero anchor", async ({
     page,

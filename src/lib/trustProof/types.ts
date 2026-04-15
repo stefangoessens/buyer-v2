@@ -168,3 +168,100 @@ export interface TrustProofCatalog {
   caseStudies: CaseStudy[];
   proofBlocks: ProofBlock[];
 }
+
+// MARK: - Buyer stories (KIN-1087)
+
+/**
+ * Buyer classification for storytelling segments. First-time buyers,
+ * repeat buyers, and investor buyers carry distinct objection sets,
+ * so stories are grouped and filtered by type.
+ */
+export type BuyerType = "first_time" | "repeat" | "investor";
+
+/**
+ * Publication status for a buyer story. Drafts render only when the
+ * caller explicitly opts in via `includeDrafts`; approved stories
+ * require all three compliance gates (release ref + broker + legal)
+ * before they are ever returned to the UI. See
+ * `policy.ts::assertBuyerStoryCompliance` for the hard invariant.
+ */
+export type PublicationStatus = "draft" | "approved";
+
+/**
+ * Where a story is allowed to appear. A story can ship to multiple
+ * placements; selectors filter by placement, then sortOrder.
+ */
+export type StoryPlacement = "home" | "pricing" | "stories";
+
+/**
+ * A verified-buyer story — the narrative content behind the /stories
+ * index, /stories/[slug] detail page, homepage social-proof row, and
+ * pricing testimonial row. Stories carry Florida-specific leverage
+ * context (flood zone, wind-mit, hurricane insurance, roof age) that
+ * differentiates buyer-v2 from generic buyer-brokerage testimonials.
+ *
+ * **Compliance invariant**: a story with `publicationStatus: "approved"`
+ * MUST have `compliance.releaseRef`, `compliance.brokerApprovedForPublicUse`,
+ * AND `compliance.legalApprovedForPublicUse` set. The build-time loader
+ * in `policy.ts::assertBuyerStoryCompliance` throws if any approved
+ * story is missing any of those — a missing release is a legal
+ * incident, not a type error we can paper over at runtime.
+ *
+ * **PII discipline**: `buyer.lastInitial` is a SINGLE letter. Never a
+ * full surname. `buyer.displayName` is always rendered as
+ * `${firstName} ${lastInitial}.` — the shape the buyer explicitly
+ * consented to in the release. Analytics events carry `storyId` only —
+ * never the buyer's name.
+ */
+export interface BuyerStory {
+  id: string;
+  slug: string;
+  visibility: "public" | "internal";
+  publicationStatus: PublicationStatus;
+  placements: StoryPlacement[];
+  sortOrder: number;
+
+  buyer: {
+    firstName: string;
+    /** Single letter. Must NEVER contain a full surname. */
+    lastInitial: string;
+    /** Always rendered as `${firstName} ${lastInitial}.` */
+    displayName: string;
+    type: BuyerType;
+    city: string;
+    state: "FL";
+    photoSrc?: string;
+    photoAlt?: string;
+  };
+
+  teaser: {
+    savedUsd: number;
+    quote: string;
+    cardHeadline: string;
+    /** e.g. "Closed Q1 2026" */
+    closedLabel: string;
+  };
+
+  story: {
+    title: string;
+    summary: string;
+    heroQuote?: string;
+    floridaAngle: string;
+    body: string;
+  };
+
+  outcomes: {
+    totalSavedUsd: number;
+    purchasePriceUsd?: number;
+    rebateUsd?: number;
+    negotiatedCreditsUsd?: number;
+    daysToClose?: number;
+  };
+
+  compliance: {
+    releaseRef?: string;
+    brokerApprovedForPublicUse: boolean;
+    legalApprovedForPublicUse: boolean;
+    retentionBucket: "legal_documents";
+  };
+}

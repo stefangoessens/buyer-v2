@@ -17,7 +17,28 @@ function StarIcon() {
   );
 }
 
+/**
+ * Privacy-aware initials helper. Expects displayName in either
+ * `"FirstName L."` (e.g. "DJ R.") or `"FirstName LastName"` shape and
+ * returns two letters: first letter of first token + first letter of
+ * last token (after stripping non-letter characters). Single-token
+ * names fall back to a single uppercase letter so the helper never
+ * leaks more than what the caller already provided.
+ */
+export function initialsFromDisplayName(displayName: string): string {
+  const parts = displayName.trim().split(/\s+/).filter((p) => p.length > 0);
+  if (parts.length === 0) return "";
+  if (parts.length === 1) {
+    return parts[0].charAt(0).toUpperCase();
+  }
+  const first = parts[0].charAt(0).toUpperCase();
+  const lastClean = parts[parts.length - 1].replace(/[^A-Za-z]/g, "");
+  const last = lastClean.charAt(0).toUpperCase();
+  return first + last;
+}
+
 export function TestimonialCard({ quote, author, role, avatarSrc, rating = 5 }: TestimonialCardProps) {
+  const initials = initialsFromDisplayName(author);
   return (
     <div className="flex h-full flex-col rounded-[24px] border border-neutral-200 bg-white p-8">
       <div className="flex gap-0.5" role="img" aria-label={`${rating} out of 5 stars`}>
@@ -30,7 +51,7 @@ export function TestimonialCard({ quote, author, role, avatarSrc, rating = 5 }: 
         {avatarSrc ? (
           <Image src={avatarSrc} alt={author} width={40} height={40} className="size-10 rounded-full object-cover" />
         ) : (
-          <div className="flex size-10 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">{author.charAt(0)}</div>
+          <div className="flex size-10 items-center justify-center rounded-full bg-primary-100 text-sm font-bold text-primary-700">{initials}</div>
         )}
         <div>
           <div className="text-sm font-semibold text-neutral-800">{author}</div>

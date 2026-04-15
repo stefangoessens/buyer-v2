@@ -13,6 +13,8 @@ import {
   publicBuilders,
   publicCommunities as publicNewConstructionCommunities,
 } from "@/lib/newConstruction/selectors";
+import { BUYER_STORIES } from "@/content/trustProof";
+import { filterPublishableStories } from "@/lib/trustProof/policy";
 
 /**
  * Next.js sitemap generator (KIN-815 + KIN-812 + KIN-818).
@@ -43,13 +45,31 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const origin = getSiteOrigin();
   const today = new Date().toISOString().slice(0, 10);
 
+  // KIN-1087: gate /stories archive + /stories/[slug] entries until at
+  // least one approved buyer story exists. Drafts are NEVER in the
+  // sitemap. The static registry declares /stories as public, so we
+  // strip it here when nothing is publishable.
+  const publishableStories = filterPublishableStories(BUYER_STORIES);
+  const storiesArchiveAllowed = publishableStories.length > 0;
+
   // Static registry routes
-  const staticEntries: MetadataRoute.Sitemap = publicSitemapRoutes().map(
-    (route) => ({
+  const staticEntries: MetadataRoute.Sitemap = publicSitemapRoutes()
+    .filter((route) => route.path !== "/stories" || storiesArchiveAllowed)
+    .map((route) => ({
       url: `${origin}${route.path}`,
       lastModified: route.lastModified ?? today,
       changeFrequency: route.changeFrequency,
       priority: route.priority,
+    }));
+
+  // Dynamic: one entry per approved buyer story. Drafts excluded by
+  // filterPublishableStories.
+  const storyEntries: MetadataRoute.Sitemap = publishableStories.map(
+    (story) => ({
+      url: `${origin}/stories/${story.slug}`,
+      lastModified: today,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
     })
   );
 
@@ -111,5 +131,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...communityEntries,
     ...builderEntries,
     ...newConstructionCommunityEntries,
+    ...storyEntries,
   ];
 }

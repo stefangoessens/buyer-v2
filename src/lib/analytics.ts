@@ -229,6 +229,28 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   /** Fired when the empty-state CTA on the journey list is clicked. */
   journey_list_empty_cta_clicked: { cta: string };
 
+  // ─── Buyer stories (KIN-1087) ──────────────────────────────────────
+  /** Fired when a story card first enters the viewport. */
+  testimonial_card_viewed: { storyId: string; source: "home" | "pricing" };
+  /** Fired when a story card is clicked (navigates to /stories/[slug]). */
+  testimonial_card_clicked: { storyId: string; source: "home" | "pricing" };
+  /** Fired when /stories/[slug] detail page mounts. */
+  story_page_viewed: { storyId: string };
+  /** Fired on page unload; reports how long the buyer spent on the story. */
+  story_read_time_ms: { storyId: string; timeMs: number };
+  /** Fired when the sticky bottom "Start your story" CTA is clicked. */
+  story_cta_clicked: { storyId: string };
+  /** Fired when a related-story card in the carousel is clicked. */
+  story_related_clicked: {
+    sourceStoryId: string;
+    destinationStoryId: string;
+  };
+  /** Fired when the homepage aggregate savings counter first enters the viewport. */
+  aggregate_savings_counter_viewed: {
+    totalSavedUsd: number;
+    storyCount: number;
+  };
+
   // ─── System events ──────────────────────────────────────────────────
   /**
    * Fired when a React error boundary catches an error.
@@ -737,6 +759,49 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "journeys",
     owner: "dashboard",
     whenFired: "Empty-state CTA on the journeys list is clicked",
+    piiSafe: true,
+  },
+
+  testimonial_card_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Story card enters viewport (IntersectionObserver)",
+    piiSafe: true,
+  },
+  testimonial_card_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Story card clicked on homepage or pricing",
+    piiSafe: true,
+  },
+  story_page_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "/stories/[slug] detail page mount",
+    piiSafe: true,
+  },
+  story_read_time_ms: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Story detail page unmount or visibility-change",
+    piiSafe: true,
+  },
+  story_cta_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Sticky 'Start your story' CTA on detail page clicked",
+    piiSafe: true,
+  },
+  story_related_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Related-story card in carousel clicked",
+    piiSafe: true,
+  },
+  aggregate_savings_counter_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "Homepage aggregate savings counter enters viewport",
     piiSafe: true,
   },
 
