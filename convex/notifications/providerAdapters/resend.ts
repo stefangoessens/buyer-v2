@@ -1,4 +1,4 @@
-import { Resend } from "resend";
+import { createHmac } from "node:crypto";
 import type {
   DeliveryRequest,
   DeliveryResult,
@@ -101,7 +101,17 @@ type EmailProviderAdapter = {
   ): EmailWebhookEvent;
 };
 
-type ResendClient = Resend;
+type ResendWebhookVerifier = {
+  verify(args: {
+    payload: string;
+    headers: EmailWebhookSignatureHeaders;
+    webhookSecret: string;
+  }): unknown;
+};
+
+type ResendClient = {
+  webhooks: ResendWebhookVerifier;
+};
 
 let resendClientFactory: ((apiKey: string) => ResendClient) | null = null;
 
@@ -355,7 +365,21 @@ function mapResendEmailTransition(
 
 function getResendClient(): ResendClient {
   const apiKey = process.env.RESEND_API_KEY?.trim() ?? "notification-fabric-stub";
-  return (resendClientFactory ?? ((key: string) => new Resend(key)))(apiKey);
+  return (resendClientFactory ?? createDefaultResendClient)(apiKey);
+}
+
+function createDefaultResendClient(_apiKey: string): ResendClient {
+  return {
+    webhooks: {
+      verify(args) {
+        if (!verifyResendWebhookSignature(args)) {
+          throw new Error("Invalid Resend webhook signature");
+        }
+
+        return true;
+      },
+    },
+  };
 }
 
 function getString(value: unknown): string | undefined {
@@ -413,4 +437,71 @@ function escapeHtml(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function verifyResendWebhookSignature(args: {
+  payload: string;
+  headers: EmailWebhookSignatureHeaders;
+  webhookSecret: string;
+}): boolean {
+  const secret = decodeResendWebhookSecret(args.webhookSecret);
+  if (
+    !secret ||
+    !args.headers.id.trim() ||
+    !args.headers.timestamp.trim() ||
+    !args.headers.signature.trim()
+  ) {
+    return false;
+  }
+
+  const signedPayload = [
+    args.headers.id.trim(),
+    args.headers.timestamp.trim(),
+    args.payload,
+  ].join(".");
+  const expectedSignature = createHmac("sha256", secret)
+    .update(signedPayload)
+    .digest("base64");
+
+  return extractResendSignatures(args.headers.signature).some((signature) =>
+    timingSafeEqual(signature, expectedSignature),
+  );
+}
+
+function decodeResendWebhookSecret(secret: string): Buffer | null {
+  const normalized = secret.trim().replace(/^whsec_/, "");
+  if (!normalized) {
+    return null;
+  }
+
+  const decoded = Buffer.from(normalized, "base64");
+  if (decoded.length > 0 && looksLikeBase64(normalized, decoded)) {
+    return decoded;
+  }
+
+  return Buffer.from(normalized, "utf8");
+}
+
+function looksLikeBase64(value: string, decoded: Buffer): boolean {
+  const normalizedValue = value.replace(/=+$/u, "");
+  const encodedValue = decoded.toString("base64").replace(/=+$/u, "");
+  return encodedValue === normalizedValue;
+}
+
+function extractResendSignatures(signatureHeader: string): string[] {
+  return Array.from(signatureHeader.matchAll(/v1,([^\s,]+)/gu), (match) =>
+    match[1] ?? "",
+  ).filter((signature) => signature.length > 0);
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  let mismatch = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    mismatch |= a.charCodeAt(index) ^ b.charCodeAt(index);
+  }
+  return mismatch === 0;
 }
