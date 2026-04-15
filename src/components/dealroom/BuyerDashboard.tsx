@@ -5,6 +5,7 @@ import { ActiveDealsGrid } from "@/components/dashboard/ActiveDealsGrid";
 import { MarketDigestSection } from "@/components/dashboard/MarketDigestSection";
 import { RecentInsightsFeed } from "@/components/dashboard/RecentInsightsFeed";
 import { DashboardNotificationsInbox } from "@/components/dashboard/DashboardNotificationsInbox";
+import { SmsEnrollmentBanner } from "@/components/dashboard/SmsEnrollmentBanner";
 
 interface BuyerDashboardProps {
   now: string;
@@ -29,6 +30,7 @@ export function BuyerDashboard({ now }: BuyerDashboardProps) {
         </p>
       </header>
 
+      <SmsEnrollmentBanner />
       <PasteLinkCTA />
       <ActiveDealsGrid />
 

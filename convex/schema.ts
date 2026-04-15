@@ -22,12 +22,16 @@ import {
   eligibilityAgreementType,
   eligibilityBlockingReason,
   eligibilityRequiredAction,
+  dealRoomOrigin,
   feeLedgerEntryType,
   feeLedgerSource,
   financingType,
   leadAttributionStatus,
   lenderValidationOutcome,
   lenderValidationReasonCode,
+  notificationSuppressionReason,
+  notificationSuppressionScope,
+  notificationSuppressionSource,
   payoutStatus,
   rateLimitChannel,
   reconciliationReportType,
@@ -35,6 +39,9 @@ import {
   routingPath,
   smsConsentStatus,
   smsIntakeOutcome,
+  smsMessageDirection,
+  smsMessageProcessingStatus,
+  smsMessageProviderState,
 } from "./lib/validators";
 import { buyerProfileRecordFields } from "./lib/buyerProfile";
 import {
@@ -308,12 +315,16 @@ export default defineSchema({
       v.union(v.literal("high"), v.literal("normal"), v.literal("low")),
     ),
     journeyLabel: v.optional(v.string()),
+    origin: v.optional(dealRoomOrigin),
+    originMessageId: v.optional(v.id("smsMessages")),
   })
     .index("by_propertyId", ["propertyId"])
     .index("by_buyerId", ["buyerId"])
     .index("by_buyerId_and_status", ["buyerId", "status"])
     .index("by_buyerId_and_archivedAt", ["buyerId", "archivedAt"])
-    .index("by_buyerId_and_priority", ["buyerId", "journeyPriority"]),
+    .index("by_buyerId_and_priority", ["buyerId", "journeyPriority"])
+    .index("by_origin", ["origin"])
+    .index("by_originMessageId", ["originMessageId"]),
 
   agreements: defineTable({
     dealRoomId: v.id("dealRooms"),
@@ -1796,6 +1807,75 @@ export default defineSchema({
     .index("by_messageSid", ["messageSid"])
     .index("by_phoneHash", ["phoneHash"])
     .index("by_outcome", ["outcome"]),
+
+  // Durable SMS message ledger for outbound Twilio sends and inbound
+  // SMS-to-deal-room processing. Admin console and webhook handlers can
+  // look up messages by Twilio SID or by recipient / deal room refs.
+  smsMessages: defineTable({
+    twilioMessageSid: v.string(),
+    direction: smsMessageDirection,
+    fromPhone: v.string(),
+    toPhone: v.string(),
+    body: v.string(),
+    status: smsMessageProcessingStatus,
+    providerState: smsMessageProviderState,
+    parsedUrls: v.optional(
+      v.array(
+        v.object({
+          rawUrl: v.string(),
+          normalizedUrl: v.optional(v.string()),
+          portal: v.optional(
+            v.union(
+              v.literal("zillow"),
+              v.literal("redfin"),
+              v.literal("realtor"),
+              v.literal("homes"),
+              v.literal("compass"),
+              v.literal("trulia")
+            )
+          ),
+          listingId: v.optional(v.string()),
+          addressHint: v.optional(v.string()),
+        })
+      )
+    ),
+    buyerId: v.optional(v.id("users")),
+    dealRoomId: v.optional(v.id("dealRooms")),
+    createdDealRoomId: v.optional(v.id("dealRooms")),
+    propertyId: v.optional(v.id("properties")),
+    errorReason: v.optional(v.string()),
+    receivedAt: v.string(),
+    processedAt: v.optional(v.string()),
+    statusUpdatedAt: v.optional(v.string()),
+    providerStateUpdatedAt: v.optional(v.string()),
+  })
+    .index("by_twilioMessageSid", ["twilioMessageSid"])
+    .index("by_direction_and_status", ["direction", "status"])
+    .index("by_status", ["status"])
+    .index("by_providerState", ["providerState"])
+    .index("by_buyerId", ["buyerId"])
+    .index("by_dealRoomId", ["dealRoomId"])
+    .index("by_createdDealRoomId", ["createdDealRoomId"])
+    .index("by_fromPhone", ["fromPhone"])
+    .index("by_toPhone", ["toPhone"]),
+
+  // Shared suppression list used by SMS now and the broader notification
+  // fabric once KIN-1091 lands on main. A row means the recipient is
+  // currently suppressed for the given scope.
+  notificationSuppressions: defineTable({
+    recipientHash: v.string(),
+    scope: notificationSuppressionScope,
+    reason: notificationSuppressionReason,
+    source: notificationSuppressionSource,
+    note: v.optional(v.string()),
+    blockedByUserId: v.optional(v.id("users")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_recipientHash", ["recipientHash"])
+    .index("by_recipientHash_and_scope", ["recipientHash", "scope"])
+    .index("by_scope", ["scope"])
+    .index("by_reason", ["reason"]),
 
   // ═══════════════════════════════════════════════════════════════════════════
   // NEGOTIATION BRIEF EXPORTS (KIN-839)

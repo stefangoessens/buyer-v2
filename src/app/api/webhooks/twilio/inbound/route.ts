@@ -1,130 +1,105 @@
-import { ConvexHttpClient } from "convex/browser";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../../../../../../convex/_generated/api";
+import { trackServerEvent } from "@/lib/analytics.server";
 import { env } from "@/lib/env";
+import {
+  buildTwimlMessage,
+  normalizeInboundPayload,
+  parseTwilioWebhookParams,
+  readTwilioRuntimeConfig,
+  validateTwilioWebhook,
+} from "../../../../../../convex/notifications/providerAdapters/twilio";
 
-type ConvexMutationRef = Parameters<ConvexHttpClient["mutation"]>[0];
-
-const recordWebhookReceipt = "notifications/webhooks:recordWebhookReceipt" as unknown as ConvexMutationRef;
-
-function parseFormBody(rawBody: string): Record<string, string> {
-  return Object.fromEntries(new URLSearchParams(rawBody));
-}
-
-function stableTwilioEventId(routeKind: string, rawBody: string): string {
-  const digest = createHash("sha256").update(rawBody).digest("hex").slice(0, 32);
-  return `twilio:${routeKind}:${digest}`;
-}
-
-function verifyTwilioSignature(request: Request, rawBody: string): boolean {
-  const secret = process.env.TWILIO_WEBHOOK_SECRET?.trim();
-  const signature = request.headers.get("x-twilio-signature")?.trim();
-  if (!secret || !signature) {
-    return false;
-  }
-
-  const url = new URL(request.url).toString();
-  const form = parseFormBody(rawBody);
-  const signedPayload = [url, ...Object.entries(form).sort(([a], [b]) => a.localeCompare(b)).flatMap(([key, value]) => [key, value])].join("");
-  const expected = createHmac("sha1", secret).update(signedPayload).digest("base64");
-
-  const expectedBuffer = Buffer.from(expected);
-  const signatureBuffer = Buffer.from(signature);
-  return (
-    expectedBuffer.length === signatureBuffer.length &&
-    timingSafeEqual(expectedBuffer, signatureBuffer)
-  );
-}
-
-async function recordTwilioWebhook(args: {
-  providerEventId: string;
-  payload: string;
-  signatureVerified: boolean;
-  receivedAt: string;
-  status: "received" | "ignored";
-}) {
-  if (!env.NEXT_PUBLIC_CONVEX_URL) {
-    throw new Error("NEXT_PUBLIC_CONVEX_URL is not configured");
-  }
-
-  const client = new ConvexHttpClient(env.NEXT_PUBLIC_CONVEX_URL);
-  return await (client as {
-    mutation: (
-      fn: ConvexMutationRef,
-      args: Record<string, unknown>,
-    ) => Promise<{
-      status: "recorded" | "duplicate";
-      receiptId: string;
-      providerEventId: string;
-    }>;
-  }).mutation(recordWebhookReceipt, {
-    provider: "twilio",
-    providerEventId: args.providerEventId,
-    payload: args.payload,
-    signatureVerified: args.signatureVerified,
-    receivedAt: args.receivedAt,
-    status: args.status,
+function xmlResponse(body: string, status = 200) {
+  return new NextResponse(body, {
+    status,
+    headers: {
+      "Content-Type": "text/xml; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
   });
 }
 
 export async function POST(request: Request) {
+  const config = readTwilioRuntimeConfig();
+  if (!config) {
+    return xmlResponse(buildTwimlMessage(""), 503);
+  }
   if (!env.NEXT_PUBLIC_CONVEX_URL) {
-    return NextResponse.json(
-      { ok: false, error: "convex_not_configured" },
-      { status: 503 },
-    );
+    return xmlResponse(buildTwimlMessage(""), 503);
   }
 
-  if (!process.env.TWILIO_WEBHOOK_SECRET?.trim()) {
-    return NextResponse.json(
-      { ok: false, error: "twilio_webhook_secret_not_configured" },
-      { status: 500 },
-    );
+  const formData = await request.formData();
+  const params = parseTwilioWebhookParams(formData);
+  const signature = request.headers.get("x-twilio-signature");
+  const valid = validateTwilioWebhook({
+    authToken: config.authToken,
+    signature,
+    url: request.url,
+    params,
+  });
+  if (!valid) {
+    return xmlResponse(buildTwimlMessage(""), 403);
   }
 
-  const rawBody = await request.text();
-  const providerEventId = stableTwilioEventId("inbound", rawBody);
-  const signatureVerified = verifyTwilioSignature(request, rawBody);
+  const payload = normalizeInboundPayload(params);
+  if (!payload.messageSid || !payload.from || !payload.to) {
+    return xmlResponse(buildTwimlMessage(""), 400);
+  }
 
-  const receipt = await recordTwilioWebhook({
-    providerEventId,
-    payload: rawBody,
-    signatureVerified,
-    receivedAt: new Date().toISOString(),
-    status: signatureVerified ? "received" : "ignored",
+  const client = new ConvexHttpClient(env.NEXT_PUBLIC_CONVEX_URL);
+  const result = await client.action(api.sms.inboundHandler.handleInboundWebhook, {
+    messageSid: payload.messageSid,
+    fromPhone: payload.from,
+    toPhone: payload.to,
+    body: payload.body,
+    sharedSecret: config.authToken,
   });
 
-  if (receipt.status === "duplicate") {
-    return NextResponse.json({
-      ok: true,
-      duplicate: true,
-      provider: "twilio",
-      providerEventId: receipt.providerEventId,
-      receiptId: receipt.receiptId,
-      signatureVerified,
+  await trackServerEvent("sms_inbound_received", {
+    messageId: result.messageId,
+    recipientHash: result.recipientHash,
+  });
+
+  if (
+    result.portal &&
+    (result.status === "completed" || result.status === "duplicate") &&
+    (result.portal === "zillow" ||
+      result.portal === "redfin" ||
+      result.portal === "realtor")
+  ) {
+    await trackServerEvent("sms_inbound_parsed", {
+      messageId: result.messageId,
+      recipientHash: result.recipientHash,
+      portal: result.portal,
     });
   }
 
-  if (!signatureVerified) {
-    return NextResponse.json(
-      {
-        ok: false,
-        provider: "twilio",
-        providerEventId,
-        receiptId: receipt.receiptId,
-        signatureVerified,
-        error: "invalid_signature",
-      },
-      { status: 401 },
-    );
+  if (result.createdDealRoomId) {
+    await trackServerEvent("sms_inbound_dealroom_created", {
+      messageId: result.messageId,
+      recipientHash: result.recipientHash,
+      dealRoomId: result.createdDealRoomId,
+    });
+  } else if (result.status === "duplicate" && result.dealRoomId) {
+    await trackServerEvent("sms_inbound_duplicate", {
+      messageId: result.messageId,
+      recipientHash: result.recipientHash,
+      dealRoomId: result.dealRoomId,
+    });
+  } else if (result.status === "unsupported_url") {
+    await trackServerEvent("sms_inbound_unsupported_url", {
+      messageId: result.messageId,
+      recipientHash: result.recipientHash,
+      portal: result.portal,
+    });
+  } else if (result.status === "needs_verification") {
+    await trackServerEvent("sms_inbound_unverified_sender", {
+      messageId: result.messageId,
+      recipientHash: result.recipientHash,
+    });
   }
 
-  return NextResponse.json({
-    ok: true,
-    duplicate: false,
-    provider: "twilio",
-    providerEventId,
-    receiptId: receipt.receiptId,
-    signatureVerified,
-  });
+  return xmlResponse(buildTwimlMessage(result.replySent ? result.replyBody : ""));
 }

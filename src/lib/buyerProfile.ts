@@ -62,6 +62,40 @@ export interface BuyerProfileCommunicationPreferences {
   categories: CategoryEnablement;
 }
 
+export type BuyerProfileSmsConsentSource =
+  | "dashboard_banner"
+  | "offer_gate"
+  | "sms_to_deal_room"
+  | "support"
+  | "admin";
+
+export type BuyerProfileSmsConsentState =
+  | "unknown"
+  | "pending"
+  | "verified"
+  | "opted_out"
+  | "suppressed";
+
+export interface BuyerProfileSmsConsentLogEntry {
+  source: BuyerProfileSmsConsentSource;
+  state: BuyerProfileSmsConsentState;
+  phone: string;
+  policyVersion: string;
+  createdAt: string;
+  messageSid?: string;
+  verificationSid?: string;
+  note?: string;
+}
+
+export interface BuyerProfileSms {
+  phoneVerifiedAt: string | null;
+  consentState: BuyerProfileSmsConsentState;
+  consentSource: BuyerProfileSmsConsentSource | null;
+  consentPolicyVersion: string | null;
+  consentUpdatedAt: string | null;
+  consentLog: BuyerProfileSmsConsentLogEntry[];
+}
+
 export interface BuyerProfileView {
   profileId: string | null;
   hasStoredProfile: boolean;
@@ -70,6 +104,7 @@ export interface BuyerProfileView {
   financing: BuyerProfileFinancing;
   searchPreferences: BuyerProfileSearchPreferences;
   communicationPreferences: BuyerProfileCommunicationPreferences;
+  sms: BuyerProfileSms;
   household: BuyerProfileHousehold;
   createdAt: string | null;
   updatedAt: string | null;
@@ -157,6 +192,19 @@ export function buildCommunicationPreferences(
   };
 }
 
+export function buildSmsState(
+  overrides?: Partial<BuyerProfileSms>,
+): BuyerProfileSms {
+  return {
+    phoneVerifiedAt: overrides?.phoneVerifiedAt ?? null,
+    consentState: overrides?.consentState ?? "unknown",
+    consentSource: overrides?.consentSource ?? null,
+    consentPolicyVersion: overrides?.consentPolicyVersion ?? null,
+    consentUpdatedAt: overrides?.consentUpdatedAt ?? null,
+    consentLog: overrides?.consentLog ?? [],
+  };
+}
+
 export function buildBuyerProfileView(params: {
   userId: string;
   identity: BuyerProfileIdentity;
@@ -165,6 +213,7 @@ export function buildBuyerProfileView(params: {
     hasStoredProfile?: boolean;
     createdAt?: string | null;
     updatedAt?: string | null;
+    sms?: Partial<BuyerProfileSms>;
   };
   communicationPreferences?: Partial<BuyerProfileCommunicationPreferences>;
   includeInternal?: boolean;
@@ -185,6 +234,7 @@ export function buildBuyerProfileView(params: {
     communicationPreferences: buildCommunicationPreferences(
       params.communicationPreferences,
     ),
+    sms: buildSmsState(params.profile?.sms),
     household: sections.household,
     createdAt: params.profile?.createdAt ?? null,
     updatedAt: params.profile?.updatedAt ?? null,

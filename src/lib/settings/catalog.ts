@@ -82,6 +82,135 @@ export const SETTINGS_CATALOG: SettingsCatalog = {
       constraints: { min: 0, max: 10 },
     },
 
+    // ─── SMS / Twilio ─────────────────────────────────────────
+    {
+      key: "sms.twilio_account_sid_env_var_name",
+      label: "Twilio account SID env var",
+      description:
+        "Environment variable name that resolves to the Twilio Account SID.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "TWILIO_ACCOUNT_SID" },
+      constraints: {
+        minLength: 1,
+        maxLength: 100,
+        pattern: "^[A-Z][A-Z0-9_]*$",
+      },
+    },
+    {
+      key: "sms.twilio_auth_token_env_var_name",
+      label: "Twilio auth token env var",
+      description:
+        "Environment variable name that resolves to the Twilio auth token.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "TWILIO_AUTH_TOKEN" },
+      constraints: {
+        minLength: 1,
+        maxLength: 100,
+        pattern: "^[A-Z][A-Z0-9_]*$",
+      },
+    },
+    {
+      key: "sms.twilio_verify_service_sid_env_var_name",
+      label: "Twilio Verify SID env var",
+      description:
+        "Environment variable name that resolves to the Twilio Verify service SID.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "TWILIO_VERIFY_SERVICE_SID" },
+      constraints: {
+        minLength: 1,
+        maxLength: 100,
+        pattern: "^[A-Z][A-Z0-9_]*$",
+      },
+    },
+    {
+      key: "sms.twilio_messaging_service_sid_transactional",
+      label: "Transactional messaging service SID",
+      description:
+        "Twilio Messaging Service SID used for transactional SMS sends.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: {
+        kind: "string",
+        value: "MG00000000000000000000000000000000",
+      },
+      constraints: {
+        minLength: 34,
+        maxLength: 34,
+        pattern: "^MG[0-9a-fA-F]{32}$",
+      },
+    },
+    {
+      key: "sms.twilio_messaging_service_sid_relationship",
+      label: "Relationship messaging service SID",
+      description:
+        "Twilio Messaging Service SID reserved for relationship / engagement SMS.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: {
+        kind: "string",
+        value: "MG00000000000000000000000000000000",
+      },
+      constraints: {
+        minLength: 34,
+        maxLength: 34,
+        pattern: "^MG[0-9a-fA-F]{32}$",
+      },
+    },
+    {
+      key: "sms.twilio_from_number",
+      label: "Twilio sender number",
+      description:
+        "Public Twilio SMS sender number used for outbound transactional alerts.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "+15555550100" },
+      constraints: {
+        minLength: 8,
+        maxLength: 16,
+        pattern: "^\\+[1-9]\\d{7,14}$",
+      },
+    },
+    {
+      key: "sms.max_inbound_per_buyer_per_hour",
+      label: "Inbound SMS throttle per buyer",
+      description:
+        "Maximum number of inbound SMS messages a buyer may send per hour.",
+      category: "operational",
+      kind: "number",
+      writeRole: "admin",
+      defaultValue: { kind: "number", value: 10 },
+      constraints: { min: 1, max: 100, integer: true },
+    },
+    {
+      key: "rollout.sms_outbound_enabled",
+      label: "SMS outbound enabled",
+      description:
+        "Global kill switch for Twilio transactional SMS delivery.",
+      category: "rollout",
+      kind: "boolean",
+      writeRole: "broker",
+      defaultValue: { kind: "boolean", value: false },
+    },
+    {
+      key: "rollout.sms_inbound_enabled",
+      label: "SMS inbound enabled",
+      description:
+        "Global kill switch for the Twilio inbound SMS-to-deal-room flow.",
+      category: "rollout",
+      kind: "boolean",
+      writeRole: "broker",
+      defaultValue: { kind: "boolean", value: false },
+    },
+
     // ─── Rollout / feature flags ────────────────────────────────
     {
       key: "rollout.savings_calculator_enabled",

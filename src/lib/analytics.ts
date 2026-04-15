@@ -162,6 +162,34 @@ export interface AnalyticsEventMap extends LaunchEventMap {
     provider?: NotificationProviderName;
     recipientHash?: string;
   };
+  /** Fired when the Twilio inbound webhook accepts a new SMS payload. */
+  sms_inbound_received: { messageId: string; recipientHash: string };
+  /** Fired when an inbound SMS listing URL parses to a supported portal. */
+  sms_inbound_parsed: {
+    messageId: string;
+    recipientHash: string;
+    portal: "zillow" | "redfin" | "realtor";
+  };
+  /** Fired when an inbound SMS creates a new deal room. */
+  sms_inbound_dealroom_created: {
+    messageId: string;
+    recipientHash: string;
+    dealRoomId: string;
+  };
+  /** Fired when an inbound SMS contains an unsupported portal URL. */
+  sms_inbound_unsupported_url: {
+    messageId: string;
+    recipientHash: string;
+    portal?: string;
+  };
+  /** Fired when an inbound SMS comes from an unverified sender. */
+  sms_inbound_unverified_sender: { messageId: string; recipientHash: string };
+  /** Fired when an inbound SMS resolves to an existing deal room. */
+  sms_inbound_duplicate: {
+    messageId: string;
+    recipientHash: string;
+    dealRoomId: string;
+  };
   /** Fired when a delivery attempt hard-fails before delivery. */
   message_failed: {
     channel: ExternalNotificationChannel;
@@ -778,6 +806,42 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "communication",
     owner: "platform",
     whenFired: "Link click tracked via redirect",
+    piiSafe: true,
+  },
+  sms_inbound_received: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Twilio inbound webhook accepts a new SMS payload",
+    piiSafe: true,
+  },
+  sms_inbound_parsed: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Inbound SMS listing URL parses to a supported portal",
+    piiSafe: true,
+  },
+  sms_inbound_dealroom_created: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Inbound SMS creates a new deal room",
+    piiSafe: true,
+  },
+  sms_inbound_unsupported_url: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Inbound SMS contains an unsupported portal URL",
+    piiSafe: true,
+  },
+  sms_inbound_unverified_sender: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Inbound SMS comes from an unverified sender",
+    piiSafe: true,
+  },
+  sms_inbound_duplicate: {
+    category: "communication",
+    owner: "platform",
+    whenFired: "Inbound SMS resolves to an existing deal room",
     piiSafe: true,
   },
   message_failed: {

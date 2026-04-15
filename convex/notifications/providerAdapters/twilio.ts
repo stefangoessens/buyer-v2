@@ -1,149 +1,340 @@
-import { createHmac } from "node:crypto";
-import type {
-  DeliveryRequest,
-  DeliveryResult,
-  ProviderAdapter,
-  WebhookEvent,
-} from "@/lib/notifications/types";
+import twilio from "twilio";
 
-type TwilioWebhookEnvelope = {
+export interface ProviderAdapter<TInput, TResult> {
+  provider: "twilio";
+  send(config: TwilioRuntimeConfig, input: TInput): Promise<TResult>;
+}
+
+export type TwilioMessageCategory = "transactional" | "relationship";
+
+export type TwilioProviderState =
+  | "queued"
+  | "sending"
+  | "sent"
+  | "delivered"
+  | "undelivered"
+  | "failed"
+  | "received";
+
+export interface TwilioRuntimeConfig {
+  accountSid: string;
+  authToken: string;
+  verifyServiceSid: string;
+  transactionalMessagingServiceSid: string;
+  relationshipMessagingServiceSid: string;
+  fromNumber: string;
+}
+
+export interface TwilioSendMessageInput {
+  to: string;
+  body: string;
+  category?: TwilioMessageCategory;
+  statusCallbackUrl?: string;
+  forceBypassOptOut?: boolean;
+}
+
+export interface TwilioSendMessageResult {
+  sid: string;
+  status: TwilioProviderState;
+  to: string;
+  from: string | null;
+  body: string;
+}
+
+export interface TwilioVerifyStartResult {
+  sid: string;
+  status: string;
+}
+
+export interface TwilioVerifyCheckResult {
+  sid: string;
+  status: string;
+  valid: boolean;
+}
+
+export interface TwilioInboundPayload {
+  accountSid: string;
+  apiVersion: string | null;
+  body: string;
+  from: string;
+  fromCity: string | null;
+  fromCountry: string | null;
+  fromState: string | null;
+  fromZip: string | null;
+  messageSid: string;
+  messagingServiceSid: string | null;
+  numMedia: number;
+  numSegments: number;
+  optOutType: string | null;
+  to: string;
+  toCity: string | null;
+  toCountry: string | null;
+  toState: string | null;
+  toZip: string | null;
+}
+
+export interface TwilioStatusPayload {
+  accountSid: string;
+  apiVersion: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  messageSid: string;
+  messageStatus: string;
+  messagingServiceSid: string | null;
+  to: string | null;
+}
+
+export interface TwilioWebhookValidationInput {
+  authToken: string;
+  signature: string | null;
   url: string;
   params: Record<string, string>;
-  signature: string;
-};
+}
 
-export const twilioAdapter: ProviderAdapter = {
-  name: "twilio",
+const clientCache = new Map<string, ReturnType<typeof twilio>>();
 
-  async send(request: DeliveryRequest): Promise<DeliveryResult> {
-    const providerMessageId = [
-      "twilio",
-      request.eventId,
-      request.channel,
-      String(request.attemptNumber),
-    ].join(":");
+function cacheKey(config: TwilioRuntimeConfig): string {
+  return [
+    config.accountSid,
+    config.authToken,
+    config.verifyServiceSid,
+    config.transactionalMessagingServiceSid,
+    config.relationshipMessagingServiceSid,
+    config.fromNumber,
+  ].join(":");
+}
 
-    return {
-      provider: "twilio",
-      providerEventId: providerMessageId,
-      providerMessageId,
-      status: "delivered",
-    };
-  },
+export function createTwilioClient(config: TwilioRuntimeConfig) {
+  const key = cacheKey(config);
+  const cached = clientCache.get(key);
+  if (cached) return cached;
+  const client = twilio(config.accountSid, config.authToken);
+  clientCache.set(key, client);
+  return client;
+}
 
-  verifyWebhook(payload: unknown, signature: string): boolean {
-    const envelope = payload as TwilioWebhookEnvelope | undefined;
-    const authToken = signature.trim();
-    if (
-      !envelope?.url ||
-      !envelope.signature?.trim() ||
-      !authToken ||
-      !envelope.params
-    ) {
-      return false;
+export function readTwilioRuntimeConfig(
+  env: Record<string, string | undefined> = process.env,
+): TwilioRuntimeConfig | null {
+  const accountSid = env.TWILIO_ACCOUNT_SID?.trim();
+  const authToken = env.TWILIO_AUTH_TOKEN?.trim();
+  const verifyServiceSid = env.TWILIO_VERIFY_SERVICE_SID?.trim();
+  const transactionalMessagingServiceSid =
+    env.TWILIO_TRANSACTIONAL_MESSAGING_SERVICE_SID?.trim() ??
+    env.TWILIO_MESSAGING_SERVICE_SID_TRANSACTIONAL?.trim();
+  const relationshipMessagingServiceSid =
+    env.TWILIO_RELATIONSHIP_MESSAGING_SERVICE_SID?.trim() ??
+    env.TWILIO_MESSAGING_SERVICE_SID_RELATIONSHIP?.trim() ??
+    transactionalMessagingServiceSid;
+  const fromNumber = env.TWILIO_FROM_NUMBER?.trim() ?? env.TWILIO_SMS_NUMBER?.trim();
+
+  if (
+    !accountSid ||
+    !authToken ||
+    !verifyServiceSid ||
+    !transactionalMessagingServiceSid ||
+    !relationshipMessagingServiceSid ||
+    !fromNumber
+  ) {
+    return null;
+  }
+
+  return {
+    accountSid,
+    authToken,
+    verifyServiceSid,
+    transactionalMessagingServiceSid,
+    relationshipMessagingServiceSid,
+    fromNumber,
+  };
+}
+
+export function validateTwilioWebhook({
+  authToken,
+  signature,
+  url,
+  params,
+}: TwilioWebhookValidationInput): boolean {
+  if (!signature) return false;
+  return twilio.validateRequest(authToken, signature, url, params);
+}
+
+export function parseTwilioWebhookParams(
+  value: URLSearchParams | FormData,
+): Record<string, string> {
+  const params = new Map<string, string>();
+  const entries =
+    value instanceof URLSearchParams
+      ? value.entries()
+      : (value as unknown as Iterable<[string, FormDataEntryValue]>);
+
+  for (const [key, rawValue] of entries) {
+    if (typeof rawValue === "string") {
+      params.set(key, rawValue);
+      continue;
     }
+    params.set(key, rawValue.name);
+  }
 
-    const signedPayload = [
-      envelope.url,
-      ...Object.keys(envelope.params)
-        .sort()
-        .map((key) => `${key}${envelope.params[key] ?? ""}`),
-    ].join("");
+  return Object.fromEntries(params);
+}
 
-    const expected = createTwilioSignature(signedPayload, authToken);
-    return timingSafeEqual(expected, envelope.signature.trim());
-  },
+export function normalizeInboundPayload(
+  params: Record<string, string>,
+): TwilioInboundPayload {
+  return {
+    accountSid: params.AccountSid ?? "",
+    apiVersion: params.ApiVersion ?? null,
+    body: params.Body ?? "",
+    from: params.From ?? "",
+    fromCity: params.FromCity ?? null,
+    fromCountry: params.FromCountry ?? null,
+    fromState: params.FromState ?? null,
+    fromZip: params.FromZip ?? null,
+    messageSid: params.MessageSid ?? "",
+    messagingServiceSid: params.MessagingServiceSid ?? null,
+    numMedia: Number(params.NumMedia ?? "0"),
+    numSegments: Number(params.NumSegments ?? "1"),
+    optOutType: params.OptOutType ?? null,
+    to: params.To ?? "",
+    toCity: params.ToCity ?? null,
+    toCountry: params.ToCountry ?? null,
+    toState: params.ToState ?? null,
+    toZip: params.ToZip ?? null,
+  };
+}
 
-  ingestWebhookEvent(
-    payload: unknown,
-    options?: { providerEventId?: string },
-  ): WebhookEvent {
-    const record =
-      payload && typeof payload === "object"
-        ? (payload as Record<string, unknown>)
-        : {};
-    const direction =
-      getString(record.Direction) ??
-      getString(record.direction) ??
-      "outbound-api";
-    const transition =
-      direction === "inbound"
-        ? "inbound_received"
-        : mapTwilioStatusToTransition(
-            getString(record.MessageStatus) ?? getString(record.SmsStatus),
-          );
+export function normalizeStatusPayload(
+  params: Record<string, string>,
+): TwilioStatusPayload {
+  return {
+    accountSid: params.AccountSid ?? "",
+    apiVersion: params.ApiVersion ?? null,
+    errorCode: params.ErrorCode ?? null,
+    errorMessage: params.ErrorMessage ?? null,
+    messageSid: params.MessageSid ?? "",
+    messageStatus: params.MessageStatus ?? "",
+    messagingServiceSid: params.MessagingServiceSid ?? null,
+    to: params.To ?? null,
+  };
+}
 
-    return {
-      provider: "twilio",
-      providerEventId:
-        options?.providerEventId ??
-        getString(record.EventSid) ??
-        getString(record.SmsSid) ??
-        getString(record.MessageSid) ??
-        `twilio:${crypto.randomUUID()}`,
-      providerMessageId:
-        getString(record.MessageSid) ?? getString(record.SmsSid) ?? undefined,
-      transition,
-      occurredAt: new Date().toISOString(),
-      recipientKeys: compactStrings(
-        getString(record.To),
-        getString(record.From),
-      ),
-      eventId: getString(record.EventId),
-      failureReason:
-        getString(record.ErrorMessage) ??
-        getString(record.ErrorCode) ??
-        getString(record.SmsStatus),
-      raw: record,
-    };
-  },
-};
+export function mapTwilioMessageStatus(status: string | null | undefined): TwilioProviderState {
+  const normalized = status?.toLowerCase().trim();
 
-function mapTwilioStatusToTransition(
-  status?: string,
-): WebhookEvent["transition"] {
-  switch ((status ?? "").toLowerCase()) {
+  switch (normalized) {
     case "accepted":
+    case "scheduled":
     case "queued":
+      return "queued";
     case "sending":
+      return "sending";
     case "sent":
       return "sent";
     case "delivered":
       return "delivered";
+    case "receiving":
+    case "received":
+      return "received";
     case "undelivered":
-    case "failed":
-      return "failed";
+    case "partially_delivered":
+      return "undelivered";
     default:
-      return "sent";
+      return "failed";
   }
 }
 
-function getString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
+export function isTwilioKeywordWebhook(optOutType: string | null | undefined): boolean {
+  if (!optOutType) return false;
+  const normalized = optOutType.toUpperCase();
+  return normalized === "STOP" || normalized === "START" || normalized === "HELP";
 }
 
-function compactStrings(...values: Array<string | undefined>): string[] {
-  return values.filter((value): value is string => Boolean(value)).map((value) =>
-    value.toLowerCase(),
-  );
-}
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
+export function buildTwimlMessage(body: string | null | undefined): string {
+  const safeBody = escapeXml((body ?? "").trim());
+  if (!safeBody) {
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>";
   }
-
-  let mismatch = 0;
-  for (let index = 0; index < a.length; index += 1) {
-    mismatch |= a.charCodeAt(index) ^ b.charCodeAt(index);
-  }
-  return mismatch === 0;
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${safeBody}</Message></Response>`;
 }
 
-function createTwilioSignature(payload: string, authToken: string): string {
-  const key = Buffer.from(authToken, "utf8");
-  const data = Buffer.from(payload, "utf8");
-  return createHmac("sha1", key).update(data).digest("base64");
+export const twilioProviderAdapter: ProviderAdapter<
+  TwilioSendMessageInput,
+  TwilioSendMessageResult
+> = {
+  provider: "twilio",
+  async send(config, input) {
+    const client = createTwilioClient(config);
+    const response = await client.messages.create({
+      body: input.body,
+      to: input.to,
+      messagingServiceSid:
+        input.category === "relationship"
+          ? config.relationshipMessagingServiceSid
+          : config.transactionalMessagingServiceSid,
+      statusCallback: input.statusCallbackUrl,
+    });
+
+    return {
+      sid: response.sid,
+      status: mapTwilioMessageStatus(response.status),
+      to: response.to ?? input.to,
+      from: response.from ?? config.fromNumber,
+      body: response.body ?? input.body,
+    };
+  },
+};
+
+export async function sendTwilioMessage(
+  config: TwilioRuntimeConfig,
+  input: TwilioSendMessageInput,
+): Promise<TwilioSendMessageResult> {
+  return await twilioProviderAdapter.send(config, input);
+}
+
+export async function startTwilioVerification(
+  config: TwilioRuntimeConfig,
+  phone: string,
+): Promise<TwilioVerifyStartResult> {
+  const client = createTwilioClient(config);
+  const response = await client.verify.v2
+    .services(config.verifyServiceSid)
+    .verifications.create({
+      channel: "sms",
+      to: phone,
+    });
+
+  return {
+    sid: response.sid,
+    status: response.status,
+  };
+}
+
+export async function checkTwilioVerification(
+  config: TwilioRuntimeConfig,
+  phone: string,
+  code: string,
+): Promise<TwilioVerifyCheckResult> {
+  const client = createTwilioClient(config);
+  const response = await client.verify.v2
+    .services(config.verifyServiceSid)
+    .verificationChecks.create({
+      code,
+      to: phone,
+    });
+
+  return {
+    sid: response.sid,
+    status: response.status,
+    valid: response.valid ?? response.status === "approved",
+  };
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }

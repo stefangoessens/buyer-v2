@@ -16,6 +16,7 @@
 /** CTIA / TCPA conventional STOP (opt-out) keywords. */
 export const STOP_KEYWORDS: readonly string[] = [
   "STOP",
+  "STOPALL",
   "CANCEL",
   "QUIT",
   "END",
@@ -96,13 +97,50 @@ export function extractUrl(body: string): string | null {
 
   // Pass 2: bare portal domain with a path.
   const bareDomain = body.match(
-    /\b((?:www\.)?(?:zillow\.com|redfin\.com|realtor\.com)\/[^\s]+)/i,
+    /\b((?:www\.)?(?:zillow\.com|redfin\.com|realtor\.com|homes\.com|compass\.com|trulia\.com)\/[^\s]+)/i,
   );
   if (bareDomain) {
     return stripTrailingPunctuation(bareDomain[1]);
   }
 
   return null;
+}
+
+export type SmsPortalHost =
+  | "zillow"
+  | "redfin"
+  | "realtor"
+  | "homes"
+  | "compass"
+  | "trulia";
+
+export function detectSmsPortalHost(input: string): SmsPortalHost | null {
+  try {
+    const withProtocol = input.startsWith("http") ? input : `https://${input}`;
+    const url = new URL(withProtocol);
+    const hostname = url.hostname.toLowerCase();
+    if (hostname === "zillow.com" || hostname.endsWith(".zillow.com")) {
+      return "zillow";
+    }
+    if (hostname === "redfin.com" || hostname.endsWith(".redfin.com")) {
+      return "redfin";
+    }
+    if (hostname === "realtor.com" || hostname.endsWith(".realtor.com")) {
+      return "realtor";
+    }
+    if (hostname === "homes.com" || hostname.endsWith(".homes.com")) {
+      return "homes";
+    }
+    if (hostname === "compass.com" || hostname.endsWith(".compass.com")) {
+      return "compass";
+    }
+    if (hostname === "trulia.com" || hostname.endsWith(".trulia.com")) {
+      return "trulia";
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function stripTrailingPunctuation(url: string): string {
