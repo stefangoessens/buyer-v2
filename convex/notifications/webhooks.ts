@@ -95,10 +95,15 @@ async function upsertSuppression(
 
 function getSuppressionRecipientKeys(args: {
   attemptRecipientKey?: string;
+  buyerScopedRecipientKey?: string;
   providerRecipientKeys: string[];
 }): string[] {
   if (args.attemptRecipientKey?.trim()) {
     return [normalizeRecipientKey(args.attemptRecipientKey)];
+  }
+
+  if (args.buyerScopedRecipientKey?.trim()) {
+    return [normalizeRecipientKey(args.buyerScopedRecipientKey)];
   }
 
   return Array.from(
@@ -226,6 +231,10 @@ export const processResendWebhookEvent = mutation({
           .unique()
       : null;
     const eventId = args.eventId ?? deliveryAttempt?.eventId;
+    const buyerEvent =
+      eventId && typeof ctx.db.get === "function"
+        ? await ctx.db.get(eventId)
+        : null;
     const receipt = await upsertReceiptRow(ctx, {
       provider: "resend",
       providerEventId: args.providerEventId,
@@ -303,6 +312,9 @@ export const processResendWebhookEvent = mutation({
       ) {
         const suppressionRecipientKeys = getSuppressionRecipientKeys({
           attemptRecipientKey: deliveryAttempt?.recipientKey,
+          buyerScopedRecipientKey: buyerEvent
+            ? `user:${buyerEvent.buyerId}`
+            : undefined,
           providerRecipientKeys: args.recipientKeys,
         });
 

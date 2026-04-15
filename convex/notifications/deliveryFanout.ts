@@ -452,9 +452,21 @@ export const runDeliveryFanout = internalAction({
     }
 
     const allCandidates = await ctx.runQuery(listDeliveryCandidatesRef, {});
-    const { selected, shed } = applyFanoutBackpressure(allCandidates);
+    const activeCandidates = allCandidates.filter(isDeliverableCandidate);
+    const staleCandidates = allCandidates.filter(
+      (candidate: FanoutCandidate) => !isDeliverableCandidate(candidate),
+    );
+    for (const candidate of staleCandidates) {
+      await ctx.runMutation(updateEventDeliveryStateRef, {
+        eventId: candidate._id,
+        deliveryState: "skipped_by_preference",
+        failedReason: `event_${candidate.status}`,
+      });
+    }
+
+    const { selected, shed } = applyFanoutBackpressure(activeCandidates);
     let attempted = 0;
-    let skipped = 0;
+    let skipped = staleCandidates.length;
 
     for (const event of shed) {
       const rule = resolveRoutingRule(event);
@@ -482,10 +494,6 @@ export const runDeliveryFanout = internalAction({
     const grouped = groupCandidatesByRecipient(selected.slice(0, config.batchSize));
     for (const bucket of grouped) {
       for (const event of bucket.events) {
-        if (event.status !== "pending" && event.status !== "seen") {
-          continue;
-        }
-
         const outcome = await dispatchEventAcrossChannels(ctx, {
           event,
           recipientKey: bucket.recipientKey,
@@ -689,6 +697,10 @@ async function dispatchEventAcrossChannels(
   });
 
   return { attempted, skipped };
+}
+
+function isDeliverableCandidate(event: FanoutCandidate): boolean {
+  return event.status === "pending" || event.status === "seen";
 }
 
 async function getChannelBlockReason(
