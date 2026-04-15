@@ -38,6 +38,10 @@ import { internal } from "./_generated/api";
 import { requireAuth } from "./lib/session";
 // KIN-1079 — Request Disclosures mail rail abstraction.
 import { selectDriver, type MailMessage } from "./mailRail";
+import {
+  buildDisclosureReplyToAddress,
+  resolveEmailRuntimeSettings,
+} from "./lib/emailSettings";
 
 // ═══ Constants ═══════════════════════════════════════════════════════════
 
@@ -818,6 +822,7 @@ const disclosureRequestRowValidator = v.object({
   listingAgentName: v.optional(v.string()),
   subject: v.string(),
   bodyText: v.string(),
+  bodyHtml: v.optional(v.string()),
   personalNote: v.optional(v.string()),
   status: disclosureRequestStatusValidator,
   providerMessageId: v.optional(v.string()),
@@ -836,55 +841,6 @@ const disclosureRequestRowValidator = v.object({
 
 const FOLLOW_UP_WINDOW_MS = 48 * 60 * 60 * 1000;
 const REPLY_SNIPPET_MAX_CHARS = 500;
-
-// v1 sender identity. The `from` header is a brokerage alias so the buyer's
-// personal email is never leaked outbound before compliance review. The
-// `replyTo` is a placeholder alias for the same reason — once KIN-1092
-// wires real Resend + compliance review lands, this is replaced with a
-// per-deal-room alias that threads back into the buyer's inbox.
-const BROKER_FROM_ADDRESS = "broker@buyer-v2.app";
-const BROKER_FROM_NAME = "buyer-v2 Brokerage";
-const BROKER_REPLY_TO = "reply@buyer-v2.app";
-
-/**
- * Compose the full email body from the broker-authored template plus the
- * buyer's optional personal note. The resulting string is persisted
- * verbatim so the audit trail contains exactly what was "sent".
- */
-function composeDisclosureRequestBody(params: {
-  listingAgentName?: string;
-  buyerDisplayName: string;
-  propertyAddress: string;
-  personalNote?: string;
-}): { subject: string; bodyText: string } {
-  const greetingName = params.listingAgentName?.trim().length
-    ? params.listingAgentName.trim()
-    : "there";
-  const subject = `Disclosure request — ${params.propertyAddress}`;
-  const lines: Array<string> = [
-    `Hi ${greetingName},`,
-    "",
-    `I'm reaching out on behalf of ${params.buyerDisplayName}, who is preparing to make an offer on ${params.propertyAddress}. Before we finalize terms, we're asking for the seller's disclosures package — typically this includes the Seller's Property Disclosure, any HOA / condo docs, recent inspection reports, permit history, and any known material defects.`,
-    "",
-    "You can reply directly to this email with attachments (PDF preferred). If a formal request letter or signed acknowledgment is needed on our side, let me know and I'll send it over the same day.",
-    "",
-    "Thanks for your help — we'll keep the turnaround tight on our end.",
-  ];
-
-  const personal = params.personalNote?.trim();
-  if (personal && personal.length > 0) {
-    lines.push("", "A personal note from the buyer:", personal);
-  }
-
-  lines.push(
-    "",
-    "Best,",
-    "buyer-v2 Brokerage",
-    "(Sent on behalf of the buyer — please reply all.)",
-  );
-
-  return { subject, bodyText: lines.join("\n") };
-}
 
 /**
  * Resolve the listing-agent row linked to a property via the
@@ -972,31 +928,47 @@ export const requestFromListingAgent = mutation({
       ? formattedAddress
       : "the subject property";
 
-    const { subject, bodyText } = composeDisclosureRequestBody({
-      listingAgentName: agent.name,
-      buyerDisplayName: user.name,
-      propertyAddress,
-      personalNote: args.personalNote,
-    });
+    const emailSettings = await resolveEmailRuntimeSettings(ctx);
+    const replyToAddress = buildDisclosureReplyToAddress(
+      args.dealRoomId,
+      emailSettings.replyDomain,
+    );
 
     const driver = selectDriver();
     const mailMessage: MailMessage = {
+      audience: "transactional",
+      kind: "template",
       to: listingAgentEmail,
       toName: agent.name,
-      from: BROKER_FROM_ADDRESS,
-      fromName: BROKER_FROM_NAME,
-      subject,
-      bodyText,
-      replyTo: BROKER_REPLY_TO,
-      metadata: {
+      from: emailSettings.branding.outboundFromEmail,
+      fromName: emailSettings.branding.outboundFromName,
+      replyTo: replyToAddress,
+      headers: {
+        "Message-ID": `<disclosures.${args.dealRoomId}.${Date.now()}@${emailSettings.replyDomain}>`,
+      },
+      tags: {
         dealRoomId: args.dealRoomId,
         buyerId: user._id,
         propertyId: dealRoom.propertyId,
         feature: "kin-1079-request-disclosures",
       },
+      templateKey: "disclosure-request-to-agent",
+      templateVariables: {
+        listingAgentName: agent.name,
+        buyerDisplayName: user.name,
+        propertyAddress,
+        personalNote: args.personalNote,
+        replyToAddress,
+        settings: emailSettings.branding,
+      },
     };
 
-    const { providerMessageId } = await driver.send(mailMessage);
+    const {
+      providerMessageId,
+      renderedSubject,
+      renderedText,
+      renderedHtml,
+    } = await driver.send(mailMessage);
 
     const now = new Date().toISOString();
     const nextFollowUpDueAt = new Date(
@@ -1009,8 +981,9 @@ export const requestFromListingAgent = mutation({
       propertyId: dealRoom.propertyId,
       listingAgentEmail,
       listingAgentName: agent.name,
-      subject,
-      bodyText,
+      subject: renderedSubject,
+      bodyText: renderedText,
+      bodyHtml: renderedHtml,
       personalNote: args.personalNote,
       status: "sent",
       providerMessageId,
@@ -1033,7 +1006,7 @@ export const requestFromListingAgent = mutation({
         listingAgentEmail,
         provider: driver.name,
         providerMessageId,
-        subject,
+        subject: renderedSubject,
         nextFollowUpDueAt,
       }),
       timestamp: now,

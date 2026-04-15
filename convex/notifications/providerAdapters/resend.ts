@@ -5,6 +5,8 @@ import type {
   ProviderAdapter,
   WebhookEvent,
 } from "@/lib/notifications/types";
+import { renderTemplate } from "@/lib/email/renderTemplate";
+import type { BrokerageEmailSettings } from "@/emails/layouts/BrokerageLayout";
 
 type ResendWebhookEnvelope = {
   payload: string;
@@ -111,6 +113,26 @@ type ResendWebhookVerifier = {
 };
 
 type ResendClient = {
+  emails: {
+    send(
+      payload: {
+        from: string;
+        to: string[];
+        cc?: string[];
+        bcc?: string[];
+        replyTo?: string | string[];
+        subject: string;
+        html: string;
+        text: string;
+        headers?: Record<string, string>;
+        tags?: Array<{ name: string; value: string }>;
+      },
+      options?: { idempotencyKey?: string },
+    ): Promise<{
+      data?: { id?: string | null } | null;
+      error?: { message?: string | null } | null;
+    }>;
+  };
   webhooks: ResendWebhookVerifier;
 };
 
@@ -208,32 +230,65 @@ export const resendEmailRailAdapter: EmailProviderAdapter = {
   name: "resend",
 
   async send(request: EmailDeliveryRequest): Promise<EmailDeliveryResult> {
-    const providerMessageId = [
-      "resend-email",
+    const rendered =
       request.content.kind === "template"
-        ? request.content.templateKey
-        : request.content.subject,
-      crypto.randomUUID(),
-    ].join(":");
+        ? await renderTemplate(
+            request.content.templateKey as never,
+            request.content.templateVariables as never,
+          )
+        : {
+            subject: request.content.subject,
+            text: request.content.text,
+            html:
+              request.content.html ?? htmlFromPlainText(request.content.text),
+            stream: request.audience ?? "relationship",
+          };
 
-    const renderedSubject =
+    const headers = { ...(request.headers ?? {}) };
+    const unsubscribeUrl = getTemplateUnsubscribeUrl(
       request.content.kind === "template"
-        ? request.content.templateKey
-        : request.content.subject;
-    const renderedText =
-      request.content.kind === "template"
-        ? JSON.stringify(request.content.templateVariables)
-        : request.content.text;
-    const renderedHtml =
-      request.content.kind === "template"
-        ? `<pre>${escapeHtml(renderedText)}</pre>`
-        : request.content.html ?? htmlFromPlainText(request.content.text);
+        ? request.content.templateVariables
+        : undefined,
+    );
+    if (unsubscribeUrl && !headers["List-Unsubscribe"]) {
+      headers["List-Unsubscribe"] = `<${unsubscribeUrl}>`;
+    }
+
+    const response = await getResendClient().emails.send(
+      {
+        from: formatFromAddress(request.from, request.fromName),
+        to: request.to,
+        cc: request.cc,
+        bcc: request.bcc,
+        replyTo: request.replyTo,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        ...(Object.keys(headers).length > 0 ? { headers } : {}),
+        tags: buildResendTags(request, rendered.stream),
+      },
+      request.idempotencyKey
+        ? { idempotencyKey: request.idempotencyKey }
+        : undefined,
+    );
+
+    if (response.error?.message) {
+      throw new Error(response.error.message);
+    }
 
     return {
-      providerMessageId,
-      renderedSubject,
-      renderedHtml,
-      renderedText,
+      providerMessageId:
+        response.data?.id ??
+        [
+          "resend-email",
+          request.content.kind === "template"
+            ? request.content.templateKey
+            : request.content.subject,
+          crypto.randomUUID(),
+        ].join(":"),
+      renderedSubject: rendered.subject,
+      renderedHtml: rendered.html,
+      renderedText: rendered.text,
     };
   },
 
@@ -381,6 +436,56 @@ function getResendClient(): ResendClient {
 
 function createDefaultResendClient(_apiKey: string): ResendClient {
   return {
+    emails: {
+      async send(payload, options) {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${_apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: payload.from,
+            to: payload.to,
+            cc: payload.cc,
+            bcc: payload.bcc,
+            reply_to: payload.replyTo,
+            subject: payload.subject,
+            html: payload.html,
+            text: payload.text,
+            headers: payload.headers,
+            tags: payload.tags,
+          }),
+          ...(options?.idempotencyKey
+            ? { headers: {
+                Authorization: `Bearer ${_apiKey}`,
+                "Content-Type": "application/json",
+                "Idempotency-Key": options.idempotencyKey,
+              } }
+            : {}),
+        });
+
+        const body = (await response.json().catch(() => null)) as
+          | { id?: string; message?: string; name?: string }
+          | null;
+        if (!response.ok) {
+          return {
+            data: null,
+            error: {
+              message:
+                body?.message ??
+                body?.name ??
+                `Resend send failed with status ${response.status}`,
+            },
+          };
+        }
+
+        return {
+          data: { id: body?.id ?? null },
+          error: null,
+        };
+      },
+    },
     webhooks: {
       verify(args) {
         if (!verifyResendWebhookSignature(args)) {
@@ -391,6 +496,47 @@ function createDefaultResendClient(_apiKey: string): ResendClient {
       },
     },
   };
+}
+
+function formatFromAddress(address: string, name?: string): string {
+  return name?.trim() ? `${name.trim()} <${address}>` : address;
+}
+
+function buildResendTags(
+  request: EmailDeliveryRequest,
+  stream: string,
+): Array<{ name: string; value: string }> {
+  const tags: Array<{ name: string; value: string }> = [
+    { name: "stream", value: stream },
+  ];
+
+  if (request.content.kind === "template") {
+    tags.push({
+      name: "templateKey",
+      value: request.content.templateKey,
+    });
+  }
+
+  for (const [name, value] of Object.entries(request.tags ?? {})) {
+    if (!value.trim()) continue;
+    tags.push({ name, value });
+  }
+
+  return tags;
+}
+
+function getTemplateUnsubscribeUrl(
+  templateVariables: Record<string, unknown> | undefined,
+): string | undefined {
+  const settings = templateVariables?.settings;
+  if (!settings || typeof settings !== "object") {
+    return undefined;
+  }
+
+  const unsubscribeUrl = (settings as BrokerageEmailSettings).unsubscribeUrl;
+  return typeof unsubscribeUrl === "string" && unsubscribeUrl.trim()
+    ? unsubscribeUrl.trim()
+    : undefined;
 }
 
 function getString(value: unknown): string | undefined {
