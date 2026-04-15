@@ -70,6 +70,17 @@ export const SETTINGS_CATALOG: SettingsCatalog = {
       defaultValue: { kind: "number", value: 500 },
       constraints: { min: 0, max: 100000, integer: true },
     },
+    {
+      key: "fee.offer_gate_flat_fee_pct",
+      label: "Offer-gate flat fee percentage",
+      description:
+        "Flat fee % of list price used in the offer-gate credit math. Shown to buyers as 'Our Fee (only if you close)'.",
+      category: "fees",
+      kind: "number",
+      writeRole: "admin",
+      defaultValue: { kind: "number", value: 1.0 },
+      constraints: { min: 0, max: 10 },
+    },
 
     // ─── Rollout / feature flags ────────────────────────────────
     {
@@ -119,6 +130,31 @@ export const SETTINGS_CATALOG: SettingsCatalog = {
       writeRole: "admin",
       defaultValue: { kind: "number", value: 4 },
       constraints: { min: 1, max: 168, integer: true },
+    },
+    {
+      key: "broker.callback_sla_copy",
+      label: "Brokerage callback SLA copy",
+      description:
+        "Copy shown in the offer-gate success state promising broker callback SLA.",
+      category: "operational",
+      kind: "string",
+      writeRole: "broker",
+      defaultValue: {
+        kind: "string",
+        value: "We'll call you within 1 business hour",
+      },
+      constraints: { minLength: 1, maxLength: 200 },
+    },
+    {
+      key: "broker.fl_license_number",
+      label: "Florida brokerage license number",
+      description:
+        "Florida brokerage license number, displayed in the offer-gate disclosure footer. REQUIRED before launch.",
+      category: "operational",
+      kind: "string",
+      writeRole: "admin",
+      defaultValue: { kind: "string", value: "" },
+      constraints: { minLength: 0, maxLength: 50 },
     },
 
     // ─── Branding ───────────────────────────────────────────────
