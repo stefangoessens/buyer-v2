@@ -485,7 +485,18 @@ describe("listEventsByCategory()", () => {
     expect(events).toContain("story_cta_clicked");
     expect(events).toContain("story_related_clicked");
     expect(events).toContain("aggregate_savings_counter_viewed");
-    expect(events).toHaveLength(31);
+    // KIN-1086: homepage rebate slider added 9 engagement events.
+    expect(events).toContain("home_rebate_slider_viewed");
+    expect(events).toContain("home_rebate_slider_changed");
+    expect(events).toContain("home_rebate_slider_snap_reached");
+    expect(events).toContain("home_rebate_aspiration_viewed");
+    expect(events).toContain("home_rebate_disclosure_viewed");
+    expect(events).toContain("home_rebate_cta_clicked");
+    expect(events).toContain("home_rebate_slider_deep_link_landed");
+    expect(events).toContain("home_rebate_slider_interaction_depth");
+    expect(events).toContain("home_rebate_slider_fallback_shown");
+    // Total: 2 legacy + 3 HIW + 4 comparison + 9 FAQ + 6 FL strip/waitlist + 7 stories + 9 rebate slider = 40
+    expect(events).toHaveLength(40);
   });
 });
 

@@ -7,14 +7,38 @@ import { HeroInput } from "@/components/marketing/HeroInput";
 import { BentoCard } from "@/components/marketing/BentoCard";
 import { HomeHowItWorksSection } from "@/components/marketing/sections/HomeHowItWorksSection";
 import { HomeComparisonTableSection } from "@/components/marketing/sections/HomeComparisonTableSection";
+import { HomeRebateSliderSection } from "@/components/marketing/sections/HomeRebateSliderSection";
 import { MarketingStoriesSection } from "@/components/marketing/sections/MarketingStoriesSection";
 import { homeHowItWorksStepsForSchema } from "@/content/home-how-it-works";
+import {
+  SLIDER_DEFAULT_PRICE,
+  clampPrice,
+} from "@/lib/pricing/rebateIllustration";
 import {
   metadataForStaticPage,
   structuredDataForStaticPage,
 } from "@/lib/seo/pageDefinitions";
+import { resolveSetting } from "@/lib/settings/logic";
+
+/**
+ * Resolve a catalog boolean setting via the synchronous default-value
+ * path. KIN-1086 uses this for the homepage rebate-slider kill switch.
+ * A follow-up card will replace the `undefined` stored-value argument
+ * with a Convex-persisted value read; until then ops can flip the
+ * default in `src/lib/settings/catalog.ts` to disable the section.
+ */
+function rolloutFlag(key: string, fallback: boolean): boolean {
+  const resolved = resolveSetting(key, undefined);
+  if (resolved && resolved.kind === "boolean") return resolved.value;
+  return fallback;
+}
 
 export const metadata: Metadata = metadataForStaticPage("home");
+
+// Opt into dynamic rendering so the rebate slider can SSR with the
+// ?price= query parameter. Without this, Cache Components treats the
+// homepage as fully static and searchParams arrives as an empty object.
+export const dynamic = "force-dynamic";
 
 /* ─── Data ────────────────────────────────────────────────────────────── */
 
@@ -28,12 +52,24 @@ const trustStats = [
 const features = [
   { imageSrc: "/images/marketing/features/feature-1.png", imageAlt: "Paste a listing link and instantly get property data", title: "Paste any listing link", description: "Drop a Zillow, Redfin, or Realtor.com URL. We instantly pull the property data and start our AI analysis engine." },
   { imageSrc: "/images/marketing/features/feature-2.png", imageAlt: "AI-powered property analysis dashboard", title: "Get AI-powered analysis", description: "Fair pricing, comparable sales, leverage signals, risk assessment, and a competitiveness score — all in seconds." },
-  { imageSrc: "/images/marketing/features/feature-3.png", imageAlt: "Expert buyer representation saves you money", title: "Save with expert representation", description: "Our licensed Florida brokers negotiate on your behalf using AI insights. Average buyer savings: $12,400." },
+  { imageSrc: "/images/marketing/features/feature-3.png", imageAlt: "Expert buyer representation saves you money", title: "Save with expert representation", description: "Our licensed Florida brokers negotiate on your behalf using AI insights, so you keep more of your budget for the home." },
 ];
 
 /* ─── Page (Server Component) ─────────────────────────────────────────── */
 
-export default function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ price?: string }>;
+}) {
+  const resolvedParams = await searchParams;
+  const rawPrice = resolvedParams.price;
+  const wasPriceQueryParam =
+    typeof rawPrice === "string" && rawPrice.length > 0 && Number.isFinite(Number(rawPrice));
+  const parsedInitialPrice = wasPriceQueryParam
+    ? clampPrice(Number(rawPrice))
+    : SLIDER_DEFAULT_PRICE;
+
   const homeJsonLd = structuredDataForStaticPage("home", {
     howToSteps: homeHowItWorksStepsForSchema(),
   });
@@ -49,6 +85,13 @@ export default function Home() {
 
       {/* ── Trust Bar ────────────────────────────────────────────────── */}
       <TrustBar stats={trustStats} />
+
+      {/* ── Rebate Slider (KIN-1086) ─────────────────────────────────── */}
+      <HomeRebateSliderSection
+        initialPrice={parsedInitialPrice}
+        enabled={rolloutFlag("rollout.home_rebate_slider_enabled", true)}
+        deepLink={wasPriceQueryParam}
+      />
 
       {/* ── Features (PayFit-style: image cards) ─────────────────────── */}
       <section className="w-full bg-white py-20 lg:py-28">
@@ -156,7 +199,7 @@ export default function Home() {
         </div>
         <div className="relative mx-auto max-w-[1248px] px-6">
           <div className="grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-12">
-            {[{ value: "$12,400", label: "Avg. buyer savings" }, { value: "23 days", label: "Avg. time to close" }, { value: "98%", label: "Client satisfaction" }, { value: "4.9/5", label: "Average rating" }].map((s) => (
+            {[{ value: "2% back", label: "Rebate ceiling at closing" }, { value: "23 days", label: "Avg. time to close" }, { value: "98%", label: "Client satisfaction" }, { value: "4.9/5", label: "Average rating" }].map((s) => (
               <div key={s.label} className="text-center">
                 <div className="text-3xl font-semibold tracking-tight text-white lg:text-4xl">{s.value}</div>
                 <div className="mt-2 text-sm font-medium text-primary-100/80">{s.label}</div>
