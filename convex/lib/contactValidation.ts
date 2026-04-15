@@ -133,8 +133,8 @@ export async function buildContactThrottleIdentifier(args: {
   email: string;
   throttleId?: string;
 }): Promise<string> {
+  void args.sourcePath;
   return await hashPublicIntakeIdentifier("contact", [
-    normalizeContactSourcePath(args.sourcePath),
     args.throttleId?.trim().length
       ? args.throttleId.trim()
       : normalizeContactEmail(args.email),
