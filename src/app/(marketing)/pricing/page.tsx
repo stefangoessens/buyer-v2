@@ -8,6 +8,7 @@ import { IncludedServicesSection } from "@/components/marketing/sections/Include
 import { PricingFaqTeaserSection } from "@/components/marketing/sections/PricingFaqTeaserSection";
 import { PricingDisclosuresSection } from "@/components/marketing/sections/PricingDisclosuresSection";
 import { FinalCtaSection } from "@/components/marketing/sections/FinalCtaSection";
+import { MarketingStoriesSection } from "@/components/marketing/sections/MarketingStoriesSection";
 import { metadataForStaticPage } from "@/lib/seo/pageDefinitions";
 
 export const metadata: Metadata = metadataForStaticPage("pricing");
@@ -21,6 +22,8 @@ export default function PricingPage() {
       <SavingsCalculatorSection />
       <PricingComparisonTable />
       <IncludedServicesSection />
+      {/* Buyer stories (KIN-1087) — renders null until approved stories land */}
+      <MarketingStoriesSection source="pricing" heading="Real buyers saving real money" />
       <PricingFaqTeaserSection />
       <PricingDisclosuresSection />
       <FinalCtaSection />

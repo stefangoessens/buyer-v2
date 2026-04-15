@@ -3,11 +3,11 @@ import Image from "next/image";
 import { HeroSection } from "@/components/marketing/HeroSection";
 import { TrustBar } from "@/components/marketing/TrustBar";
 import { FeatureCard } from "@/components/marketing/FeatureCard";
-import { TestimonialCard } from "@/components/marketing/TestimonialCard";
 import { HeroInput } from "@/components/marketing/HeroInput";
 import { BentoCard } from "@/components/marketing/BentoCard";
 import { HomeHowItWorksSection } from "@/components/marketing/sections/HomeHowItWorksSection";
 import { HomeComparisonTableSection } from "@/components/marketing/sections/HomeComparisonTableSection";
+import { MarketingStoriesSection } from "@/components/marketing/sections/MarketingStoriesSection";
 import { homeHowItWorksStepsForSchema } from "@/content/home-how-it-works";
 import {
   metadataForStaticPage,
@@ -29,12 +29,6 @@ const features = [
   { imageSrc: "/images/marketing/features/feature-1.png", imageAlt: "Paste a listing link and instantly get property data", title: "Paste any listing link", description: "Drop a Zillow, Redfin, or Realtor.com URL. We instantly pull the property data and start our AI analysis engine." },
   { imageSrc: "/images/marketing/features/feature-2.png", imageAlt: "AI-powered property analysis dashboard", title: "Get AI-powered analysis", description: "Fair pricing, comparable sales, leverage signals, risk assessment, and a competitiveness score — all in seconds." },
   { imageSrc: "/images/marketing/features/feature-3.png", imageAlt: "Expert buyer representation saves you money", title: "Save with expert representation", description: "Our licensed Florida brokers negotiate on your behalf using AI insights. Average buyer savings: $12,400." },
-];
-
-const testimonials = [
-  { quote: "I pasted a Zillow link and within seconds had a full pricing analysis. Saved us $18,000 on our first home in Tampa.", author: "Maria Gonzalez", role: "First-time buyer, Tampa", avatarSrc: "/images/marketing/testimonials/testimonial-1.jpg" },
-  { quote: "The AI analysis caught overpricing my agent missed. buyer-v2 gave us the confidence to negotiate hard and win.", author: "James Chen", role: "Homebuyer, Miami" },
-  { quote: "From paste to close in 23 days. The deal room kept everything organized and our broker was incredible.", author: "Sarah Mitchell", role: "Relocating buyer, Orlando" },
 ];
 
 /* ─── Page (Server Component) ─────────────────────────────────────────── */
@@ -151,18 +145,8 @@ export default function Home() {
       {/* ── How It Works (KIN-1083: 4-step "Every step has an owner") ─ */}
       <HomeHowItWorksSection />
 
-      {/* ── Testimonials ─────────────────────────────────────────────── */}
-      <section className="w-full bg-neutral-50 py-20 lg:py-28">
-        <div className="mx-auto max-w-[1248px] px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-semibold uppercase tracking-widest text-primary-400">Social proof</p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.003em] text-neutral-800 lg:text-[41px] lg:leading-[1.2]">What buyers are saying</h2>
-          </div>
-          <div className="mt-14 grid grid-cols-1 gap-8 md:grid-cols-3">
-            {testimonials.map((t) => <TestimonialCard key={t.author} quote={t.quote} author={t.author} role={t.role} avatarSrc={t.avatarSrc} />)}
-          </div>
-        </div>
-      </section>
+      {/* ── Buyer stories (KIN-1087) — renders null until approved stories land ─ */}
+      <MarketingStoriesSection source="home" />
 
       {/* ── Stats Banner ─────────────────────────────────────────────── */}
       <section className="relative w-full overflow-hidden bg-gradient-to-r from-primary-700 to-primary-600 py-16 lg:py-20">

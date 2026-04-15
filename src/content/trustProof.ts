@@ -1,4 +1,8 @@
-import type { CaseStudy, ProofBlock } from "@/lib/trustProof/types";
+import type {
+  BuyerStory,
+  CaseStudy,
+  ProofBlock,
+} from "@/lib/trustProof/types";
 
 /**
  * Canonical trust-proof catalog for buyer-v2 (KIN-825).
@@ -136,5 +140,150 @@ export const PROOF_BLOCKS: ProofBlock[] = [
     label: "Internal: runway target",
     description: "Internal-only metric for ops dashboards.",
     visibility: "internal",
+  },
+];
+
+// NOTE: All stories ship as `draft` until broker/legal release is obtained.
+// Replace with real released buyer stories before public launch.
+// Per KIN-1087 spec, drafts are HIDDEN by default via filterPublishableStories
+// (opts.includeDrafts=false). The story-ui-routes teammate decides draft
+// visibility per placement; home/pricing render nothing when no approved
+// stories exist.
+export const BUYER_STORIES: readonly BuyerStory[] = [
+  {
+    id: "story-dj-tampa",
+    slug: "dj-tampa-first-time",
+    visibility: "public",
+    publicationStatus: "draft",
+    placements: ["home", "pricing", "stories"],
+    sortOrder: 1,
+    buyer: {
+      firstName: "DJ",
+      lastInitial: "R",
+      displayName: "DJ R.",
+      type: "first_time",
+      city: "Tampa",
+      state: "FL",
+    },
+    teaser: {
+      savedUsd: 10_500,
+      quote:
+        "They caught a flood-zone issue the seller's disclosure tried to bury. Saved me thousands and a lot of sleepless nights.",
+      cardHeadline: "Saved $10,500 on my first Tampa home",
+      closedLabel: "Closed Q1 2026",
+    },
+    story: {
+      title: "How DJ saved $10,500 on his first Tampa home",
+      summary:
+        "A first-time buyer who almost signed on a flood-prone bungalow — until the AI disclosure review flagged it.",
+      heroQuote:
+        "I didn't know what I didn't know. The team caught things I would have missed.",
+      floridaAngle:
+        "Flood-zone disclosure review on a pre-2005 Tampa bungalow in Zone AE",
+      body: "[DRAFT — Replace with real released buyer story before public launch.] DJ was ready to write an offer on a charming 1970s Tampa bungalow when the buyer-v2 AI parser flagged a discrepancy between the seller disclosure and the FEMA flood zone data. What looked like a simple Zone X listing turned out to be on an AE line — meaning $3,600/year flood insurance the seller had downplayed. DJ's broker used that finding to negotiate $10,500 in seller credits covering the first three years of flood premiums, plus a buyer-agent rebate at closing. DJ closed in Q1 2026.",
+    },
+    outcomes: {
+      totalSavedUsd: 10_500,
+      purchasePriceUsd: 385_000,
+      rebateUsd: 7_700,
+      negotiatedCreditsUsd: 2_800,
+      daysToClose: 34,
+    },
+    compliance: {
+      // Draft stories intentionally omit releaseRef + approvals.
+      brokerApprovedForPublicUse: false,
+      legalApprovedForPublicUse: false,
+      retentionBucket: "legal_documents",
+    },
+  },
+  {
+    id: "story-alicia-miami",
+    slug: "alicia-miami-repeat",
+    visibility: "public",
+    publicationStatus: "draft",
+    placements: ["home", "pricing", "stories"],
+    sortOrder: 2,
+    buyer: {
+      firstName: "Alicia",
+      lastInitial: "P",
+      displayName: "Alicia P.",
+      type: "repeat",
+      city: "Miami",
+      state: "FL",
+    },
+    teaser: {
+      savedUsd: 18_200,
+      quote:
+        "The hurricane insurance analysis alone saved me $5,000 — and that was before the rebate.",
+      cardHeadline: "Saved $18,200 on a Miami condo with insurance leverage",
+      closedLabel: "Closed Q1 2026",
+    },
+    story: {
+      title: "How Alicia saved $18,200 on a Miami high-rise condo",
+      summary:
+        "A repeat buyer who used AI-backed hurricane-insurance analysis to negotiate concessions on a 1990s Brickell tower.",
+      heroQuote:
+        "I'd bought a house before but not like this. The insurance math was a game-changer.",
+      floridaAngle:
+        "Hurricane wind-mitigation + insurance-premium leverage on a pre-2001 Brickell high-rise",
+      body: "[DRAFT — Replace with real released buyer story before public launch.] Alicia had bought a home once before and knew the drill — until she tried to buy a Miami condo built in 1994. The wind-mitigation report showed the building still had original hurricane shutters, which meant her insurance quote came in $5,800 higher than the seller's existing policy. Alicia's buyer-v2 broker surfaced the gap during the inspection period and negotiated a $12,000 seller credit plus a closing-cost reduction. Combined with her rebate at closing, Alicia walked away with $18,200 in savings. She closed in Q1 2026.",
+    },
+    outcomes: {
+      totalSavedUsd: 18_200,
+      purchasePriceUsd: 615_000,
+      rebateUsd: 6_200,
+      negotiatedCreditsUsd: 12_000,
+      daysToClose: 42,
+    },
+    compliance: {
+      brokerApprovedForPublicUse: false,
+      legalApprovedForPublicUse: false,
+      retentionBucket: "legal_documents",
+    },
+  },
+  {
+    id: "story-noah-orlando",
+    slug: "noah-orlando-investor",
+    visibility: "public",
+    publicationStatus: "draft",
+    placements: ["home", "pricing", "stories"],
+    sortOrder: 3,
+    buyer: {
+      firstName: "Noah",
+      lastInitial: "T",
+      displayName: "Noah T.",
+      type: "investor",
+      city: "Orlando",
+      state: "FL",
+    },
+    teaser: {
+      savedUsd: 14_750,
+      quote:
+        "The roof was mid-useful-life. They caught it, got it replaced before closing, and credited me the difference.",
+      cardHeadline: "Saved $14,750 on an Orlando rental duplex",
+      closedLabel: "Closed Q1 2026",
+    },
+    story: {
+      title: "How Noah saved $14,750 on an Orlando rental duplex",
+      summary:
+        "An investor buyer who used wind-mit + roof-age findings to negotiate a new roof and a credit on a turnkey Orlando duplex.",
+      heroQuote:
+        "For rental math to work, you need to know the roof replacement is not coming in year two.",
+      floridaAngle:
+        "Wind-mit + 15-year roof-age leverage on a 2009 Orlando duplex",
+      body: "[DRAFT — Replace with real released buyer story before public launch.] Noah was underwriting his third rental property when the inspection report flagged the 2009 roof as having 1-3 years of useful life remaining. The wind-mit report confirmed the straps and opening protection were original, meaning insurance was already at a premium. Noah's broker used both findings to negotiate the seller into replacing the roof before closing, plus a $9,500 credit toward the first-year insurance delta. With the buyer-v2 rebate on top, Noah saved $14,750 total. He closed in Q1 2026.",
+    },
+    outcomes: {
+      totalSavedUsd: 14_750,
+      purchasePriceUsd: 425_000,
+      rebateUsd: 5_250,
+      negotiatedCreditsUsd: 9_500,
+      daysToClose: 38,
+    },
+    compliance: {
+      brokerApprovedForPublicUse: false,
+      legalApprovedForPublicUse: false,
+      retentionBucket: "legal_documents",
+    },
   },
 ];

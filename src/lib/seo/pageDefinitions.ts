@@ -9,6 +9,8 @@ import type {
   BuilderConfig,
   CommunityConfig as NewConstructionCommunityConfig,
 } from "@/lib/newConstruction/types";
+import { BUYER_STORIES } from "@/content/trustProof";
+import { filterPublishableStories } from "@/lib/trustProof/policy";
 import { buildMetadata, buildStructuredData } from "./builder";
 import type { SeoInput, StructuredData } from "./types";
 
@@ -113,6 +115,20 @@ export const STATIC_SEO_PAGES = {
     sitemap: {
       priority: 0.6,
       changeFrequency: "weekly",
+    },
+  },
+  stories: {
+    seo: {
+      title: "Buyer stories",
+      description:
+        "Real Florida buyers, real savings, real stories from buyer-v2 home purchases — verified outcomes with broker and legal sign-off before publication.",
+      path: "/stories",
+      visibility: "public",
+      kind: "story",
+    },
+    sitemap: {
+      priority: 0.65,
+      changeFrequency: "monthly",
     },
   },
   intake: {
@@ -338,4 +354,17 @@ export function structuredDataForNewConstructionCommunity(
   community: NewConstructionCommunityConfig
 ): StructuredData {
   return buildStructuredData(seoInputForNewConstructionCommunity(community));
+}
+
+// MARK: - Buyer stories (KIN-1087)
+
+/**
+ * `/stories` archive should be noindex until at least one approved
+ * buyer story exists. Drafts never count — `filterPublishableStories`
+ * excludes them by default. Routes call this helper from their
+ * `generateMetadata` so the noindex flag stays in sync with the
+ * sitemap gating below.
+ */
+export function shouldNoindexStoriesArchive(): boolean {
+  return filterPublishableStories(BUYER_STORIES).length === 0;
 }
