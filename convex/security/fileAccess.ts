@@ -1,6 +1,8 @@
 import { query, internalQuery } from "../_generated/server";
+import type { QueryCtx } from "../_generated/server";
 import { v } from "convex/values";
 import { getSessionContext } from "../lib/session";
+import type { Id } from "../_generated/dataModel";
 
 /**
  * Check if a user can access a file associated with a deal room.
@@ -87,8 +89,62 @@ export const getSecureFileUrl = query({
       if (c.documentStorageId) referencedFileIds.add(c.documentStorageId);
     }
 
-    if (!referencedFileIds.has(args.fileId)) return null;
+    if (!referencedFileIds.has(args.fileId)) {
+      // Fall through to disclosure packets — a file referenced by a
+      // disclosurePackets row in the same deal room is also valid.
+      const disclosureAllowed = await canAccessDisclosureFile(
+        ctx,
+        user._id,
+        args.fileId,
+      );
+      if (!disclosureAllowed) return null;
+    }
 
     return await ctx.storage.getUrl(args.fileId);
   },
 });
+
+/**
+ * Check whether a user can read a specific `_storage` file by walking the
+ * `disclosurePackets` table for the dealRooms they own (or all, for
+ * broker/admin). This is the auth invariant for downloads of disclosure
+ * attachments — NEVER trust just the dealRoomId, because a file in
+ * dealRoom A must not be readable via a signed URL parameterized with
+ * dealRoom B.
+ *
+ * For buyers: scan the packets they own and check whether any of their
+ * packet `files[].storageId` includes the requested storage id.
+ *
+ * For broker/admin: any disclosure packet referencing this file is fair
+ * game (they can read every dealRoom's packets).
+ */
+export async function canAccessDisclosureFile(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  storageId: Id<"_storage">,
+): Promise<boolean> {
+  const user = await ctx.db.get(userId);
+  if (!user) return false;
+
+  const isPrivileged = user.role === "broker" || user.role === "admin";
+
+  if (isPrivileged) {
+    // Full-table scan is acceptable here because broker/admin downloads
+    // are low-frequency and the packet table is one row per upload.
+    for await (const p of ctx.db.query("disclosurePackets")) {
+      if (p.files.some((f) => f.storageId === storageId)) return true;
+    }
+    return false;
+  }
+
+  // Buyer: restrict the scan to their own packets via the by_buyerId index.
+  const myPackets = await ctx.db
+    .query("disclosurePackets")
+    .withIndex("by_buyerId", (q) => q.eq("buyerId", userId))
+    .collect();
+
+  for (const p of myPackets) {
+    if (p.files.some((f) => f.storageId === storageId)) return true;
+  }
+  return false;
+}

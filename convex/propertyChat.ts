@@ -54,6 +54,68 @@ function isLicenseCriticalStep(step: string | undefined): boolean {
   return step === "offer" || step === "close";
 }
 
+type DisclosurePacketBlock = {
+  version: number;
+  status: string;
+  fileNames: string[];
+  findings: Array<{
+    title: string;
+    severity: "low" | "medium" | "high";
+    category: string;
+    buyerFriendlyExplanation: string;
+    recommendedAction: string;
+    pageReference?: string;
+    sourceFileName?: string;
+  }>;
+  notMentioned: Array<{
+    title: string;
+    severity: "low" | "medium" | "high";
+    category: string;
+    buyerFriendlyExplanation: string;
+    recommendedAction: string;
+    pageReference?: string;
+    sourceFileName?: string;
+  }>;
+} | null;
+
+/**
+ * Render the active disclosure packet into a grounding block for the
+ * chat model. Returns null when there's no packet so callers can skip
+ * the extra system message entirely.
+ */
+function buildDisclosurePacketBlock(packet: DisclosurePacketBlock): string | null {
+  if (!packet) return null;
+  const lines: string[] = [];
+  lines.push(
+    `Disclosure packet v${packet.version} (status: ${packet.status}) — files: ${packet.fileNames.join(", ") || "none"}.`,
+  );
+  lines.push(
+    "When the buyer asks about a disclosed item, cite the finding and its source using the format 'Source: <fileName>, <pageReference>'. If the packet status is 'partial_failure' or 'failed', note that some files couldn't be analyzed.",
+  );
+  if (packet.findings.length > 0) {
+    lines.push("");
+    lines.push("Disclosed findings:");
+    for (const f of packet.findings) {
+      const src = f.sourceFileName
+        ? `Source: ${f.sourceFileName}${f.pageReference ? `, ${f.pageReference}` : ""}`
+        : "";
+      lines.push(
+        `- [${f.severity}] ${f.title} (${f.category}) — ${f.buyerFriendlyExplanation} Next step: ${f.recommendedAction}. ${src}`.trim(),
+      );
+    }
+  }
+  if (packet.notMentioned.length > 0) {
+    lines.push("");
+    lines.push("Items the packet does NOT address (buyer should ask):");
+    for (const n of packet.notMentioned) {
+      lines.push(
+        `- ${n.title} — ${n.buyerFriendlyExplanation} Next step: ${n.recommendedAction}.`,
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
 const listedMessageValidator = v.object({
   _id: v.id("propertyChatMessages"),
   _creationTime: v.number(),
@@ -171,6 +233,27 @@ export const setBrokerReviewState = mutation({
 // Internal: assistant reply pipeline
 // ───────────────────────────────────────────────────────────────────────────
 
+const disclosureFindingContextValidator = v.object({
+  title: v.string(),
+  severity: v.union(v.literal("low"), v.literal("medium"), v.literal("high")),
+  category: v.string(),
+  buyerFriendlyExplanation: v.string(),
+  recommendedAction: v.string(),
+  pageReference: v.optional(v.string()),
+  sourceFileName: v.optional(v.string()),
+});
+
+const disclosurePacketContextValidator = v.union(
+  v.null(),
+  v.object({
+    version: v.number(),
+    status: v.string(),
+    fileNames: v.array(v.string()),
+    findings: v.array(disclosureFindingContextValidator),
+    notMentioned: v.array(disclosureFindingContextValidator),
+  }),
+);
+
 const assistantContextValidator = v.union(
   v.null(),
   v.object({
@@ -188,6 +271,7 @@ const assistantContextValidator = v.union(
       yearBuilt: v.union(v.number(), v.null()),
       propertyType: v.union(v.string(), v.null()),
     }),
+    disclosurePacket: disclosurePacketContextValidator,
     history: v.array(
       v.object({
         role: v.union(v.literal("user"), v.literal("assistant")),
@@ -230,6 +314,111 @@ export const loadAssistantContext = internalQuery({
     const bathsTotal =
       (property.bathsFull ?? 0) + 0.5 * (property.bathsHalf ?? 0);
 
+    // Packet-aware grounding (KIN-1078): pull the buyer's active deal
+    // room for this property and its latest non-superseded disclosure
+    // packet. When present, the chat gets a summary of the findings
+    // (including "not disclosed" gaps) so the model can cite specific
+    // items rather than speculate.
+    const buyerDealRooms = await ctx.db
+      .query("dealRooms")
+      .withIndex("by_buyerId", (q) => q.eq("buyerId", userMessage.userId))
+      .collect();
+    const activeDealRoom = buyerDealRooms.find(
+      (r) => r.propertyId === userMessage.propertyId,
+    );
+
+    let disclosurePacket: {
+      version: number;
+      status: string;
+      fileNames: string[];
+      findings: Array<{
+        title: string;
+        severity: "low" | "medium" | "high";
+        category: string;
+        buyerFriendlyExplanation: string;
+        recommendedAction: string;
+        pageReference?: string;
+        sourceFileName?: string;
+      }>;
+      notMentioned: Array<{
+        title: string;
+        severity: "low" | "medium" | "high";
+        category: string;
+        buyerFriendlyExplanation: string;
+        recommendedAction: string;
+        pageReference?: string;
+        sourceFileName?: string;
+      }>;
+    } | null = null;
+
+    if (activeDealRoom) {
+      const latestPacket = await ctx.db
+        .query("disclosurePackets")
+        .withIndex("by_dealRoomId_and_version", (q) =>
+          q.eq("dealRoomId", activeDealRoom._id),
+        )
+        .order("desc")
+        .first();
+
+      if (latestPacket && latestPacket.status !== "superseded") {
+        const rawFindings = await ctx.db
+          .query("fileAnalysisFindings")
+          .withIndex("by_packetId", (q) => q.eq("packetId", latestPacket._id))
+          .collect();
+
+        const findings: Array<{
+          title: string;
+          severity: "low" | "medium" | "high";
+          category: string;
+          buyerFriendlyExplanation: string;
+          recommendedAction: string;
+          pageReference?: string;
+          sourceFileName?: string;
+        }> = [];
+        const notMentioned: Array<{
+          title: string;
+          severity: "low" | "medium" | "high";
+          category: string;
+          buyerFriendlyExplanation: string;
+          recommendedAction: string;
+          pageReference?: string;
+          sourceFileName?: string;
+        }> = [];
+
+        for (const f of rawFindings) {
+          const sev = f.severity;
+          const narrowedSeverity: "low" | "medium" | "high" =
+            sev === "high"
+              ? "high"
+              : sev === "medium"
+                ? "medium"
+                : "low";
+          const entry = {
+            title: f.label,
+            severity: narrowedSeverity,
+            category: f.category ?? "other",
+            buyerFriendlyExplanation: f.buyerFriendlyExplanation ?? f.summary,
+            recommendedAction: f.recommendedAction ?? "Review with your broker",
+            pageReference: f.pageReference,
+            sourceFileName: f.sourceFileName,
+          };
+          if (f.category === "not_disclosed") {
+            notMentioned.push(entry);
+          } else {
+            findings.push(entry);
+          }
+        }
+
+        disclosurePacket = {
+          version: latestPacket.version,
+          status: latestPacket.status,
+          fileNames: latestPacket.files.map((fl) => fl.fileName),
+          findings,
+          notMentioned,
+        };
+      }
+    }
+
     return {
       threadId: userMessage.threadId,
       userId: userMessage.userId,
@@ -247,6 +436,7 @@ export const loadAssistantContext = internalQuery({
         yearBuilt: property.yearBuilt ?? null,
         propertyType: property.propertyType ?? null,
       },
+      disclosurePacket,
       history,
     };
   },
@@ -298,12 +488,29 @@ export const runAssistantReply = internalAction({
     );
     const { gateway } = await import("../src/lib/ai/gateway");
 
-    const request = buildPropertyChatRequest({
+    // Build the base request, then inject packet-aware grounding as a
+    // system message so the model has access to the disclosure findings
+    // when answering. propertyChatPrompts.ts is owned elsewhere — we
+    // fold the packet block into the `messages` array here instead of
+    // threading a new parameter through its signature.
+    const baseRequest = buildPropertyChatRequest({
       wizardStep: context.wizardStep,
       propertyContext: context.propertyContext,
       userMessage: context.userContent,
       history: context.history,
     });
+
+    const packetBlock = buildDisclosurePacketBlock(context.disclosurePacket);
+    const request = packetBlock
+      ? {
+          ...baseRequest,
+          messages: [
+            baseRequest.messages[0],
+            { role: "system" as const, content: packetBlock },
+            ...baseRequest.messages.slice(1),
+          ],
+        }
+      : baseRequest;
 
     const result = await gateway({
       ...request,

@@ -1,8 +1,8 @@
 # buyer-v2 python workers
 
 Python services that support property ingestion for buyer-v2: portal fetch
-orchestration, deterministic extractors, and Browser Use fallback. Python 3.13,
-async-first.
+orchestration, deterministic extractors, Browser Use fallback, and disclosure
+OCR. Python 3.13, async-first.
 
 ## Layout
 
@@ -10,8 +10,55 @@ async-first.
 python-workers/
   common/          # shared types, errors, portal detection
   fetch/           # Bright Data unlocker client + orchestrator + metrics
+  ocr/             # FastAPI OCR service for disclosure packets (KIN-1078)
   tests/           # pytest suite (owned by test-builder)
 ```
+
+## OCR worker service
+
+Standalone FastAPI service that extracts text from PDF / JPEG / PNG files.
+Used by the Convex disclosure parser engine (KIN-1078) to turn buyer-uploaded
+disclosure packets into searchable text before passing them to the AI
+red-flag analyzer.
+
+### System deps
+
+The OCR worker shells out to two native binaries that must be present on the
+host — neither is installed by `pip install`:
+
+- `tesseract` — the OCR engine used for scanned PDFs and images
+  (`brew install tesseract` on macOS, `apt-get install tesseract-ocr` on
+  Debian/Ubuntu).
+- `poppler-utils` — used by `pdf2image` to rasterise PDF pages
+  (`brew install poppler` on macOS, `apt-get install poppler-utils` on
+  Debian/Ubuntu).
+
+Missing binaries do not crash the service at boot — the error surfaces as a
+`422 ocr_failed` response on the first request that needs them.
+
+### Env
+
+| Variable             | Purpose                                                      |
+| -------------------- | ------------------------------------------------------------ |
+| `OCR_SERVICE_TOKEN`  | Shared secret matched against incoming `Authorization: Bearer ...`. If unset, the service refuses to serve. |
+
+### Run locally
+
+```bash
+cd python-workers
+source .venv/bin/activate           # or create one per "Setup" below
+OCR_SERVICE_TOKEN=local-dev-token \
+    uvicorn ocr.app:app --host 0.0.0.0 --port 8080 --reload
+```
+
+### API
+
+| Endpoint           | Auth             | Notes                               |
+| ------------------ | ---------------- | ----------------------------------- |
+| `GET /healthz`     | none             | Liveness probe — returns `{"status": "ok"}`. |
+| `POST /ocr/extract`| `Bearer <token>` | Downloads the file at `file_url`, extracts text, returns per-page results. Rejects files over 20 MB with 413. |
+
+See `ocr/types.py` for the exact request/response pydantic models.
 
 ## Setup
 

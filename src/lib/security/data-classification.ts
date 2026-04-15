@@ -101,6 +101,22 @@ export const DATA_CATALOG: Record<string, DataClassification> = {
     retentionCategory: "buyer_data",
     encryptionRequired: false,
   },
+  disclosurePacket: {
+    name: "Disclosure Packet",
+    sensitivity: "restricted",
+    description:
+      "Seller disclosures, inspection reports, HOA docs, and other uploaded transaction documents analyzed for red flags.",
+    accessRoles: ["buyer", "broker", "admin"],
+    piiFields: [
+      "sellerName",
+      "buyerName",
+      "propertyAddress",
+      "signatoryName",
+      "signatoryEmail",
+    ],
+    retentionCategory: "legal_documents",
+    encryptionRequired: true,
+  },
 };
 
 /** Get all PII field names across the entire catalog */

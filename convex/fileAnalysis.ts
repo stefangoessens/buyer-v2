@@ -265,6 +265,28 @@ export const recordAnalysisResult = internalMutation({
         summary: v.string(),
         confidence: v.number(),
         requiresReview: v.boolean(),
+        // KIN-1078 — optional disclosure-packet-aware fields. Pre-existing
+        // docParser callers omit these; disclosureParser populates them.
+        category: v.optional(
+          v.union(
+            v.literal("structural"),
+            v.literal("water"),
+            v.literal("hoa"),
+            v.literal("legal"),
+            v.literal("insurance"),
+            v.literal("environmental"),
+            v.literal("title"),
+            v.literal("not_disclosed"),
+          ),
+        ),
+        pageReference: v.optional(v.string()),
+        evidenceQuote: v.optional(v.string()),
+        sourceFileName: v.optional(v.string()),
+        buyerFriendlyExplanation: v.optional(v.string()),
+        recommendedAction: v.optional(v.string()),
+        packetVersion: v.optional(v.number()),
+        packetId: v.optional(v.id("disclosurePackets")),
+        findingKey: v.optional(v.string()),
       }),
     ),
   },
@@ -304,8 +326,13 @@ export const recordAnalysisResult = internalMutation({
     });
 
     // Fan out findings so the review queue can index them directly.
+    //
+    // Upsert-by-findingKey: if the caller supplies a findingKey AND a
+    // packetId, any existing finding matching that (packetId, findingKey)
+    // is patched in place rather than duplicated. This keeps disclosure
+    // re-parses idempotent when the same rule hits the same doc again.
     for (const finding of args.findings) {
-      await ctx.db.insert("fileAnalysisFindings", {
+      const base = {
         jobId: args.jobId,
         dealRoomId: job.dealRoomId,
         rule: finding.rule,
@@ -314,8 +341,37 @@ export const recordAnalysisResult = internalMutation({
         summary: finding.summary,
         confidence: finding.confidence,
         requiresReview: finding.requiresReview,
-        createdAt: now,
-      });
+        category: finding.category,
+        pageReference: finding.pageReference,
+        evidenceQuote: finding.evidenceQuote,
+        sourceFileName: finding.sourceFileName,
+        buyerFriendlyExplanation: finding.buyerFriendlyExplanation,
+        recommendedAction: finding.recommendedAction,
+        packetVersion: finding.packetVersion,
+        packetId: finding.packetId,
+        findingKey: finding.findingKey,
+      };
+
+      let existingId: Id<"fileAnalysisFindings"> | null = null;
+      if (finding.packetId && finding.findingKey) {
+        const existingForPacket = await ctx.db
+          .query("fileAnalysisFindings")
+          .withIndex("by_packetId", (q) => q.eq("packetId", finding.packetId))
+          .collect();
+        const match = existingForPacket.find(
+          (f) => f.findingKey === finding.findingKey,
+        );
+        if (match) existingId = match._id;
+      }
+
+      if (existingId) {
+        await ctx.db.patch(existingId, base);
+      } else {
+        await ctx.db.insert("fileAnalysisFindings", {
+          ...base,
+          createdAt: now,
+        });
+      }
     }
 
     await ctx.db.insert("auditLog", {
