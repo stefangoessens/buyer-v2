@@ -261,7 +261,6 @@ export function HomeComparisonTableSection() {
                 <article
                   className="rounded-[24px] border border-neutral-200/80 bg-white p-5 shadow-sm focus-within:outline-none focus-within:ring-2 focus-within:ring-primary-500 focus-within:ring-offset-2"
                   onClick={() => handleRowInteract(row, "mobile")}
-                  onTouchStart={() => handleRowInteract(row, "mobile")}
                 >
                   <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
                     {row.label}
