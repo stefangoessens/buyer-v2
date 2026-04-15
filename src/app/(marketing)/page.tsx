@@ -7,6 +7,7 @@ import { TestimonialCard } from "@/components/marketing/TestimonialCard";
 import { HeroInput } from "@/components/marketing/HeroInput";
 import { BentoCard } from "@/components/marketing/BentoCard";
 import { HomeHowItWorksSection } from "@/components/marketing/sections/HomeHowItWorksSection";
+import { HomeComparisonTableSection } from "@/components/marketing/sections/HomeComparisonTableSection";
 import { homeHowItWorksStepsForSchema } from "@/content/home-how-it-works";
 import {
   metadataForStaticPage,
@@ -84,6 +85,9 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* ── How we compare (KIN-1084) ─────────────────────────── */}
+      <HomeComparisonTableSection />
 
       {/* ── Bento Grid (PayFit-style: image + title cards) ────────── */}
       <section className="w-full bg-white py-20 lg:py-28">

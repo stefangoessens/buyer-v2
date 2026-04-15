@@ -25,7 +25,7 @@ export function HeroSection({ children }: HeroSectionProps) {
             <p className="mt-6 text-[18px] leading-[1.5] text-neutral-500">
               Paste a Zillow, Redfin, or Realtor link. Get instant AI-powered analysis, fair pricing, and expert buyer representation, completely free.
             </p>
-            <div className="mt-8">{children}</div>
+            <div id="hero-intake" className="mt-8 scroll-mt-24">{children}</div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-neutral-500">
               {["500+ buyers served", "$2.1M total savings", "Analysis in <5s"].map((text) => (
                 <div key={text} className="flex items-center gap-2">

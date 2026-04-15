@@ -455,7 +455,11 @@ describe("listEventsByCategory()", () => {
     expect(events).toContain("home_how_it_works_section_viewed");
     expect(events).toContain("home_how_it_works_step_interacted");
     expect(events).toContain("home_how_it_works_cta_clicked");
-    expect(events).toHaveLength(5);
+    expect(events).toContain("home_comparison_section_viewed");
+    expect(events).toContain("home_comparison_row_interacted");
+    expect(events).toContain("home_comparison_pricing_cta_clicked");
+    expect(events).toContain("home_comparison_intake_cta_clicked");
+    expect(events).toHaveLength(9);
   });
 });
 

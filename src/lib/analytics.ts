@@ -140,6 +140,17 @@ export interface AnalyticsEventMap extends LaunchEventMap {
   };
   /** Fired when the homepage HIW CTA below the four steps is clicked. */
   home_how_it_works_cta_clicked: Record<string, never>;
+  /** Fired when the homepage "How we compare" section becomes visible. */
+  home_comparison_section_viewed: Record<string, never>;
+  /** Fired when a buyer hovers (desktop) or taps (mobile) a comparison row. */
+  home_comparison_row_interacted: {
+    rowKey: string;
+    surface: "desktop" | "mobile";
+  };
+  /** Fired when the "See the full pricing math" CTA in the comparison section is clicked. */
+  home_comparison_pricing_cta_clicked: Record<string, never>;
+  /** Fired when the "Paste a Zillow, Redfin, or Realtor link" CTA in the comparison section is clicked. */
+  home_comparison_intake_cta_clicked: Record<string, never>;
 
   // ─── My Journeys (KIN-1082) ─────────────────────────────────────────
   /** Fired when the /dashboard/journeys index page mounts. */
@@ -511,6 +522,33 @@ export const EVENT_METADATA: Record<AnalyticsEventName, EventMetadata> = {
     category: "engagement",
     owner: "growth",
     whenFired: "CTA button below the 4 steps clicked",
+    piiSafe: true,
+  },
+  home_comparison_section_viewed: {
+    category: "engagement",
+    owner: "growth",
+    whenFired: "IntersectionObserver on #how-we-compare crosses 40% visible",
+    piiSafe: true,
+  },
+  home_comparison_row_interacted: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "Row hover on desktop or tap on mobile within the home comparison table",
+    piiSafe: true,
+  },
+  home_comparison_pricing_cta_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "\"See the full pricing math\" CTA clicked in the home comparison section",
+    piiSafe: true,
+  },
+  home_comparison_intake_cta_clicked: {
+    category: "engagement",
+    owner: "growth",
+    whenFired:
+      "\"Paste a Zillow, Redfin, or Realtor link\" CTA clicked in the home comparison section",
     piiSafe: true,
   },
 
