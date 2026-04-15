@@ -16,12 +16,11 @@ export function FaqHeroSection() {
             Common questions
           </h1>
           <p className="mt-6 text-[18px] leading-[1.5] text-neutral-500">
-            How buyer-v2 works, what we rebate, and how your deal gets from a
-            pasted link to a closed home — grouped by where you are in the
-            journey.
+            How buyer-v2 works, how you save money, and how we protect you —
+            from a licensed Florida buyer brokerage.
           </p>
           <p className="mt-4 text-sm text-neutral-400">
-            Tip: use <kbd className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-600 ring-1 ring-neutral-200">⌘F</kbd> to search this page, or jump to a stage below.
+            Tip: use the tabs below to jump straight to a theme.
           </p>
         </div>
       </div>
