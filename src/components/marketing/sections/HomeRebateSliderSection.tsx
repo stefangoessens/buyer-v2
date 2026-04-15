@@ -260,6 +260,10 @@ function InteractiveSlider({
   // Interaction tracking
   const initialPriceRef = useRef(initialPrice);
   const maxDragDistanceRef = useRef(0);
+  // False until the user actually moves the slider via pointer or
+  // keyboard. Guards the debounced slider_changed + calculator_used
+  // fires so passive page views never emit interaction analytics.
+  const hasUserInteractedRef = useRef(false);
 
   // Animation state
   const tweenFromRef = useRef<number>(illustrateRebate(initialPrice).rebate);
@@ -418,6 +422,9 @@ function InteractiveSlider({
 
   // ── Debounced change + calculator_used
   useEffect(() => {
+    // Don't fire interaction analytics on mount or from SSR-seeded
+    // state. Only debounce-fire once the user has touched the slider.
+    if (!hasUserInteractedRef.current) return;
     if (changeDebounceRef.current !== null) {
       clearTimeout(changeDebounceRef.current);
     }
@@ -537,6 +544,7 @@ function InteractiveSlider({
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault();
       sliderRef.current?.focus();
+      hasUserInteractedRef.current = true;
       const next = priceFromPointer(event.clientX);
       setPrice(next);
       setIsDragging(true);
@@ -611,6 +619,7 @@ function InteractiveSlider({
           return;
       }
       event.preventDefault();
+      hasUserInteractedRef.current = true;
       const next =
         absolute !== null ? absolute : clampPrice(price + delta);
       setPrice(next);

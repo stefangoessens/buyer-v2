@@ -18,6 +18,20 @@ import {
   metadataForStaticPage,
   structuredDataForStaticPage,
 } from "@/lib/seo/pageDefinitions";
+import { resolveSetting } from "@/lib/settings/logic";
+
+/**
+ * Resolve a catalog boolean setting via the synchronous default-value
+ * path. KIN-1086 uses this for the homepage rebate-slider kill switch.
+ * A follow-up card will replace the `undefined` stored-value argument
+ * with a Convex-persisted value read; until then ops can flip the
+ * default in `src/lib/settings/catalog.ts` to disable the section.
+ */
+function rolloutFlag(key: string, fallback: boolean): boolean {
+  const resolved = resolveSetting(key, undefined);
+  if (resolved && resolved.kind === "boolean") return resolved.value;
+  return fallback;
+}
 
 export const metadata: Metadata = metadataForStaticPage("home");
 
@@ -73,10 +87,9 @@ export default async function Home({
       <TrustBar stats={trustStats} />
 
       {/* ── Rebate Slider (KIN-1086) ─────────────────────────────────── */}
-      {/* TODO(KIN-1086): wire `enabled` to rollout.home_rebate_slider_enabled via Convex */}
       <HomeRebateSliderSection
         initialPrice={parsedInitialPrice}
-        enabled={true}
+        enabled={rolloutFlag("rollout.home_rebate_slider_enabled", true)}
         deepLink={wasPriceQueryParam}
       />
 
