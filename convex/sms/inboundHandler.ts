@@ -603,10 +603,12 @@ async function processInboundMessage(
     },
   ];
 
+  const extractionUrl = parsedUrl.normalizedUrl ?? parsedUrl.rawUrl;
+
   const { sourceListingId } = await ctx.runMutation(
     internal.sms.store.upsertSourceListingForSms,
     {
-      url: parsedUrl.rawUrl,
+      url: extractionUrl,
       platform: parsedUrl.portal,
     },
   );
@@ -616,7 +618,7 @@ async function processInboundMessage(
   if (!sourceListing?.propertyId) {
     await ctx.runAction(internal.extractionRunner.runExtractionJob, {
       sourceListingId,
-      url: parsedUrl.rawUrl,
+      url: extractionUrl,
     });
     sourceListing = await ctx.runQuery(internal.sms.store.getSourceListing, {
       sourceListingId,
@@ -703,9 +705,13 @@ export const handleInboundWebhook = action({
     fromPhone: v.string(),
     toPhone: v.string(),
     body: v.string(),
+    sharedSecret: v.string(),
   },
   returns: inboundResultValidator,
   handler: async (ctx, args) => {
+    if ((process.env.TWILIO_AUTH_TOKEN?.trim() ?? "") !== args.sharedSecret.trim()) {
+      throw new Error("Invalid webhook credentials");
+    }
     const now = new Date().toISOString();
     const inbound = await ctx.runMutation(internal.sms.store.upsertInboundMessage, {
       twilioMessageSid: args.messageSid,
@@ -757,6 +763,7 @@ export const handleStatusWebhook = action({
     messageStatus: v.string(),
     errorCode: v.optional(v.string()),
     errorMessage: v.optional(v.string()),
+    sharedSecret: v.string(),
   },
   returns: v.object({
     handled: v.boolean(),
@@ -765,6 +772,9 @@ export const handleStatusWebhook = action({
     providerState: v.optional(smsMessageProviderState),
   }),
   handler: async (ctx, args) => {
+    if ((process.env.TWILIO_AUTH_TOKEN?.trim() ?? "") !== args.sharedSecret.trim()) {
+      throw new Error("Invalid webhook credentials");
+    }
     const row = await ctx.runQuery(internal.sms.store.findMessageBySid, {
       twilioMessageSid: args.messageSid,
     });

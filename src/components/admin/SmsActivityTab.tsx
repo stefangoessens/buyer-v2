@@ -318,7 +318,11 @@ export function SmsActivityTab() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleBlock(item.fromPhone)}
+                      onClick={() =>
+                        handleBlock(
+                          item.direction === "outbound" ? item.toPhone : item.fromPhone,
+                        )
+                      }
                     >
                       Block phone
                     </Button>

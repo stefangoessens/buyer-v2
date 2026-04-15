@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     messageStatus: payload.messageStatus,
     ...(payload.errorCode ? { errorCode: payload.errorCode } : {}),
     ...(payload.errorMessage ? { errorMessage: payload.errorMessage } : {}),
+    sharedSecret: config.authToken,
   });
 
   return NextResponse.json({ ok: true, handled: result.handled });

@@ -119,6 +119,7 @@ describe("Twilio webhook routes", () => {
       fromPhone: "+13055550111",
       toPhone: "+13055550123",
       body: "https://www.zillow.com/homedetails/Test/123456_zpid/",
+      sharedSecret: "test-token",
     });
     expect(analyticsMocks.trackServerEvent.mock.calls).toEqual([
       [
@@ -165,6 +166,7 @@ describe("Twilio webhook routes", () => {
     expect(convexMocks.action.mock.calls[0]?.[1]).toEqual({
       messageSid: "SM123",
       messageStatus: "delivered",
+      sharedSecret: "test-token",
     });
   });
 });

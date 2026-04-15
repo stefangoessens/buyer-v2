@@ -54,6 +54,7 @@ export async function POST(request: Request) {
     fromPhone: payload.from,
     toPhone: payload.to,
     body: payload.body,
+    sharedSecret: config.authToken,
   });
 
   await trackServerEvent("sms_inbound_received", {
