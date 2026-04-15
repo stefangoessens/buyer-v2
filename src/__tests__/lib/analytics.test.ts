@@ -477,7 +477,15 @@ describe("listEventsByCategory()", () => {
     expect(events).toContain("waitlist_dialog_opened");
     expect(events).toContain("waitlist_submitted");
     expect(events).toContain("waitlist_submit_error");
-    expect(events).toHaveLength(24);
+    // KIN-1087: verified buyer stories added 7 engagement events.
+    expect(events).toContain("testimonial_card_viewed");
+    expect(events).toContain("testimonial_card_clicked");
+    expect(events).toContain("story_page_viewed");
+    expect(events).toContain("story_read_time_ms");
+    expect(events).toContain("story_cta_clicked");
+    expect(events).toContain("story_related_clicked");
+    expect(events).toContain("aggregate_savings_counter_viewed");
+    expect(events).toHaveLength(31);
   });
 });
 
