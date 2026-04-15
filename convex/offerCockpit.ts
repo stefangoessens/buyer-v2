@@ -120,6 +120,18 @@ export const getCockpit = query({
       property.address.formatted ??
       `${property.address.street}${property.address.unit ? ` ${property.address.unit}` : ""}, ${property.address.city}, ${property.address.state} ${property.address.zip}`;
 
+    const brokerageCallState = {
+      requestedAt: draft?.brokerageCallRequestedAt ?? null,
+      phone: draft?.brokerageCallPhone ?? null,
+      completedAt: draft?.brokerageCallbackCompletedAt ?? null,
+      completedBy: draft?.brokerageCallbackCompletedBy ?? null,
+      stage: (draft?.brokerageCallbackCompletedAt
+        ? "completed"
+        : draft?.brokerageCallRequestedAt
+          ? "requested"
+          : "none") as "none" | "requested" | "completed",
+    };
+
     return {
       dealRoom,
       propertyId: dealRoom.propertyId,
@@ -129,8 +141,11 @@ export const getCockpit = query({
       scenarios,
       eligibility,
       buyerProfile: buildOfferFlowProfile(buyerProfileView),
-      canEdit: isOwner && eligibility.isEligible,
+      canEdit:
+        isOwner &&
+        (Boolean(draft?.brokerageCallRequestedAt) || eligibility.isEligible),
       viewerRole: user.role,
+      brokerageCallState,
     };
   },
 });
@@ -160,7 +175,13 @@ export const upsertDraft = mutation({
     }
 
     const eligibility = await loadEligibility(ctx, user._id, args.dealRoomId);
-    if (!eligibility.isEligible) {
+    const priorDraft = await loadDraft(ctx, args.dealRoomId, user._id);
+    const hasRequestedCallback = Boolean(priorDraft?.brokerageCallRequestedAt);
+    // KIN-1077: the buyer can edit their draft once they've requested a
+    // brokerage callback (phone-first activation gate) OR once they're
+    // already formally eligible via signed agreement. Submit-for-review is
+    // still gated separately on `brokerageCallbackCompletedAt` + eligibility.
+    if (!hasRequestedCallback && !eligibility.isEligible) {
       throw new Error(
         eligibility.blockingReasonMessage ??
           "You are not currently eligible to make an offer on this property",
@@ -184,7 +205,7 @@ export const upsertDraft = mutation({
     }
 
     const now = new Date().toISOString();
-    const existing = await loadDraft(ctx, args.dealRoomId, user._id);
+    const existing = priorDraft;
 
     // Guardrail: if the most recent draft is not in an editable state
     // (pending_review, approved, submitted), refuse to spin up a parallel
@@ -273,6 +294,15 @@ export const submitForReview = mutation({
       throw new Error(`Draft in status ${draft.status} cannot be submitted`);
     }
 
+    // KIN-1077: the broker must have completed the activation callback
+    // before submit-for-review is allowed. Checked BEFORE eligibility so
+    // the error ordering reads "callback first, then agreement".
+    if (!draft.brokerageCallbackCompletedAt) {
+      throw new Error(
+        "A broker must complete the activation callback before you can submit this offer",
+      );
+    }
+
     const eligibility = await loadEligibility(ctx, user._id, args.dealRoomId);
     if (!eligibility.isEligible) {
       throw new Error(
@@ -359,6 +389,213 @@ export const discardDraft = mutation({
       action: "offer_cockpit_draft_discarded",
       entityType: "offerCockpitDrafts",
       entityId: draft._id,
+      timestamp: now,
+    });
+    return null;
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// KIN-1077 — Brokerage activation callback gate
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Dealroom status ladder used to decide whether to advance to offer_prep.
+// Only patched forward — never regress a room that's already further along.
+const DEAL_ROOM_STATUSES_BEFORE_OFFER_PREP = new Set<
+  Doc<"dealRooms">["status"]
+>(["intake", "analysis", "tour_scheduled"]);
+
+function normalizeUsPhone(raw: string): string {
+  const digitsOnly = raw.replace(/\D+/g, "");
+  let digits = digitsOnly;
+  if (digits.length === 11 && digits.startsWith("1")) {
+    digits = digits.slice(1);
+  }
+  if (digits.length !== 10) {
+    throw new Error("Please enter a valid US phone number");
+  }
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+/**
+ * Buyer-facing: request a brokerage activation callback on a deal room.
+ *
+ * Rate-limited to one real write per 60s window per (dealRoom, buyer) —
+ * repeat calls inside that window return the cached state idempotently.
+ * Outside the window, the call is still idempotent: the stored
+ * `brokerageCallRequestedAt` is preserved but the phone can be updated.
+ *
+ * Side effects:
+ *   - creates the draft row if none exists (with price 0, default terms)
+ *   - patches users.phone to the canonical (XXX) XXX-XXXX form
+ *   - advances the deal room status to `offer_prep` (only from earlier states)
+ *   - emits an audit row
+ */
+export const requestBrokerageCallback = mutation({
+  args: { dealRoomId: v.id("dealRooms"), phone: v.string() },
+  returns: v.object({
+    draftId: v.id("offerCockpitDrafts"),
+    brokerageCallRequestedAt: v.string(),
+    brokerageCallPhone: v.string(),
+    wasAlreadyRequested: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    const dealRoom = await ctx.db.get(args.dealRoomId);
+    if (!dealRoom) throw new Error("Deal room not found");
+    if (dealRoom.buyerId !== user._id) {
+      throw new Error("Only the buyer can request a brokerage callback");
+    }
+
+    const normalizedPhone = normalizeUsPhone(args.phone);
+    const now = new Date().toISOString();
+    const nowMs = Date.now();
+
+    const existing = await loadDraft(ctx, args.dealRoomId, user._id);
+
+    // Rate limit: if the buyer already requested inside the last 60s,
+    // return the cached state without touching the timestamp.
+    if (
+      existing?.brokerageCallRequestedAt &&
+      nowMs - Date.parse(existing.brokerageCallRequestedAt) < 60_000
+    ) {
+      return {
+        draftId: existing._id,
+        brokerageCallRequestedAt: existing.brokerageCallRequestedAt,
+        brokerageCallPhone: existing.brokerageCallPhone ?? normalizedPhone,
+        wasAlreadyRequested: true,
+      };
+    }
+
+    // users.phone is a flat field on the users doc and the rest of the
+    // app reads it directly — no shared normalization helper exists yet,
+    // so patch it in place with the canonical form.
+    if (user.phone !== normalizedPhone) {
+      await ctx.db.patch(user._id, { phone: normalizedPhone });
+    }
+
+    // Advance the deal room status only if it's currently earlier in the
+    // ladder than offer_prep. Never regress.
+    if (DEAL_ROOM_STATUSES_BEFORE_OFFER_PREP.has(dealRoom.status)) {
+      await ctx.db.patch(dealRoom._id, {
+        status: "offer_prep",
+        updatedAt: now,
+      });
+    }
+
+    let draftId: Id<"offerCockpitDrafts">;
+    let storedRequestedAt: string;
+    let wasAlreadyRequested: boolean;
+
+    if (!existing) {
+      draftId = await ctx.db.insert("offerCockpitDrafts", {
+        dealRoomId: args.dealRoomId,
+        buyerId: user._id,
+        propertyId: dealRoom.propertyId,
+        status: "draft",
+        offerPrice: 0,
+        earnestMoney: 0,
+        closingDays: 30,
+        contingencies: [],
+        buyerCredits: 0,
+        sellerCredits: 0,
+        brokerReviewState: "not_submitted",
+        brokerageCallRequestedAt: now,
+        brokerageCallPhone: normalizedPhone,
+        version: 1,
+        lastSavedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      storedRequestedAt = now;
+      wasAlreadyRequested = false;
+    } else if (!existing.brokerageCallRequestedAt) {
+      await ctx.db.patch(existing._id, {
+        brokerageCallRequestedAt: now,
+        brokerageCallPhone: normalizedPhone,
+        updatedAt: now,
+      });
+      draftId = existing._id;
+      storedRequestedAt = now;
+      wasAlreadyRequested = false;
+    } else {
+      // Re-request outside the 60s rate-limit window. Preserve the
+      // original timestamp, but update the phone if the buyer changed it.
+      const patch: {
+        brokerageCallPhone?: string;
+        updatedAt?: string;
+      } = {};
+      if (existing.brokerageCallPhone !== normalizedPhone) {
+        patch.brokerageCallPhone = normalizedPhone;
+        patch.updatedAt = now;
+      }
+      if (Object.keys(patch).length > 0) {
+        await ctx.db.patch(existing._id, patch);
+      }
+      draftId = existing._id;
+      storedRequestedAt = existing.brokerageCallRequestedAt;
+      wasAlreadyRequested = true;
+    }
+
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "offer_brokerage_callback_requested",
+      entityType: "offerCockpitDrafts",
+      entityId: draftId,
+      details: JSON.stringify({
+        dealRoomId: args.dealRoomId,
+        phone: normalizedPhone,
+        wasAlreadyRequested,
+      }),
+      timestamp: now,
+    });
+
+    return {
+      draftId,
+      brokerageCallRequestedAt: storedRequestedAt,
+      brokerageCallPhone: normalizedPhone,
+      wasAlreadyRequested,
+    };
+  },
+});
+
+/**
+ * Broker/admin-facing: mark the activation callback as completed. This
+ * unblocks submit-for-review for the buyer. Idempotent — if already
+ * completed, it's a no-op.
+ */
+export const markBrokerageCallbackComplete = mutation({
+  args: { dealRoomId: v.id("dealRooms") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const user = await requireAuth(ctx);
+    if (user.role !== "broker" && user.role !== "admin") {
+      throw new Error("Only brokers can complete the brokerage callback");
+    }
+    const dealRoom = await ctx.db.get(args.dealRoomId);
+    if (!dealRoom) throw new Error("Deal room not found");
+
+    const draft = await loadDraft(ctx, args.dealRoomId, dealRoom.buyerId);
+    if (!draft) throw new Error("No brokerage callback to complete");
+    if (!draft.brokerageCallRequestedAt) {
+      throw new Error("Buyer has not yet requested a brokerage callback");
+    }
+    if (draft.brokerageCallbackCompletedAt) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    await ctx.db.patch(draft._id, {
+      brokerageCallbackCompletedAt: now,
+      brokerageCallbackCompletedBy: user._id,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLog", {
+      userId: user._id,
+      action: "offer_brokerage_callback_completed",
+      entityType: "offerCockpitDrafts",
+      entityId: draft._id,
+      details: JSON.stringify({ dealRoomId: args.dealRoomId }),
       timestamp: now,
     });
     return null;

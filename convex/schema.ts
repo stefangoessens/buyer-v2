@@ -1944,6 +1944,13 @@ export default defineSchema({
     // Linked offer row — only set once the draft has been materialized into
     // the canonical `offers` table (post broker approval or on submit).
     offerId: v.optional(v.id("offers")),
+    // KIN-1077 — phone-first brokerage activation gate. Buyers request a
+    // callback which unblocks draft editing; a broker then marks the
+    // callback completed which unblocks submit-for-review.
+    brokerageCallRequestedAt: v.optional(v.string()),
+    brokerageCallPhone: v.optional(v.string()),
+    brokerageCallbackCompletedAt: v.optional(v.string()),
+    brokerageCallbackCompletedBy: v.optional(v.id("users")),
     version: v.number(),
     lastSavedAt: v.string(),
     createdAt: v.string(),

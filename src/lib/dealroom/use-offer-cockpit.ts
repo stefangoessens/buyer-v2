@@ -8,6 +8,8 @@ import type { OfferOutput, OfferScenario } from "@/lib/ai/engines/types";
 import {
   emptyTerms,
   scenarioToTerms,
+  type BrokerageCallStage,
+  type BrokerageCallState,
   type BrokerReviewState,
   type OfferCockpitStatus,
   type OfferCockpitValidation,
@@ -56,6 +58,7 @@ type CockpitServerPayload = {
   eligibility: OfferEligibilitySnapshot;
   canEdit: boolean;
   viewerRole: "buyer" | "broker" | "admin";
+  brokerageCallState: BrokerageCallState;
 } | null;
 
 export interface OfferCockpitState {
@@ -75,6 +78,8 @@ export interface OfferCockpitState {
   status: OfferCockpitStatus;
   canEdit: boolean;
   canSubmit: boolean;
+  brokerageCallState: BrokerageCallState | null;
+  brokerageStage: BrokerageCallStage;
   setTerms: (next: OfferTerms) => void;
   selectScenario: (scenario: OfferScenario) => void;
   save: () => Promise<void>;
@@ -172,6 +177,9 @@ export function useOfferCockpit(
   const canEdit =
     (data?.canEdit ?? false) && (status === "draft" || status === "rejected");
   const canSubmit = canEdit && validation.ok;
+  const brokerageCallState = data?.brokerageCallState ?? null;
+  const brokerageStage: BrokerageCallStage =
+    brokerageCallState?.stage ?? "none";
 
   const setTerms = useCallback((next: OfferTerms) => {
     setTermsState(next);
@@ -280,6 +288,8 @@ export function useOfferCockpit(
     status,
     canEdit,
     canSubmit,
+    brokerageCallState,
+    brokerageStage,
     setTerms,
     selectScenario,
     save,

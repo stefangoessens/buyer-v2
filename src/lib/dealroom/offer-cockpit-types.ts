@@ -59,6 +59,16 @@ export interface OfferEligibilitySnapshot {
   currentAgreementType?: string;
 }
 
+export type BrokerageCallStage = "none" | "requested" | "completed";
+
+export interface BrokerageCallState {
+  requestedAt: string | null;
+  phone: string | null;
+  completedAt: string | null;
+  completedBy: string | null;
+  stage: BrokerageCallStage;
+}
+
 export interface OfferCockpitData {
   draft: OfferCockpitDraft;
   scenarios: OfferOutput | null;

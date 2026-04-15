@@ -84,7 +84,7 @@ export function OfferRecommendationCard({
             href={propertyId ? `/property/${propertyId}/offer` : `/dealroom/${dealRoomId}/offer`}
             className="mt-auto inline-flex w-fit items-center justify-center gap-2 rounded-full bg-accent-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-600"
           >
-            Open offer cockpit
+            Start your offer
             <span aria-hidden>→</span>
           </Link>
         </>
